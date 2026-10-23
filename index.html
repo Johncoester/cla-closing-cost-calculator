@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CLA Closing Cost Calculator — C.L.A. Title &amp; Escrow</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{--navy:#1b2f4b;--gold:#b88a2e;--bg:#f4f5f7;--line:#dde1e7;--mut:#6b7380}
+*{box-sizing:border-box}body{margin:0;font:14px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:#1d232b}
+header{background:var(--navy);color:#fff;padding:14px 20px;display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+header h1{font-size:18px;margin:0}header .brand{color:#e6c77d;font-size:12px;letter-spacing:.08em;text-transform:uppercase}
+.pill{background:#ffffff22;border:1px solid #ffffff44;border-radius:20px;padding:3px 10px;font-size:12px}
+.sp{flex:1}button,.btn{background:var(--gold);color:#fff;border:0;border-radius:6px;padding:7px 12px;font-weight:600;cursor:pointer;font-size:13px}
+button.sec{background:#fff;color:var(--navy);border:1px solid var(--line)}
+.note{font-size:11px;color:#c9d2df;width:100%}
+main{display:grid;grid-template-columns:minmax(320px,440px) 1fr;gap:16px;padding:16px;max-width:1200px;margin:auto}
+@media(max-width:820px){main{grid-template-columns:1fr}}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px}
+h2{font-size:15px;margin:0 0 12px;color:var(--navy)}h3{font-size:13px;margin:16px 0 8px;color:var(--navy);text-transform:uppercase;letter-spacing:.04em}
+.tabs{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:12px}
+.tabs button{flex:1;background:#fff;color:var(--navy);border-radius:0;font-weight:500}.tabs button.on{background:var(--navy);color:#fff}
+label{display:block;font-size:12px;color:var(--mut);margin:8px 0 3px}
+input[type=text],input[type=number],select{width:100%;padding:7px 8px;border:1px solid var(--line);border-radius:6px;font-size:14px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.row3{display:grid;grid-template-columns:2fr 1fr;gap:8px}
+.chk{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px;color:#1d232b}
+.fee{display:grid;grid-template-columns:20px 1fr 90px 54px;gap:6px;align-items:center;margin:4px 0;font-size:13px}
+.fee input[type=number]{padding:4px 6px}.tag{font-size:10px;padding:2px 6px;border-radius:10px;text-align:center;background:#e8eef7;color:var(--navy)}.tag.s{background:#f6ecd9;color:#7a5a17}
+table{width:100%;border-collapse:collapse}td,th{padding:5px 6px;border-bottom:1px solid var(--line);font-size:13px}th{text-align:left;color:var(--mut);font-weight:500}
+.num{text-align:right;font-variant-numeric:tabular-nums}.docs input{width:60px}
+details summary{cursor:pointer;font-weight:600;color:var(--navy);margin-top:14px}
+.totals{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}
+.tot{border:1px solid var(--line);border-radius:8px;padding:10px;text-align:center}.tot b{display:block;font-size:20px;color:var(--navy)}.tot.all{background:var(--navy);color:#fff}.tot.all b{color:#e6c77d}
+.sec-row td{background:#f0f2f6;font-weight:600;color:var(--navy)}.sum{color:var(--mut);font-size:13px}
+.flag{background:#fde8c8;color:#8a5a00;border-radius:4px;padding:1px 6px;font-size:11px;font-weight:700}
+.warn{background:#fff6e5;border:1px solid #f0d49b;border-radius:6px;padding:8px 12px;margin-top:12px;font-size:13px}.warn ul{margin:4px 0;padding-left:18px}
+footer{font-size:11px;color:var(--mut);margin-top:14px}
+</style></head><body>
+<header><div><div class="brand">C.L.A. Title &amp; Escrow</div><h1>Closing Cost Calculator</h1></div>
+<span class="pill" id="srcPill">Sample rates (fictitious)</span><span class="sp"></span>
+<button class="sec" id="btnSample">Preview with sample rates</button>
+<label class="btn" style="margin:0;color:#fff;font-size:13px">Load .xlsx<input type="file" id="file" accept=".xlsx,.xls" hidden></label>
+<div class="note">Test build. Reloading rates from Google Drive is not available outside Claude — upload “CLA Fee Tables.xlsx” instead.</div></header>
+<main>
+<section class="card"><h2>Transaction</h2>
+<div class="tabs" id="tabs"><button data-t="purchase" class="on">Purchase (financed)</button><button data-t="cash">Cash purchase</button><button data-t="refi">Refinance</button></div>
+<label>Property address</label><input type="text" id="addr" placeholder="123 Main St">
+<div class="row3"><div><label>City</label><input type="text" id="city"></div><div><label>ZIP</label><input type="text" id="zip" maxlength="5"></div></div>
+<div class="row"><div><label>State</label><select id="state"><option>MD</option><option>DC</option><option>VA</option><option>FL</option></select></div>
+<div><label>County / city</label><select id="county"></select></div></div>
+<label>Underwriter</label><select id="uw"><option>Fidelity/Chicago</option><option>Stewart</option></select>
+<div class="row"><div id="priceWrap"><label>Sale price</label><input type="number" id="price" value="450000"></div>
+<div id="payoffWrap" hidden><label>Payoff (existing loan)</label><input type="number" id="payoff" value="300000"></div>
+<div id="loanWrap"><label>Loan amount</label><input type="number" id="loan" value="360000"></div></div>
+<div class="row"><div id="ownWrap"><label>Owner's policy</label><select id="pol"><option value="enhanced">Enhanced / Homeowner's</option><option value="standard">Standard</option></select></div>
+<div><label>Rate</label><select id="rate"></select></div></div>
+<div id="fthbWrap" class="chk"><input type="checkbox" id="fthb"><span>First-time homebuyer</span></div>
+<details id="docsBox"><summary>Documents to record</summary>
+<table class="docs"><tr><th>Document</th><th>Count</th><th>Pages each</th></tr><tbody id="docs"></tbody></table></details>
+<h3>Endorsements</h3><div id="ends"></div>
+<h3>CLA settlement fees</h3><div id="fees"></div>
+</section>
+<section class="card"><h2>Fee estimate</h2><div class="sum" id="summary"></div>
+<div class="totals"><div class="tot"><span id="buyerLbl">Buyer</span><b id="tB">$0</b></div><div class="tot"><span>Seller</span><b id="tS">$0</b></div><div class="tot all"><span>All parties</span><b id="tA">$0</b></div></div>
+<table><thead><tr><th>Item</th><th class="num" id="colB">Buyer</th><th class="num">Seller</th></tr></thead><tbody id="ledger"></tbody></table>
+<div id="warns"></div>
+<p><button id="copy">Copy quote</button> <span id="copied" class="sum"></span></p>
+<footer>This is an estimate only, based on the rate tables shown, and is not a Loan Estimate, Closing Disclosure, or commitment to insure. Actual charges are determined by the title commitment, lender requirements, and the jurisdiction at closing.</footer>
+</section></main>
+<script>
+/*SAMPLE_START*/
+const SAMPLE = {
+Premium_Tiers:[
+["Underwriter","State","Policy","From","To","RatePer1000","Active"],
+...["Fidelity/Chicago","Stewart"].flatMap(u=>["MD","DC","VA","FL"].flatMap(s=>{const k=u==="Stewart"?1.04:1;const f=s==="FL"?1.4:s==="DC"?1.1:s==="VA"?0.9:1;return[
+[u,s,"Owner",0,100000,+(4.10*k*f).toFixed(2),"Y"],[u,s,"Owner",100000,500000,+(3.40*k*f).toFixed(2),"Y"],[u,s,"Owner",500000,1000000,+(2.70*k*f).toFixed(2),"Y"],[u,s,"Owner",1000000,99999999,+(2.10*k*f).toFixed(2),"Y"],
+[u,s,"Lender",0,100000,+(3.00*k*f).toFixed(2),"Y"],[u,s,"Lender",100000,500000,+(2.50*k*f).toFixed(2),"Y"],[u,s,"Lender",500000,1000000,+(2.00*k*f).toFixed(2),"Y"],[u,s,"Lender",1000000,99999999,+(1.60*k*f).toFixed(2),"Y"]]}))],
+Premium_Rules:[
+["Underwriter","State","MinOwner","MinLender","EnhancedPct","ReissuePct","RefinancePct","SimulLenderFee","RoundTo","Active"],
+...["Fidelity/Chicago","Stewart"].flatMap(u=>["MD","DC","VA","FL"].map(s=>[u,s,200,200,120,85,70,250,1000,"Y"]))],
+Endorsements:[
+["Code","Name","Policy","Method","Amount","Applies","Default","Active"],
+["ALTA 8.1","Environmental Protection Lien","Lender","Flat",50,"Financed","Y","Y"],
+["ALTA 9","Restrictions, Encroachments, Minerals","Lender","PctPremium",10,"Financed","Y","Y"],
+["ALTA 5","Planned Unit Development","Owner","Flat",50,"Purchase","N","Y"]],
+Settlement_Fees:[
+["Name","Amount","Payer","Applies","Default","Active"],
+["Settlement/Closing Fee",695,"Buyer","Purchase","Y","Y"],["Refinance Settlement Fee",495,"Buyer","Refinance","Y","Y"],
+["Title Examination",250,"Buyer","All","Y","Y"],["Document Preparation",150,"Buyer","All","Y","Y"],
+["Seller Settlement Fee",395,"Seller","Purchase","Y","Y"],["Wire Fee",35,"Buyer","All","Y","Y"],
+["Courier/Overnight",40,"Buyer","All","Y","Y"],["Lien/Municipal Certificate",75,"Buyer","All","Y","Y"]],
+Recording_Fees:[
+["State","County","Document","FirstPageFee","AddlPageFee","Payer","Active"],
+...[["MD","*"],["DC","*"],["VA","*"],["FL","*"]].flatMap(([s,c])=>{const m={MD:[60,0],DC:[30,2.5],VA:[42,0],FL:[10,8.5]}[s];return["Deed","Deed of Trust","Release","Power of Attorney","Other"].map(d=>[s,c,d,m[0],m[1],d==="Release"?"Seller":"Buyer","Y"])})],
+Transfer_Taxes:[
+["State","County","TaxName","Method","Rate","Base","BracketMin","BracketMax","Payer","Applies","FTHB_Rate","FTHB_Payer","Active"],
+["MD","*","State transfer tax","Percent",0.5,"Price",0,"","Both","Purchase",0.25,"Seller","Y"],
+["MD","Montgomery","County recordation tax","Per500",4.45,"Price",0,"","Buyer","Purchase","","","Y"],
+["MD","Montgomery","County recordation tax (refi new money)","Per500",4.45,"NewMoney",0,"","Buyer","Refinance","","","Y"],
+["MD","Montgomery","County transfer tax","Percent",1.0,"Price",0,"","Seller","Purchase","","","Y"],
+["MD","Prince George's","County recordation tax","Per500",2.75,"Price",0,"","Both","Purchase","","","Y"],
+["MD","Prince George's","County transfer tax","Percent",1.4,"Price",0,"","Seller","Purchase","","","Y"],
+["MD","Baltimore City","County recordation tax","Per500",5.0,"Price",0,"","Buyer","Purchase","","","Y"],
+["MD","Baltimore City","County transfer tax","Percent",1.5,"Price",0,"","Seller","Purchase","","","Y"],
+["MD","Anne Arundel","County recordation tax","Per500",3.5,"Price",0,"","Buyer","Purchase","","","Y"],
+["MD","Anne Arundel","County transfer tax","Percent",1.0,"Price",0,"","Both","Purchase","","","Y"],
+["MD","*","County recordation tax (refi new money)","Per500",3.5,"NewMoney",0,"","Buyer","Refinance","","","Y"],
+["DC","*","Deed recordation tax","Percent",1.1,"Price",0,399999.99,"Buyer","Purchase",0,"Buyer","Y"],
+["DC","*","Deed recordation tax","Percent",1.45,"Price",400000,"","Buyer","Purchase","","","Y"],
+["DC","*","Deed transfer tax","Percent",1.1,"Price",0,399999.99,"Seller","Purchase","","","Y"],
+["DC","*","Deed transfer tax","Percent",1.45,"Price",400000,"","Seller","Purchase","","","Y"],
+["DC","*","Security interest recordation tax","Percent",1.45,"Loan",0,"","Buyer","Refinance","","","Y"],
+["VA","*","State grantee recordation tax","Per100",0.25,"Greater",0,"","Buyer","Purchase","","","Y"],
+["VA","*","County grantee tax (1/3 of state)","Per100",0.0833,"Greater",0,"","Buyer","Purchase","","","Y"],
+["VA","*","State grantor tax","Per500",0.5,"Price",0,"","Seller","Purchase","","","Y"],
+["VA","*","Congestion relief fee","Per100",0.10,"Price",0,"","Seller","Purchase","","","Y"],
+["VA","*","Deed of trust recordation tax","Per100",0.25,"NewMoney",0,"","Buyer","Refinance","","","Y"],
+["FL","*","Doc stamps on deed","Per100",0.70,"Price",0,"","Seller","Purchase","","","Y"],
+["FL","*","Doc stamps on note","Per100",0.35,"Loan",0,"","Buyer","Financed","","","Y"],
+["FL","*","Intangible tax","Percent",0.2,"Loan",0,"","Buyer","Financed","","","Y"],
+["FL","*","Doc stamps on note (refi)","Per100",0.35,"NewMoney",0,"","Buyer","Refinance","","","Y"]],
+Jurisdictions:[
+["State","County","ZipPrefixes","CityMatch","Active"],
+["MD","Montgomery","208,209","Rockville,Bethesda,Silver Spring,Gaithersburg,Germantown,Potomac,Chevy Chase,Kensington,Olney","Y"],
+["MD","Prince George's","207","Bowie,Laurel,Hyattsville,College Park,Upper Marlboro,Greenbelt,Largo","Y"],
+["MD","Baltimore City","212","Baltimore","Y"],
+["MD","Anne Arundel","210,214","Annapolis,Glen Burnie,Severna Park,Crofton,Odenton","Y"],
+["DC","District of Columbia","200,202,203,204,205","Washington","Y"],
+["VA","Fairfax","220,221","Fairfax,Reston,Vienna,McLean,Herndon,Centreville","Y"],
+["VA","Arlington","222","Arlington","Y"],["VA","Alexandria City","223","Alexandria","Y"],
+["VA","Loudoun","201","Leesburg,Ashburn,Sterling","Y"],
+["FL","Miami-Dade","330,331,332","Miami,Hialeah,Coral Gables","Y"],
+["FL","Broward","333","Fort Lauderdale,Hollywood,Pembroke Pines","Y"],
+["FL","Palm Beach","334","West Palm Beach,Boca Raton,Delray Beach","Y"],
+["FL","Orange","327,328","Orlando,Winter Park","Y"]]
+};
+/*SAMPLE_END*/
+const DOC_DEFAULTS={purchase:{"Deed":[1,8],"Deed of Trust":[1,20],"Release":[1,3],"Power of Attorney":[0,3],"Other":[0,2]},
+cash:{"Deed":[1,8],"Deed of Trust":[0,20],"Release":[1,3],"Power of Attorney":[0,3],"Other":[0,2]},
+refi:{"Deed":[0,8],"Deed of Trust":[1,20],"Release":[1,3],"Power of Attorney":[0,3],"Other":[0,2]}};
+const ZIP_STATE=z=>{const p=+z.slice(0,3);if(p>=200&&p<=205)return"DC";if(p>=206&&p<=219)return"MD";if(p>=201&&p<=246)return"VA";if(p>=320&&p<=349)return"FL";return null};
+
+// ---------- pure calculation ----------
+function toRows(sheet){const[h,...r]=sheet;return r.map(a=>Object.fromEntries(h.map((k,i)=>[k,a[i]]))).filter(o=>String(o.Active??"Y").trim().toUpperCase()==="Y")}
+function normalize(raw){const o={};for(const k of ["Premium_Tiers","Premium_Rules","Endorsements","Settlement_Fees","Recording_Fees","Transfer_Taxes","Jurisdictions"])o[k]=raw[k]?toRows(raw[k]):[];return o}
+const num=v=>v===""||v==null||isNaN(+v)?null:+v, r2=x=>Math.round(x*100)/100;
+const eq=(a,b)=>String(a||"").trim().toLowerCase()===String(b||"").trim().toLowerCase();
+const cty=(row,c)=>row.County==null||row.County===""||row.County==="*"||eq(row.County,c);
+function applies(a,type){a=String(a||"All").toLowerCase();if(a==="all")return true;if(a==="purchase")return type!=="refi";if(a==="financed")return type!=="cash";if(a==="refinance")return type==="refi";if(a==="cash")return type==="cash";return a.split(/[,/]/).map(s=>s.trim()).includes(type)}
+function tierPremium(R,uw,st,pol,amt){const t=R.Premium_Tiers.filter(x=>eq(x.Underwriter,uw)&&eq(x.State,st)&&eq(x.Policy,pol)).sort((a,b)=>a.From-b.From);if(!t.length)return null;let p=0;for(const x of t){const lo=+x.From,hi=num(x.To)??Infinity;if(amt>lo)p+=(Math.min(amt,hi)-lo)/1000*x.RatePer1000}return p}
+function calc(R,i){
+ const L=[],W=[],add=(sec,item,b,s)=>{b=r2(b||0);s=r2(s||0);if(b||s)L.push({sec,item,b,s})};
+ const type=i.type,fin=type!=="cash",price=type==="refi"?0:+i.price||0,loan=fin?+i.loan||0:0,payoff=type==="refi"?+i.payoff||0:0;
+ const rule=R.Premium_Rules.find(x=>eq(x.Underwriter,i.uw)&&eq(x.State,i.state));
+ let lenderPrem=0,ownerPrem=0;
+ if(!rule)W.push(`No premium rules for ${i.uw} in ${i.state}.`);
+ else{const rnd=num(rule.RoundTo)||1,cov=a=>Math.ceil(a/rnd)*rnd;
+  if(type!=="refi"&&price){let p=tierPremium(R,i.uw,i.state,"Owner",cov(price));if(p==null)W.push(`No owner's premium tiers for ${i.uw}/${i.state}.`);else{
+   if(i.pol==="enhanced")p*=(num(rule.EnhancedPct)??100)/100;if(i.rate==="reissue")p*=(num(rule.ReissuePct)??100)/100;
+   p=Math.max(p,num(rule.MinOwner)||0);ownerPrem=r2(p);add("Title insurance",`Owner's policy (${i.pol==="enhanced"?"Enhanced":"Standard"}${i.rate==="reissue"?", reissue":""}) on ${fmt(price)}`,p,0)}}
+  if(fin&&loan){if(type==="purchase"&&price&&num(rule.SimulLenderFee)!=null){lenderPrem=+rule.SimulLenderFee;add("Title insurance",`Lender's policy (simultaneous issue) on ${fmt(loan)}`,lenderPrem,0)}
+   else{let p=tierPremium(R,i.uw,i.state,"Lender",cov(loan));if(p==null)W.push(`No lender's premium tiers for ${i.uw}/${i.state}.`);else{
+    if(type==="refi")p*=(num(rule.RefinancePct)??100)/100;else if(i.rate==="reissue")p*=(num(rule.ReissuePct)??100)/100;
+    p=Math.max(p,num(rule.MinLender)||0);lenderPrem=r2(p);add("Title insurance",`Lender's policy${type==="refi"?" (refinance rate)":""} on ${fmt(loan)}`,p,0)}}}}
+ for(const e of R.Endorsements){if(!i.ends.includes(e.Code)||!applies(e.Applies,type))continue;const base=eq(e.Policy,"Owner")?ownerPrem:lenderPrem;if(!base&&eq(e.Policy,"Owner"))continue;
+  const amt=eq(e.Method,"PctPremium")?base*e.Amount/100:+e.Amount;add("Title insurance",`${e.Code} ${e.Name} (${e.Policy.toLowerCase()})`,amt,0)}
+ for(const f of i.fees)add("CLA settlement fees",f.name,f.payer==="Seller"?0:f.amt,f.payer==="Seller"?f.amt:0);
+ for(const[d,[n,pg]]of Object.entries(i.docs)){if(!n)continue;const rf=R.Recording_Fees.find(x=>eq(x.State,i.state)&&eq(x.County,i.county)&&eq(x.Document,d))||R.Recording_Fees.find(x=>eq(x.State,i.state)&&cty(x,i.county)&&eq(x.Document,d));
+  if(!rf){W.push(`No recording fee for ${d} in ${i.county}, ${i.state}.`);continue}const amt=n*((+rf.FirstPageFee||0)+Math.max(0,pg-1)*(+rf.AddlPageFee||0));
+  const sell=eq(rf.Payer,"Seller")&&type!=="refi";add("Recording fees",`${d}${n>1?" ×"+n:""} (${pg} pg)`,sell?0:amt,sell?amt:0)}
+ const taxes=R.Transfer_Taxes.filter(t=>eq(t.State,i.state)&&cty(t,i.county)&&applies(t.Applies,type));
+ // county-specific overrides wildcard with same TaxName
+ const chosen=taxes.filter(t=>!(t.County==="*"||!t.County)||!taxes.some(o=>o!==t&&eq(o.TaxName,t.TaxName)&&!(o.County==="*"||!o.County)));
+ if(!taxes.length&&type!=="refi")W.push(`No transfer/recordation taxes found for ${i.county}, ${i.state}.`);
+ for(const t of chosen){const nm=Math.max(0,loan-payoff);let base={price,loan,newmoney:nm,greater:Math.max(price,loan)}[String(t.Base).toLowerCase()]??price;
+  const lo=num(t.BracketMin)??0,hi=num(t.BracketMax)??Infinity;if(base<lo||base>hi||!base)continue;
+  let rate=+t.Rate,payer=t.Payer;if(i.fthb&&type!=="refi"&&num(t.FTHB_Rate)!=null){rate=+t.FTHB_Rate;payer=t.FTHB_Payer||payer}
+  const m=String(t.Method).toLowerCase();const amt=m==="percent"?base*rate/100:m==="per100"?Math.ceil(base/100)*rate:m==="per500"?Math.ceil(base/500)*rate:m==="per1000"?Math.ceil(base/1000)*rate:m==="flat"?rate:0;
+  const p=String(payer).toLowerCase();if(!amt&&!(i.fthb))continue;
+  add("Transfer and recordation taxes",t.TaxName+(i.fthb&&num(t.FTHB_Rate)!=null&&type!=="refi"?" (first-time buyer)":""),p==="seller"&&type!=="refi"?0:p==="both"&&type!=="refi"?amt/2:amt,p==="seller"&&type!=="refi"?amt:p==="both"&&type!=="refi"?amt/2:0)}
+ const B=r2(L.reduce((a,x)=>a+x.b,0)),S=r2(L.reduce((a,x)=>a+x.s,0));return{lines:L,warnings:W,buyer:B,seller:S,total:r2(B+S)}}
+function fmt(x){return"$"+(+x).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}
+if(typeof module!=="undefined")module.exports={SAMPLE,normalize,calc,DOC_DEFAULTS};
+
+// ---------- UI ----------
+if(typeof document!=="undefined"){
+const $=id=>document.getElementById(id);let R=normalize(SAMPLE),isSample=true,type="purchase",last=null;
+function counties(){const st=$("state").value,set=new Set(R.Jurisdictions.filter(j=>eq(j.State,st)).map(j=>j.County));R.Transfer_Taxes.concat(R.Recording_Fees).forEach(x=>{if(eq(x.State,st)&&x.County&&x.County!=="*")set.add(x.County)});
+ const cur=$("county").value;$("county").innerHTML=[...set].map(c=>`<option>${c}</option>`).join("")||"<option>(none)</option>";if([...set].includes(cur))$("county").value=cur}
+function buildEnds(){$("ends").innerHTML=R.Endorsements.filter(e=>applies(e.Applies,type)).map(e=>`<label class="chk"><input type="checkbox" data-code="${e.Code}" ${e.Default==="Y"?"checked":""}>${e.Code} ${e.Name} <span class="sum">(${e.Policy.toLowerCase()}, ${e.Method==="PctPremium"?e.Amount+"% of premium":fmt(e.Amount)})</span></label>`).join("")}
+function buildFees(){$("fees").innerHTML=R.Settlement_Fees.filter(f=>applies(f.Applies,type)).map((f,k)=>`<div class="fee"><input type="checkbox" ${f.Default!=="N"?"checked":""} data-name="${f.Name}" data-payer="${f.Payer}"><span>${f.Name}</span><input type="number" value="${f.Amount}"><span class="tag ${f.Payer==="Seller"?"s":""}">${f.Payer==="Buyer"&&type==="refi"?"Borrower":f.Payer}</span></div>`).join("")}
+function buildDocs(){$("docs").innerHTML=Object.entries(DOC_DEFAULTS[type]).map(([d,[n,p]])=>`<tr data-doc="${d}"><td>${d}</td><td><input type="number" min="0" value="${n}"></td><td><input type="number" min="1" value="${p}"></td></tr>`).join("")}
+function setType(t){type=t;document.querySelectorAll("#tabs button").forEach(b=>b.classList.toggle("on",b.dataset.t===t));
+ $("priceWrap").hidden=t==="refi";$("payoffWrap").hidden=t!=="refi";$("loanWrap").hidden=t==="cash";$("ownWrap").hidden=t==="refi";$("fthbWrap").hidden=t==="refi";
+ $("rate").innerHTML=t==="refi"?'<option value="refi">Refinance rate (auto)</option>':'<option value="basic">Basic</option><option value="reissue">Reissue</option>';
+ if(t==="refi")$("loan").value=360000;buildDocs();buildEnds();buildFees();
+ $("buyerLbl").textContent=$("colB").textContent=t==="refi"?"Borrower":"Buyer";run()}
+function inputs(){return{type,state:$("state").value,county:$("county").value,uw:$("uw").value,price:+$("price").value,loan:+$("loan").value,payoff:+$("payoff").value,pol:$("pol").value,rate:$("rate").value,fthb:$("fthb").checked,
+ ends:[...document.querySelectorAll("#ends input:checked")].map(e=>e.dataset.code),
+ fees:[...document.querySelectorAll("#fees .fee")].filter(d=>d.children[0].checked).map(d=>({name:d.children[0].dataset.name,payer:d.children[0].dataset.payer,amt:+d.children[2].value||0})),
+ docs:Object.fromEntries([...document.querySelectorAll("#docs tr")].map(r=>[r.dataset.doc,[+r.querySelectorAll("input")[0].value||0,+r.querySelectorAll("input")[1].value||1]]))}}
+const TN={purchase:"Purchase (financed)",cash:"Cash purchase",refi:"Refinance"};
+function run(){const i=inputs();const res=calc(R,i);last={i,res};
+ $("summary").innerHTML=`${TN[type]} · ${i.county}, ${i.state} · ${i.uw} ${isSample?'<span class="flag">SAMPLE RATES</span>':""}`;
+ $("tB").textContent=fmt(res.buyer);$("tS").textContent=fmt(res.seller);$("tA").textContent=fmt(res.total);let h="",sec="";
+ for(const l of res.lines){if(l.sec!==sec){sec=l.sec;h+=`<tr class="sec-row"><td colspan="3">${sec}</td></tr>`}h+=`<tr><td>${l.item}</td><td class="num">${l.b?fmt(l.b):""}</td><td class="num">${l.s?fmt(l.s):""}</td></tr>`}
+ h+=`<tr class="sec-row"><td>Total</td><td class="num">${fmt(res.buyer)}</td><td class="num">${fmt(res.seller)}</td></tr>`;$("ledger").innerHTML=h;
+ $("warns").innerHTML=res.warnings.length?`<div class="warn"><b>Warnings</b><ul>${res.warnings.map(w=>`<li>${w}</li>`).join("")}</ul></div>`:""}
+function quote(){const{i,res}=last,b=type==="refi"?"Borrower":"Buyer";let t=`C.L.A. Title & Escrow — Closing Cost Estimate${isSample?" (SAMPLE RATES)":""}\n${$("addr").value||"(no address)"} ${$("city").value} ${i.state} ${$("zip").value}\n${TN[type]} · ${i.county}, ${i.state} · ${i.uw}\n`;
+ t+=type==="refi"?`Loan ${fmt(i.loan)} · Payoff ${fmt(i.payoff)}\n`:`Price ${fmt(i.price)}${type==="purchase"?" · Loan "+fmt(i.loan):""}\n`;let sec="";
+ for(const l of res.lines){if(l.sec!==sec){sec=l.sec;t+=`\n${sec.toUpperCase()}\n`}t+=`  ${l.item}: ${l.b?b+" "+fmt(l.b):""}${l.b&&l.s?" / ":""}${l.s?"Seller "+fmt(l.s):""}\n`}
+ t+=`\n${b} total: ${fmt(res.buyer)}\nSeller total: ${fmt(res.seller)}\nAll parties: ${fmt(res.total)}\n\nEstimate only; not a Loan Estimate or Closing Disclosure.`;return t}
+$("copy").onclick=()=>{const t=quote();(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>$("copied").textContent="Copied!",()=>{prompt("Copy quote:",t)})};
+$("tabs").onclick=e=>{if(e.target.dataset.t)setType(e.target.dataset.t)};
+$("zip").oninput=()=>{const z=$("zip").value;if(z.length>=3){const st=ZIP_STATE(z);if(st){$("state").value=st;counties();const j=R.Jurisdictions.find(j=>eq(j.State,st)&&String(j.ZipPrefixes).split(",").some(p=>z.startsWith(p.trim())));if(j)$("county").value=j.County;run()}}};
+$("city").oninput=()=>{const c=$("city").value.trim().toLowerCase();if(!c)return;const j=R.Jurisdictions.find(j=>eq(j.State,$("state").value)&&(String(j.CityMatch).toLowerCase().split(",").map(s=>s.trim()).includes(c)||eq(j.County,c)));if(j){$("county").value=j.County;run()}};
+$("state").onchange=()=>{counties();run()};document.querySelector("main").addEventListener("input",e=>{if(!["zip","city","state"].includes(e.target.id))run()});document.querySelector("main").addEventListener("change",run);
+function load(raw,name){R=normalize(raw);isSample=!name;$("srcPill").textContent=name||"Sample rates (fictitious)";counties();setType(type)}
+$("btnSample").onclick=()=>{load(SAMPLE,null);$("file").value=""};
+$("file").onchange=async e=>{const f=e.target.files[0];if(!f)return;if(!window.XLSX){alert("SheetJS failed to load");return}
+ const wb=XLSX.read(await f.arrayBuffer());const raw={};wb.SheetNames.forEach(n=>raw[n]=XLSX.utils.sheet_to_json(wb.Sheets[n],{header:1,defval:""}).filter(r=>r.some(c=>c!=="")));
+ const miss=["Premium_Tiers","Premium_Rules","Endorsements","Settlement_Fees","Recording_Fees","Transfer_Taxes","Jurisdictions"].filter(n=>!raw[n]);if(miss.length)alert("Workbook missing tabs: "+miss.join(", "));load(raw,f.name)};
+counties();$("county").value="Montgomery";setType("purchase");}
+</script></body></html>
