@@ -2,6 +2,7 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CLA Closing Cost Calculator — C.L.A. Title &amp; Escrow</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="zip-county.js"></script>
 <style>
 :root{--navy:#1b2f4b;--gold:#b88a2e;--bg:#f4f5f7;--line:#dde1e7;--mut:#6b7380}
 *{box-sizing:border-box}body{margin:0;font:14px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:#1d232b}
@@ -42,9 +43,11 @@ footer{font-size:11px;color:var(--mut);margin-top:14px}
 <section class="card"><h2>Transaction</h2>
 <div class="tabs" id="tabs"><button data-t="purchase" class="on">Purchase (financed)</button><button data-t="cash">Cash purchase</button><button data-t="refi">Refinance</button></div>
 <label>Property address</label><input type="text" id="addr" placeholder="123 Main St">
-<div class="row3"><div><label>City</label><input type="text" id="city"></div><div><label>ZIP</label><input type="text" id="zip" maxlength="5"></div></div>
+<div class="row3"><div><label>City</label><input type="text" id="city"></div><div><label>ZIP</label><input type="text" id="zip" maxlength="5" inputmode="numeric" placeholder="e.g. 20850"></div></div>
+<div class="sum" id="zipMsg"></div>
 <div class="row"><div><label>State</label><select id="state"><option>MD</option><option>DC</option><option>VA</option><option>FL</option></select></div>
 <div><label>County / city</label><select id="county"></select></div></div>
+<div class="sum" id="cntyNote"></div>
 <label>Underwriter</label><select id="uw"><option>Fidelity/Chicago</option><option>Stewart</option></select>
 <div class="row"><div id="priceWrap"><label>Sale price</label><input type="number" id="price" value="450000"></div>
 <div id="payoffWrap" hidden><label>Payoff (existing loan)</label><input type="number" id="payoff" value="300000"></div>
@@ -177,13 +180,24 @@ function calc(R,i){
   add("Transfer and recordation taxes",t.TaxName+(i.fthb&&num(t.FTHB_Rate)!=null&&type!=="refi"?" (first-time buyer)":""),p==="seller"&&type!=="refi"?0:p==="both"&&type!=="refi"?amt/2:amt,p==="seller"&&type!=="refi"?amt:p==="both"&&type!=="refi"?amt/2:0)}
  const B=r2(L.reduce((a,x)=>a+x.b,0)),S=r2(L.reduce((a,x)=>a+x.s,0));return{lines:L,warnings:W,buyer:B,seller:S,total:r2(B+S)}}
 function fmt(x){return"$"+(+x).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}
-if(typeof module!=="undefined")module.exports={SAMPLE,normalize,calc,DOC_DEFAULTS};
+// ---------- county list + ZIP lookup (data: zip-county.js, Census 2020) ----------
+const _C=typeof CLA_COUNTIES!=="undefined"?CLA_COUNTIES:{},_Z=typeof CLA_ZIPS!=="undefined"?CLA_ZIPS:{};
+// Every Census county/independent city for the state, plus any extra names from the rate tables; sorted A-Z.
+function allCounties(R,st){const set=new Set(Object.values(_C).filter(c=>c[0]===st).map(c=>c[1]));const has=n=>[...set].some(x=>eq(x,n));
+ R.Jurisdictions.concat(R.Transfer_Taxes,R.Recording_Fees).forEach(x=>{if(eq(x.State,st)&&x.County&&x.County!=="*"&&!has(x.County))set.add(String(x.County).trim())});return[...set].sort((a,b)=>a.localeCompare(b))}
+// True when the county has no county-specific tax/recording rows (so state-level "*" rows apply). DC is a single jurisdiction.
+function usesDefaults(R,st,co){if(st==="DC")return false;return!R.Transfer_Taxes.concat(R.Recording_Fees).some(x=>eq(x.State,st)&&x.County&&x.County!=="*"&&eq(x.County,co))}
+function zipLookup(z){z=String(z||"").trim();if(!/^\d{5}$/.test(z))return null;let k=z,approx=false;
+ if(!_Z[k]){const c=Object.keys(_Z).filter(x=>x.slice(0,3)===z.slice(0,3));if(!c.length)return null;k=c.reduce((a,b)=>Math.abs(b-z)<Math.abs(a-z)?b:a);approx=true}
+ const f=_Z[k].split(",").map(x=>_C[x]).filter(Boolean);if(!f.length)return null;return{state:f[0][0],county:f[0][1],also:f.slice(1).map(c=>c[1]+(c[0]!==f[0][0]?", "+c[0]:"")),approx,via:k}}
+if(typeof module!=="undefined")module.exports={SAMPLE,normalize,calc,DOC_DEFAULTS,allCounties,usesDefaults,zipLookup};
 
 // ---------- UI ----------
 if(typeof document!=="undefined"){
 const $=id=>document.getElementById(id);let R=normalize(SAMPLE),isSample=true,type="purchase",last=null;
-function counties(){const st=$("state").value,set=new Set(R.Jurisdictions.filter(j=>eq(j.State,st)).map(j=>j.County));R.Transfer_Taxes.concat(R.Recording_Fees).forEach(x=>{if(eq(x.State,st)&&x.County&&x.County!=="*")set.add(x.County)});
- const cur=$("county").value;$("county").innerHTML=[...set].map(c=>`<option>${c}</option>`).join("")||"<option>(none)</option>";if([...set].includes(cur))$("county").value=cur}
+function counties(){const st=$("state").value,list=allCounties(R,st);
+ const cur=$("county").value;$("county").innerHTML=list.map(c=>`<option>${c}</option>`).join("")||"<option>(none)</option>";if(list.includes(cur))$("county").value=cur}
+function setCounty(c){const o=[...$("county").options].find(o=>eq(o.value,c));if(o)$("county").value=o.value}
 function buildEnds(){$("ends").innerHTML=R.Endorsements.filter(e=>applies(e.Applies,type)).map(e=>`<label class="chk"><input type="checkbox" data-code="${e.Code}" ${e.Default==="Y"?"checked":""}>${e.Code} ${e.Name} <span class="sum">(${e.Policy.toLowerCase()}, ${e.Method==="PctPremium"?e.Amount+"% of premium":fmt(e.Amount)})</span></label>`).join("")}
 function buildFees(){$("fees").innerHTML=R.Settlement_Fees.filter(f=>applies(f.Applies,type)).map((f,k)=>`<div class="fee"><input type="checkbox" ${f.Default!=="N"?"checked":""} data-name="${f.Name}" data-payer="${f.Payer}"><span>${f.Name}</span><input type="number" value="${f.Amount}"><span class="tag ${f.Payer==="Seller"?"s":""}">${f.Payer==="Buyer"&&type==="refi"?"Borrower":f.Payer}</span></div>`).join("")}
 function buildDocs(){$("docs").innerHTML=Object.entries(DOC_DEFAULTS[type]).map(([d,[n,p]])=>`<tr data-doc="${d}"><td>${d}</td><td><input type="number" min="0" value="${n}"></td><td><input type="number" min="1" value="${p}"></td></tr>`).join("")}
@@ -197,7 +211,7 @@ function inputs(){return{type,state:$("state").value,county:$("county").value,uw
  fees:[...document.querySelectorAll("#fees .fee")].filter(d=>d.children[0].checked).map(d=>({name:d.children[0].dataset.name,payer:d.children[0].dataset.payer,amt:+d.children[2].value||0})),
  docs:Object.fromEntries([...document.querySelectorAll("#docs tr")].map(r=>[r.dataset.doc,[+r.querySelectorAll("input")[0].value||0,+r.querySelectorAll("input")[1].value||1]]))}}
 const TN={purchase:"Purchase (financed)",cash:"Cash purchase",refi:"Refinance"};
-function run(){const i=inputs();const res=calc(R,i);last={i,res};
+function run(){const i=inputs();$("cntyNote").textContent=usesDefaults(R,i.state,i.county)?"Using state default rates for this county":"";const res=calc(R,i);last={i,res};
  $("summary").innerHTML=`${TN[type]} · ${i.county}, ${i.state} · ${i.uw} ${isSample?'<span class="flag">SAMPLE RATES</span>':""}`;
  $("tB").textContent=fmt(res.buyer);$("tS").textContent=fmt(res.seller);$("tA").textContent=fmt(res.total);let h="",sec="";
  for(const l of res.lines){if(l.sec!==sec){sec=l.sec;h+=`<tr class="sec-row"><td colspan="3">${sec}</td></tr>`}h+=`<tr><td>${l.item}</td><td class="num">${l.b?fmt(l.b):""}</td><td class="num">${l.s?fmt(l.s):""}</td></tr>`}
@@ -209,7 +223,9 @@ function quote(){const{i,res}=last,b=type==="refi"?"Borrower":"Buyer";let t=`C.L
  t+=`\n${b} total: ${fmt(res.buyer)}\nSeller total: ${fmt(res.seller)}\nAll parties: ${fmt(res.total)}\n\nEstimate only; not a Loan Estimate or Closing Disclosure.`;return t}
 $("copy").onclick=()=>{const t=quote();(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>$("copied").textContent="Copied!",()=>{prompt("Copy quote:",t)})};
 $("tabs").onclick=e=>{if(e.target.dataset.t)setType(e.target.dataset.t)};
-$("zip").oninput=()=>{const z=$("zip").value;if(z.length>=3){const st=ZIP_STATE(z);if(st){$("state").value=st;counties();const j=R.Jurisdictions.find(j=>eq(j.State,st)&&String(j.ZipPrefixes).split(",").some(p=>z.startsWith(p.trim())));if(j)$("county").value=j.County;run()}}};
+$("zip").oninput=()=>{const z=$("zip").value.trim(),m=$("zipMsg");if(z.length<5){m.textContent="";return}
+ const r=zipLookup(z);if(!r){m.textContent=/^\d{5}$/.test(z)?"We don't have that ZIP on file (we cover MD, VA, DC and FL) — please pick the state and county below.":"Enter a 5-digit ZIP.";return}
+ $("state").value=r.state;counties();setCounty(r.county);m.textContent=(r.approx?`ZIP not in Census ZIP areas; using nearest (${r.via}) — please confirm county. `:"")+(r.also.length?`This ZIP also covers ${r.also.join(", ")}.`:"");run()};
 $("city").oninput=()=>{const c=$("city").value.trim().toLowerCase();if(!c)return;const j=R.Jurisdictions.find(j=>eq(j.State,$("state").value)&&(String(j.CityMatch).toLowerCase().split(",").map(s=>s.trim()).includes(c)||eq(j.County,c)));if(j){$("county").value=j.County;run()}};
 $("state").onchange=()=>{counties();run()};document.querySelector("main").addEventListener("input",e=>{if(!["zip","city","state"].includes(e.target.id))run()});document.querySelector("main").addEventListener("change",run);
 function load(raw,name){R=normalize(raw);isSample=!name;$("srcPill").textContent=name||"Sample rates (fictitious)";counties();setType(type)}
