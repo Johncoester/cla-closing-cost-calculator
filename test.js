@@ -33,9 +33,69 @@ ok(near(fl.premiums.owner,2075),`FL owner's $400k = ${fl.premiums.owner} (69O-18
 const flT=X.calc(R,inp({state:"FL",county:"Orange",price:400000,loan:320000,pres:"trid",fees:[]}));
 ok(near(line(flT,/Lender's Title/),fl.premiums.lenderFull)&&near(line(flT,/Owner's Title/),2075+25-fl.premiums.lenderFull)&&near(flT.total,fl.total),"TRID: lender full, owner = owner+sim−full, same total");
 ok(near(line(X.calc(R,inp({state:"FL",county:"Miami-Dade",price:400000,fees:[]})),/Doc stamps on deed/),2400)&&near(line(fl,/Doc stamps on deed/),2800),"FL deed stamps 0.70 / Miami-Dade 0.60");
-ok(near(line(fl,/Recording fees – Deed$/),10+7*8.5),"FL recording $10 + $8.50/page");
+ok(near(line(fl,/Recording fees – Deed$/),10+2*8.5),"FL recording $10 + $8.50/page (3-page deed default)");
 // MD/VA/DC premiums are placeholders → warning, no invented numbers
 ok(X.calc(R,inp({})).warnings.some(w=>/premium rates for MD/.test(w)),"MD premium placeholder warning");
+// ---------- Lodestar regression (CLA quotes on clatitle.com, Rounded on; deed 3 pages, DOT 30 pages) ----------
+// Each quote uses the default-on CLA fees and endorsements, exactly as the page loads them. ±$1 for Lodestar rounding.
+const dflt=(st,type)=>X.claFees(R,st,type).filter(f=>f["Default On"]!=="N").map(f=>({name:f["Fee Name"],payer:f["Paid By"],tx:f.Transaction,sec:f["LE Section"],amt:+f.Amount}));
+const dEnds=(st,type)=>R.Endorsements.filter(e=>e.State===st&&e["Default On"]==="Y"&&(String(e.Transaction)==="Both"||(type==="refi"?/^refi/i.test(e.Transaction):e.Transaction==="Purchase"))&&!(type==="cash"&&e["Applies To"]==="Lender")).map(e=>e.Code);
+const Q=o=>{const type=o.type||"purchase";return X.calc(R,inp(Object.assign({fees:dflt(o.state,type),ends:dEnds(o.state,type)},o)))};
+const bs=(r,re,col)=>r.lines.filter(l=>re.test(l.item)).reduce((a,l)=>a+l[col],0);
+const expect=(name,r,rows)=>{for(const[re,col,v,t=1]of rows){const got=bs(r,re,col);ok(near(got,v,t),`${name}: ${re.source} ${col==="b"?"buyer":"seller"} ${got} ≈ Lodestar ${v}`)}};
+const absent=(name,r,re)=>ok(!r.lines.some(l=>re.test(l.item)),`${name}: no ${re.source} line`);
+const CLA_SELLER=[[/Doc Preparation/,"s",205],[/Notary/,"s",150],[/Qualia/,"s",59],[/Settlement Fee/,"s",670],[/Title Review/,"s",75]];
+const CLA_BUYER=(cpl)=>[[/CPL \(Lender\)/,"b",cpl],[/Notary/,"b",200],[/Qualia/,"b",59],[/Settlement Fee/,"b",1075],[/Title Review/,"b",75],[/Title Search/,"b",300]];
+// Q1 MD Montgomery purchase $450k/$360k owner-occupied
+const q1=Q({state:"MD",county:"Montgomery",price:450000,loan:360000});
+expect("Q1",q1,[...CLA_BUYER(50),[/Recording fees – Deed$/,"b",60],[/Recording fees – Deed of Trust/,"b",60],[/State transfer/,"b",1125],[/County transfer/,"b",2250],[/County recordation/,"b",1558],...CLA_SELLER]);
+ok(q1.warnings.some(w=>/owner's premium rates for MD/.test(w))&&q1.premiums.lenderFull==null,"Q1: MD Fidelity premiums not loaded (Lodestar lender's 1,232 / owner's H 1,775 kept as data points)");
+// Q3 MD Montgomery refi $360k loan, $300k payoff
+const q3=Q({type:"refi",state:"MD",county:"Montgomery",loan:360000,payoff:300000});
+expect("Q3",q3,[[/CPL/,"b",50],[/E-recording/,"b",10],[/Notary/,"b",150],[/Processing Fee/,"b",450],[/Qualia/,"b",59],[/Settlement Fee/,"b",450],[/Shipping/,"b",35],[/Tax Cert/,"b",10],[/Title Review/,"b",150],[/Title Search/,"b",150],[/Recording fees/,"b",110],[/County recordation/,"b",534]]);
+ok(q3.seller===0&&!q3.lines.some(l=>/Doc Preparation/.test(l.item)),"Q3: refi bills no seller rows");
+ok(near(bs(q3,/E-recording/,"b"),4.75*2),"Q3: e-recording = $4.75 × 2 recorded docs");
+// Q4 DC purchase $450k/$360k
+const q4=Q({state:"DC",county:"District of Columbia",price:450000,loan:360000});
+expect("Q4",q4,[...CLA_BUYER(50),[/Lender's Title/,"b",1554],[/Recording fees – Deed$/,"b",30],[/Recording fees – Deed of Trust/,"b",155],[/Deed recordation/,"b",6525],...CLA_SELLER,[/Deed transfer/,"s",6525]]);
+ok(q4.lines.filter(l=>/Qualia/.test(l.item)&&l.b>0).length===1&&q4.lines.filter(l=>/Qualia/.test(l.item)&&l.s>0).length===1,"Q4: DC Qualia charged once to buyer, once to seller");
+const q4r=Q({type:"refi",state:"DC",county:"District of Columbia",loan:360000,payoff:300000});ok(q4r.lines.filter(l=>/Qualia/.test(l.item)).length===1&&near(bs(q4r,/Qualia/,"b"),59),"DC refi: Qualia once to borrower");
+// Q5 MD Frederick purchase $500k/$400k
+const q5=Q({state:"MD",county:"Frederick",price:500000,loan:400000});
+expect("Q5",q5,[...CLA_BUYER(50),[/Recording fees – Deed$/,"b",81],[/Recording fees – Deed of Trust/,"b",60],[/County recordation/,"b",3500],[/State transfer/,"b",1250],[/County recordation/,"s",3500],[/State transfer/,"s",1250],...CLA_SELLER]);
+absent("Q5",q5,/County transfer/);
+// Q6 VA Fairfax purchase $500k/$400k
+const q6=Q({state:"VA",county:"Fairfax",price:500000,loan:400000});
+expect("Q6",q6,[...CLA_BUYER(35),[/Recording fees – Deed$/,"b",55],[/Recording fees – Deed of Trust/,"b",68],[/State grantee/,"b",1250],[/Local grantee/,"b",417],[/State recordation tax \(deed of trust\)/,"b",1000],[/Local recordation tax \(deed of trust\)/,"b",333],[/Grantor tax/,"s",500],[/congestion|WMATA/,"s",1000],...CLA_SELLER]);
+// Q7 FL Orange purchase $400k/$320k
+const q7=Q({state:"FL",county:"Orange",price:400000,loan:320000});
+expect("Q7",q7,[[/ALTA 8\.1/,"b",25],[/Lender's Title/,"b",1675],[/Notary/,"b",200],[/Qualia/,"b",59],[/Settlement Fee/,"b",1100],[/Title Search/,"b",200],[/Recording fees – Deed$/,"b",27],[/Recording fees – Deed of Trust/,"b",257],[/Doc stamps on note/,"b",1120],[/Intangible/,"b",640],[/Doc stamps on deed/,"s",2800],[/Notary/,"s",200],[/Qualia/,"s",59],[/Settlement Fee/,"s",950]]);
+absent("Q7",q7,/CPL/);absent("Q7",q7,/Title Review/);
+ok(near(bs(q7,/ALTA 9/,"b"),210),"Q7: FL Form 9 = 10% × (owner's 2,075 + simultaneous 25) = 210 per 69O-186.005(9) (Lodestar 289 uses its 2,490 + 400)");
+ok(near(q7.premiums.owner,2075)&&near(q7.premiums.lenderActual,25),"Q7: FL promulgated owner's 2,075 / simultaneous 25 (Lodestar 2,490 / 400 not copied)");
+const q7b=Q({state:"FL",county:"Orange",price:400000,loan:320000,buyerPaysSellerTax:true});ok(near(bs(q7b,/Doc stamps on deed/,"b"),2800)&&bs(q7b,/Doc stamps on deed/,"s")===0,"Q7: 'buyer pays seller's deed tax' toggle moves FL deed stamps to buyer (Lodestar default)");
+// cash deals: no lender-only charges
+for(const[st,co]of[["MD","Montgomery"],["VA","Fairfax"],["DC","District of Columbia"],["FL","Orange"]]){const c=Q({type:"cash",state:st,county:co,price:450000,loan:0});
+ ok(!c.lines.some(l=>/CPL|Lender's Title|Deed of Trust|ALTA (8\.1|9)/.test(l.item)),`cash ${st}: no CPL, lender's policy, lender endorsements or DOT recording`)}
+// refi: a Seller-paid row is never billed to the borrower
+ok(X.calc(R,inp({type:"refi",fees:[{name:"Doc Preparation Fee",payer:"Seller",amt:205},{name:"Notary",payer:"Borrower",amt:150}]})).lines.every(l=>!/Doc Preparation/.test(l.item)),"refi skips Seller-paid fee rows");
+ok(X.claFees(R,"MD","refi").every(f=>f["Paid By"]!=="Seller")&&X.claFees(R,"MD","cash").every(f=>!X.lenderOnly(f)),"fee lists: no seller rows on refi, no lender-only rows on cash");
+// Processing fee re-added on refis in every state
+for(const st of["MD","VA","DC","FL"])ok(X.claFees(R,st,"refi").some(f=>/Processing Fee/.test(f["Fee Name"])&&+f.Amount===450),`${st} refi processing fee $450`);
+// no blank LE Section / Default On
+ok(R.CLA_Fees.every(f=>String(f["LE Section"]).trim()&&/^[YN]$/.test(String(f["Default On"]).trim())),"CLA_Fees: every active row has LE Section and Default On");
+// Lodestar Fidelity premium data points (MD/VA/DC). No public FNTIC MD/VA rate manual and no DC owner's schedule were found,
+// so those tiers stay Active=N; DC loan tiers come from DC DISB's published Fidelity National rates. When a schedule is loaded,
+// these assertions switch from "not loaded → warning" to "must match Lodestar ±$1".
+const LP=[{q:"Q1",state:"MD",county:"Montgomery",price:450000,loan:360000,lenderFull:1232,ownerH:1775},
+ {q:"Q3",type:"refi",state:"MD",county:"Montgomery",loan:360000,payoff:300000,lenderFull:758},
+ {q:"Q4",state:"DC",county:"District of Columbia",price:450000,loan:360000,lenderFull:1554,ownerH:1530},
+ {q:"Q5",state:"MD",county:"Frederick",price:500000,loan:400000,lenderFull:1360,ownerFull:3009,sim:275,ownerH:1924},
+ {q:"Q6",state:"VA",county:"Fairfax",price:500000,loan:400000,lenderFull:1247,ownerFull:2517,sim:200,ownerH:1470}];
+for(const d of LP){const r=Q(d),P=r.premiums;
+ ok(P.lenderFull==null?r.warnings.some(w=>/lender's premium/.test(w)):near(P.lenderFull,d.lenderFull,1),`${d.q} ${d.state} lender's: ${P.lenderFull??"not loaded"} (Lodestar ${d.lenderFull})`);
+ if(d.ownerH)ok(P.owner==null?r.warnings.some(w=>/owner's premium/.test(w)):near(bs(r,/Owner's Title/,"b")+bs(r,/Owner's Title/,"s"),d.ownerH,1),`${d.q} ${d.state} owner's (H): ${P.owner==null?"not loaded":bs(r,/Owner's Title/,"b")+bs(r,/Owner's Title/,"s")} (Lodestar ${d.ownerH})`);
+ if(d.ownerFull)ok(P.owner==null||near(P.owner,d.ownerFull,1),`${d.q} full owner's ${P.owner??"not loaded"} (Lodestar ${d.ownerFull}, simultaneous ${d.sim})`)}
 // every county × transaction calculates
 let bad=0,cnt=0;for(const s of["MD","VA","DC","FL"])for(const co of X.allCounties(R,s))for(const type of["purchase","cash","refi"]){cnt++;try{const r=X.calc(R,inp({type,state:s,county:co}));
  if(!(r.total>0)||r.warnings.some(w=>/No (recording|transfer)/.test(w))||!r.lines.every(l=>isFinite(l.b)&&isFinite(l.s)))throw Error(r.warnings.join(";"))}catch(e){bad++;console.error("calc fail",s,co,type,e.message)}}
