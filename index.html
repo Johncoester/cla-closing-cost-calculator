@@ -1,77 +1,219 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CLA Closing Cost Calculator — C.L.A. Title &amp; Escrow</title>
+<title>Closing Cost Estimator — C.L.A. Title &amp; Escrow</title>
+<meta name="theme-color" content="#000000">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="zip-county.js?v=20261023d"></script>
-<script src="fee-snapshot.js?v=20261023d"></script>
+<script src="zip-county.js?v=20261024a"></script>
+<script src="fee-snapshot.js?v=20261024a"></script>
 <style>
-:root{--navy:#1b2f4b;--gold:#b88a2e;--bg:#f4f5f7;--line:#dde1e7;--mut:#6b7380}
-*{box-sizing:border-box}body{margin:0;font:14px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:#1d232b}
-header{background:var(--navy);color:#fff;padding:14px 20px;display:flex;flex-wrap:wrap;gap:12px;align-items:center}
-header h1{font-size:18px;margin:0}header .brand{color:#e6c77d;font-size:12px;letter-spacing:.08em;text-transform:uppercase}
-.pill{background:#ffffff22;border:1px solid #ffffff44;border-radius:20px;padding:3px 10px;font-size:12px}
-.sp{flex:1}button,.btn{background:var(--gold);color:#fff;border:0;border-radius:6px;padding:7px 12px;font-weight:600;cursor:pointer;font-size:13px}
-button.sec{background:#fff;color:var(--navy);border:1px solid var(--line)}
-.note{font-size:11px;color:#c9d2df;width:100%}
-main{display:grid;grid-template-columns:minmax(320px,440px) 1fr;gap:16px;padding:16px;max-width:1200px;margin:auto}
-@media(max-width:820px){main{grid-template-columns:1fr}}
-.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px}
-h2{font-size:15px;margin:0 0 12px;color:var(--navy)}h3{font-size:13px;margin:16px 0 8px;color:var(--navy);text-transform:uppercase;letter-spacing:.04em}
-.tabs{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:12px}
-.tabs button{flex:1;background:#fff;color:var(--navy);border-radius:0;font-weight:500}.tabs button.on{background:var(--navy);color:#fff}
-label{display:block;font-size:12px;color:var(--mut);margin:8px 0 3px}
-input[type=text],input[type=number],select{width:100%;padding:7px 8px;border:1px solid var(--line);border-radius:6px;font-size:14px}
-.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.row3{display:grid;grid-template-columns:2fr 1fr;gap:8px}
-.chk{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px;color:#1d232b}
-.fee{display:grid;grid-template-columns:20px 1fr 90px 54px;gap:6px;align-items:center;margin:4px 0;font-size:13px}
-.fee input[type=number]{padding:4px 6px}.tag{font-size:10px;padding:2px 6px;border-radius:10px;text-align:center;background:#e8eef7;color:var(--navy)}.tag.s{background:#f6ecd9;color:#7a5a17}
-table{width:100%;border-collapse:collapse}td,th{padding:5px 6px;border-bottom:1px solid var(--line);font-size:13px}th{text-align:left;color:var(--mut);font-weight:500}
-.num{text-align:right;font-variant-numeric:tabular-nums}.docs input{width:60px}
-details summary{cursor:pointer;font-weight:600;color:var(--navy);margin-top:14px}
-.totals{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}
-.tot{border:1px solid var(--line);border-radius:8px;padding:10px;text-align:center}.tot b{display:block;font-size:20px;color:var(--navy)}.tot.all{background:var(--navy);color:#fff}.tot.all b{color:#e6c77d}
-.sec-row td{background:#f0f2f6;font-weight:600;color:var(--navy)}.sum{color:var(--mut);font-size:13px}
-.flag{background:#fde8c8;color:#8a5a00;border-radius:4px;padding:1px 6px;font-size:11px;font-weight:700}
-.warn{background:#fff6e5;border:1px solid #f0d49b;border-radius:6px;padding:8px 12px;margin-top:12px;font-size:13px}.warn ul{margin:4px 0;padding-left:18px}
-footer{font-size:11px;color:var(--mut);margin-top:14px}
+:root{--g:#8dc63f;--gd:#6fa52a;--gdd:#4d7a17;--ink:#111;--mut:#5b6272;--line:#e3e8da;--bg:#f4f7ef;--field:#d5dbca}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 Inter,-apple-system,"Segoe UI",system-ui,Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto;padding-left:24px;padding-right:24px}
+/* header */
+header{background:#000;color:#fff;border-bottom:4px solid var(--g)}
+.hwrap{display:flex;align-items:center;gap:14px;padding-top:16px;padding-bottom:16px;flex-wrap:wrap}
+.logo{width:38px;height:38px;border-radius:10px;background:var(--g);color:#000;display:grid;place-items:center;font-weight:800;font-size:14px;flex:none}
+.ht{margin:0;font-size:18px;font-weight:700;letter-spacing:-.01em;line-height:1.25}.ht span{color:var(--g)}
+.hr{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.pill{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:#d9d9d9;white-space:nowrap}
+.pill::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--g);flex:none}
+.statusbar{background:#e9f3d8;border-bottom:1px solid #d6e5bb;color:#26370c;font-size:13px}
+.statusbar .wrap{padding-top:8px;padding-bottom:8px}
+.statuswarn{color:#7a4300}
+/* buttons */
+button{font:inherit}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:var(--g);color:#000;border:1.5px solid var(--g);border-radius:12px;padding:11px 18px;font-weight:700;font-size:14px;line-height:1.2;cursor:pointer;margin:0;text-align:center}
+.btn:hover{background:#9bd34b}
+.btn.o,.btn.sec{background:#fff;color:#111;border-color:#c5ccb8}.btn.o:hover,.btn.sec:hover{background:#f3f6ec}
+header .btn.sec{background:transparent;color:#fff;border-color:#555;padding:8px 14px;font-size:13px;border-radius:10px}
+header .btn.sec:hover{background:#1c1c1c;border-color:#888}
+.vh{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+:focus-visible{outline:3px solid var(--gdd);outline-offset:2px}
+header :focus-visible,.hero :focus-visible{outline-color:var(--g)}
+label.btn:focus-within{outline:3px solid var(--g);outline-offset:2px}
+/* layout */
+main{max-width:1180px;margin:0 auto;padding:28px 24px 8px;display:grid;grid-template-columns:minmax(0,400px) minmax(0,1fr);gap:24px;align-items:start}
+.col{display:flex;flex-direction:column;gap:24px;min-width:0}
+.card{background:#fff;border-radius:18px;box-shadow:0 1px 2px rgba(16,24,8,.05),0 8px 24px rgba(16,24,8,.07);padding:24px}
+h2{margin:0 0 18px;font-size:17px;letter-spacing:-.01em;color:var(--ink)}
+h3{font-size:12px;margin:22px 0 10px;color:var(--mut);text-transform:uppercase;letter-spacing:.08em;font-weight:700}
+label{display:block;font-size:12px;font-weight:600;color:#3a3f36;margin:0 0 6px}
+.fgrp{margin-bottom:16px;min-width:0}
+.row,.row3{display:grid;gap:12px;margin-bottom:16px}.row{grid-template-columns:1fr 1fr}.row3{grid-template-columns:1fr 1fr}.row.one{grid-template-columns:minmax(0,1fr)}
+.row>div,.row3>div{min-width:0}
+.row>[hidden]+div:last-child{grid-column:auto}
+input[type=text],input[type=number],select{width:100%;min-height:44px;padding:10px 13px;border:1.5px solid var(--field);border-radius:11px;font:inherit;font-size:15px;color:var(--ink);background:#fff}
+input::placeholder{color:#8a9080}
+input:focus,select:focus{outline:2px solid transparent;border-color:var(--gdd);box-shadow:0 0 0 4px rgba(141,198,63,.35)}
+select{appearance:none;-webkit-appearance:none;padding-right:34px;text-overflow:ellipsis;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23555' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 13px center}
+.money{position:relative}.money::before{content:"$";position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--mut);font-size:15px;pointer-events:none}
+.money input{padding-left:26px}
+.sum{color:var(--mut);font-size:13px}
+.hint{margin:-8px 0 16px;min-height:0}.hint:empty{display:none}
+/* segmented control */
+.seg{display:grid;grid-template-columns:repeat(3,1fr);background:#eef1e8;border-radius:12px;padding:4px;margin-bottom:20px;gap:2px}
+.seg button{background:transparent;border:0;border-radius:9px;color:#444;font-weight:600;font-size:14px;padding:10px 4px;cursor:pointer;min-height:42px}
+.seg button:hover{color:#000}
+.seg button.on{background:#fff;color:#000;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+.seg button.on::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--g);margin-right:7px}
+/* checkboxes */
+input[type=checkbox]{width:18px;height:18px;margin:0;accent-color:var(--gd);flex:none}
+.chk{position:relative;display:block;padding-left:30px;margin:0 0 10px;font-size:13.5px;font-weight:400;color:#2c3128;cursor:pointer}
+.chk>input[type=checkbox]{position:absolute;left:0;top:1px}
+.chk .sum{font-size:12.5px}
+#ends .chk{padding:8px 0 8px 30px;margin:0;border-bottom:1px solid #f0f2ea}#ends .chk>input{top:9px}
+/* fees */
+.fee{display:grid;grid-template-columns:20px minmax(0,1fr) 96px 64px;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid #f0f2ea;font-size:13px}
+.fee input[type=number]{min-height:38px;padding:6px 10px;font-size:14px;text-align:right}
+.tag{font-size:11px;font-weight:700;padding:3px 0;border-radius:99px;text-align:center;background:#e4f2cc;color:#35560b;letter-spacing:.02em}
+.tag.s{background:#ffefd0;color:#7a4300}
+details{margin-top:6px}
+details summary{cursor:pointer;font-weight:700;font-size:13px;color:var(--ink);padding:8px 0}
+details summary::marker{color:var(--gd)}
+.docs{width:100%;border-collapse:collapse}.docs td,.docs th{padding:6px 8px 6px 0;border:0;font-size:13px;text-align:left}
+.docs th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);font-weight:600}
+.docs input{width:76px;min-height:38px;padding:6px 10px;text-align:right}
+/* hero */
+.hero{background:#000;color:#fff;border-radius:18px;padding:28px;position:relative;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.25)}
+.hero::after{content:"";position:absolute;right:-60px;top:-60px;width:220px;height:220px;border-radius:50%;background:radial-gradient(circle,rgba(141,198,63,.4),transparent 70%);pointer-events:none}
+.hero>*{position:relative;z-index:1}
+.hero small{display:block;color:#b4bda6;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+.big{font-size:clamp(38px,6vw,56px);font-weight:800;letter-spacing:-.03em;color:var(--g);line-height:1.08;margin:6px 0 6px;overflow-wrap:anywhere}
+.hero .sum{color:#cfd4c6;font-size:14px;margin:0}
+.flag{display:inline-block;background:var(--g);color:#000;border-radius:99px;padding:2px 9px;font-size:11px;font-weight:800;letter-spacing:.04em;vertical-align:middle;margin-left:4px}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:22px}
+.tile{border:1px solid #2e2e2e;background:#161616;border-radius:14px;padding:14px 16px;min-width:0}
+.tile small{text-transform:none;letter-spacing:.02em;font-size:12.5px;color:#aab39c}
+.tile b{display:block;font-size:clamp(19px,3.2vw,26px);letter-spacing:-.02em;margin-top:2px;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+/* warnings */
+.warn{display:flex;gap:12px;background:#fff8e3;border:1px solid #efdc9a;border-radius:14px;padding:14px 16px;font-size:13.5px;color:#5b4a0b}
+.warn::before{content:"!";flex:none;width:24px;height:24px;border-radius:50%;background:#f3c53b;color:#3d2f00;font-weight:800;display:grid;place-items:center;font-size:14px}
+.warn>div{min-width:0}.warn b{display:block;margin-bottom:2px;color:#3d2f00}.warn ul{margin:2px 0 0;padding-left:18px}.warn li{margin:3px 0}
+/* ledger */
+#ledger{display:flex;flex-direction:column;gap:24px}
+.card.sec{padding:0;overflow:hidden}
+.sh{display:flex;align-items:center;gap:12px;padding:16px 24px;background:#fafcf6;border-bottom:1px solid var(--line)}
+.sh .l{width:30px;height:30px;border-radius:9px;background:var(--g);display:grid;place-items:center;font-weight:800;font-size:14px;flex:none}
+.sh h3{margin:0;font-size:15px;color:var(--ink);text-transform:none;letter-spacing:-.005em;line-height:1.25}
+table{width:100%;border-collapse:collapse;font-size:14px}
+.ledger{table-layout:fixed}
+.ledger th{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut);padding:10px 24px 6px;font-weight:600;text-align:left}
+.ledger td{padding:11px 24px;border-top:1px solid #f0f2ea;vertical-align:top}
+.ledger th.num,.ledger td.num{text-align:right;width:124px;white-space:nowrap}
+.ledger td.num{font-variant-numeric:tabular-nums}
+.ledger th.num::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;background:var(--g)}
+.ledger th.num.s::before{background:#f0b13a}
+.ledger tr.tot td{font-weight:700;background:#f4f9ea;border-top:1px solid var(--line)}
+.ledger td.z{color:#b4baa9}
+.grand{border:0}.grand .ledger tr.tot td{background:#eaf5d3;font-size:15px}
+.foot{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.foot .btn{flex:1 1 180px;padding:14px}
+#copied{flex:0 0 100%;margin:-4px 0 0}#copied:empty{display:none}
+.disc{max-width:1180px;margin:0 auto;padding:16px 24px 48px;font-size:12px;color:var(--mut)}
+.disc p{margin:0;max-width:760px}
+/* tablet / phone */
+@media(max-width:900px){
+ .wrap{padding-left:16px;padding-right:16px}
+ main{grid-template-columns:minmax(0,1fr);padding:16px 14px 8px;gap:18px}
+ .col.in{display:contents}.c1{order:1}.col.out{order:2}.c2{order:3}
+ .col{gap:18px}#ledger{gap:18px}
+ .disc{padding:12px 16px 40px}
+}
+@media(max-width:600px){
+ .hwrap{padding-top:12px;padding-bottom:12px;gap:10px}
+ .logo{width:34px;height:34px}.ht{font-size:15px;flex:1;min-width:0}
+ .hr{margin-left:0;width:100%;gap:8px}.hr .pill{flex:1 0 100%;order:-1}
+ .card{padding:18px;border-radius:16px}
+ .hero{padding:22px 20px;border-radius:16px}
+ .tiles{gap:10px}.tile{padding:12px 14px}
+ .sh{padding:14px 16px}
+ .ledger th,.ledger td{padding-left:16px;padding-right:12px}.ledger th.num,.ledger td.num{width:96px}
+ .ledger td{font-size:13px}.ledger th:first-child,.ledger td:first-child{padding-right:6px}
+ input[type=text],input[type=number],select{font-size:16px}
+ .fee{grid-template-columns:20px minmax(0,1fr) 84px 58px;gap:8px}
+ .foot{flex-direction:column;align-items:stretch}.foot .btn{flex:none}
+ .seg button{font-size:13px}.seg button.on::before{margin-right:5px}
+}
+@media(max-width:360px){.row{grid-template-columns:1fr}.row3{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:no-preference){.btn,.seg button{transition:background .15s,box-shadow .15s}}
+/* print */
+@media print{
+ @page{margin:14mm}
+ body{background:#fff;font-size:11pt;color:#000}
+ header{background:#fff!important;color:#000;border-bottom:3px solid #8dc63f}
+ header .hr,.statusbar,.col.in,.foot,.btn,.seg{display:none!important}
+ .logo{background:#fff;border:2px solid #8dc63f}
+ .ht,.ht span{color:#000}
+ main{display:block;padding:12px 0 0;max-width:none}
+ .col.out{display:block}.col{gap:0}
+ .card,.hero{box-shadow:none;border:1px solid #bbb;border-radius:8px;break-inside:avoid;margin-bottom:12px}
+ .hero{background:#fff;color:#000;border:2px solid #000}.hero::after{display:none}
+ .hero small,.hero .sum,.tile small{color:#333}.big{color:#000}.tile{background:#fff;border:1px solid #999}.tile b{color:#000}
+ .flag{background:#fff;color:#000;border:1px solid #000}
+ .warn{background:#fff;border:1px solid #888;color:#000;break-inside:avoid;margin-bottom:12px}.warn::before{border:1px solid #000;background:#fff;color:#000}
+ #ledger{display:block}
+ .sh{background:#fff;border-bottom:1px solid #999}.sh .l{background:#fff;border:1.5px solid #000}
+ .ledger td,.ledger th{padding:5px 8px;font-size:10.5pt}.ledger td{border-top:1px solid #ccc}
+ .ledger tr.tot td,.grand .ledger tr.tot td{background:#fff;border-top:2px solid #000}
+ .ledger th.num::before{display:none}
+ tr{break-inside:avoid}
+ .disc{padding:8px 0;color:#333}
+}
 </style></head><body>
-<header><div><div class="brand">C.L.A. Title &amp; Escrow</div><h1>Closing Cost Calculator</h1></div>
-<span class="pill" id="srcPill">Loading fees…</span><span class="sp"></span>
-<button class="sec" id="btnReload">Reload team sheet</button>
-<label class="btn" style="margin:0;color:#fff;font-size:13px">Load .xlsx<input type="file" id="file" accept=".xlsx,.xls" hidden></label>
-<div class="note" id="status">Fees load from the CLA team Google Sheet on every page load.</div></header>
+<header><div class="wrap hwrap">
+<div class="logo" aria-hidden="true">CLA</div>
+<h1 class="ht">C.L.A. Title &amp; Escrow <span>—</span> Closing Cost Estimator</h1>
+<div class="hr"><span class="pill" id="srcPill">Loading fees…</span>
+<button class="btn sec" id="btnReload" type="button">Reload team sheet</button>
+<label class="btn sec" for="file">Load .xlsx<input type="file" id="file" accept=".xlsx,.xls" class="vh"></label></div>
+</div></header>
+<div class="statusbar"><div class="wrap"><span id="status" role="status">Fees load from the CLA team Google Sheet on every page load.</span></div></div>
 <main>
-<section class="card"><h2>Transaction</h2>
-<div class="tabs" id="tabs"><button data-t="purchase" class="on">Purchase (financed)</button><button data-t="cash">Cash purchase</button><button data-t="refi">Refinance</button></div>
-<label>Property address</label><input type="text" id="addr" placeholder="123 Main St">
-<div class="row3"><div><label>City</label><input type="text" id="city"></div><div><label>ZIP</label><input type="text" id="zip" maxlength="5" inputmode="numeric" placeholder="e.g. 20850"></div></div>
-<div class="sum" id="zipMsg"></div>
-<div class="row"><div><label>State</label><select id="state"><option>MD</option><option>DC</option><option>VA</option><option>FL</option></select></div>
-<div><label>County / city</label><select id="county"></select></div></div>
-<div class="sum" id="cntyNote"></div>
-<label>Underwriter</label><select id="uw"></select>
-<div class="row"><div id="priceWrap"><label>Sale price</label><input type="number" id="price" value="450000"></div>
-<div id="payoffWrap" hidden><label>Payoff (existing loan)</label><input type="number" id="payoff" value="300000"></div>
-<div id="loanWrap"><label>Loan amount</label><input type="number" id="loan" value="360000"></div></div>
-<div class="row"><div id="ownWrap"><label>Owner's policy</label><select id="pol"><option value="enhanced">Enhanced / Homeowner's</option><option value="standard">Standard</option></select></div>
-<div><label>Rate</label><select id="rate"><option value="basic">Basic</option><option value="reissue">Reissue (prior policy)</option></select></div></div>
-<div class="row"><div id="ownPayWrap"><label>Owner's policy paid by</label><select id="ownPay"><option value="">Local custom</option><option>Buyer</option><option>Seller</option></select></div>
-<div><label>Fee presentation</label><select id="pres"><option value="trid">Loan Estimate / CD (TRID)</option><option value="actual">Actual premium split</option></select></div></div>
-<div id="fthbWrap" class="chk"><input type="checkbox" id="fthb"><span>First-time homebuyer</span></div>
-<div id="occWrap" class="chk"><input type="checkbox" id="occ" checked><span>Owner-occupied principal residence</span></div>
-<div id="bpstWrap" class="chk"><input type="checkbox" id="bpst"><span>Buyer pays seller's transfer / deed tax (contract term; e.g. FL deed stamps)</span></div>
+<div class="col in">
+<section class="card c1"><h2>Your transaction</h2>
+<div class="seg" id="tabs" role="group" aria-label="Transaction type"><button type="button" data-t="purchase" class="on" aria-pressed="true">Purchase</button><button type="button" data-t="cash" aria-pressed="false">Cash</button><button type="button" data-t="refi" aria-pressed="false">Refinance</button></div>
+<div class="fgrp"><label for="addr">Property address</label><input type="text" id="addr" placeholder="123 Main St" autocomplete="street-address"></div>
+<div class="row3"><div><label for="city">City</label><input type="text" id="city" autocomplete="address-level2"></div><div><label for="zip">ZIP</label><input type="text" id="zip" maxlength="5" inputmode="numeric" placeholder="e.g. 20850" autocomplete="postal-code"></div></div>
+<div class="sum hint" id="zipMsg"></div>
+<div class="row"><div><label for="state">State</label><select id="state"><option>MD</option><option>DC</option><option>VA</option><option>FL</option></select></div>
+<div><label for="county">County / city</label><select id="county"></select></div></div>
+<div class="sum hint" id="cntyNote"></div>
+<div class="fgrp"><label for="uw">Underwriter</label><select id="uw"></select></div>
+<div class="row"><div id="priceWrap"><label for="price">Sale price</label><div class="money"><input type="number" id="price" value="450000" inputmode="decimal"></div></div>
+<div id="payoffWrap" hidden><label for="payoff">Payoff (existing loan)</label><div class="money"><input type="number" id="payoff" value="300000" inputmode="decimal"></div></div>
+<div id="loanWrap"><label for="loan">Loan amount</label><div class="money"><input type="number" id="loan" value="360000" inputmode="decimal"></div></div></div>
+<div class="row one"><div id="ownWrap"><label for="pol">Owner's policy</label><select id="pol"><option value="enhanced">Enhanced / Homeowner's</option><option value="standard">Standard</option></select></div>
+<div><label for="rate">Rate</label><select id="rate"><option value="basic">Basic</option><option value="reissue">Reissue (prior policy)</option></select></div></div>
+<div class="row one"><div id="ownPayWrap"><label for="ownPay">Owner's policy paid by</label><select id="ownPay"><option value="">Local custom</option><option>Buyer</option><option>Seller</option></select></div>
+<div><label for="pres">Fee presentation</label><select id="pres"><option value="trid">Loan Estimate / CD (TRID)</option><option value="actual">Actual premium split</option></select></div></div>
+<label id="fthbWrap" class="chk"><input type="checkbox" id="fthb"><span>First-time homebuyer</span></label>
+<label id="occWrap" class="chk"><input type="checkbox" id="occ" checked><span>Owner-occupied principal residence</span></label>
+<label id="bpstWrap" class="chk"><input type="checkbox" id="bpst"><span>Buyer pays seller's transfer / deed tax <span class="sum">(contract term; e.g. FL deed stamps)</span></span></label>
+</section>
+<section class="card c2"><h2>Fees &amp; options</h2>
 <details id="docsBox"><summary>Documents to record</summary>
 <table class="docs"><tr><th>Document</th><th>Count</th><th>Pages each</th></tr><tbody id="docs"></tbody></table></details>
 <h3>Endorsements</h3><div id="ends"></div>
 <h3>CLA fees</h3><div id="fees"></div>
 </section>
-<section class="card"><h2>Fee estimate</h2><div class="sum" id="summary"></div>
-<div class="totals"><div class="tot"><span id="buyerLbl">Buyer</span><b id="tB">$0</b></div><div class="tot"><span>Seller</span><b id="tS">$0</b></div><div class="tot all"><span>All parties</span><b id="tA">$0</b></div></div>
-<table><thead><tr><th>Item</th><th class="num" id="colB">Buyer</th><th class="num">Seller</th></tr></thead><tbody id="ledger"></tbody></table>
+</div>
+<div class="col out">
+<section class="hero" aria-label="Estimate summary">
+<small><span id="buyerLbl">Buyer</span> total · estimate</small>
+<div class="big" id="tB">$0</div>
+<p class="sum" id="summary"></p>
+<div class="tiles"><div class="tile"><small>Seller total</small><b id="tS">$0</b></div><div class="tile"><small>All parties</small><b id="tA">$0</b></div></div>
+</section>
 <div id="warns"></div>
-<p><button id="copy">Copy quote</button> <span id="copied" class="sum"></span></p>
-<footer>This is an estimate only, based on the rate tables shown, and is not a Loan Estimate, Closing Disclosure, or commitment to insure. Actual charges are determined by the title commitment, lender requirements, and the jurisdiction at closing.</footer>
-</section></main>
+<div id="ledger"></div>
+<section class="card sec grand"><table class="ledger"><thead><tr><th>Estimate total</th><th class="num" id="colB">Buyer</th><th class="num s">Seller</th></tr></thead><tbody id="grand"></tbody></table></section>
+<div class="foot"><button class="btn" id="copy" type="button">Copy quote</button><button class="btn o" id="print" type="button" onclick="window.print()">Print / Save PDF</button><span id="copied" class="sum" role="status"></span></div>
+</div>
+</main>
+<footer class="disc"><p>Estimates only, not a Loan Estimate or Closing Disclosure; actual charges may vary. Contact C.L.A. Title &amp; Escrow for a binding quote.</p></footer>
 <script>
 // ---------- config ----------
 const SHEET_ID="1kVBo3hchS-B5-g8NHn5ZSAdAZxXxOjuaHTv6SuXamOM"; // "CLA Fee Tables (Live - Calculator)" (anyone-with-link viewer)
@@ -208,7 +350,7 @@ function buildEnds(){const st=$("state").value;$("ends").innerHTML=uwRows(R.Endo
 function buildFees(){$("fees").innerHTML=claFees(R,$("state").value,type).map(f=>`<div class="fee"><input type="checkbox" ${f["Default On"]!=="N"?"checked":""} data-name="${String(f["Fee Name"]).replace(/"/g,"&quot;")}" data-payer="${f["Paid By"]}" data-tx="${f.Transaction}" data-sec="${f["LE Section"]||"C"}"><span>${f["Fee Name"]}${perDoc(f)?' <span class="sum">(per document)</span>':""}</span><input type="number" value="${num(f.Amount)||0}"><span class="tag ${eq(f["Paid By"],"Seller")?"s":""}">${f["Paid By"]}</span></div>`).join("")||'<span class="sum">No active CLA fees for this state.</span>'}
 function buildDocs(){$("docs").innerHTML=Object.entries(DOC_DEFAULTS[type]).map(([d,[n,p]])=>`<tr data-doc="${d}"><td>${d}</td><td><input type="number" min="0" value="${n}"></td><td><input type="number" min="1" value="${p}"></td></tr>`).join("")}
 function rebuild(){buildEnds();buildFees()}
-function setType(t){type=t;document.querySelectorAll("#tabs button").forEach(b=>b.classList.toggle("on",b.dataset.t===t));
+function setType(t){type=t;document.querySelectorAll("#tabs button").forEach(b=>{b.classList.toggle("on",b.dataset.t===t);b.setAttribute("aria-pressed",b.dataset.t===t)});
  $("priceWrap").hidden=t==="refi";$("payoffWrap").hidden=t!=="refi";$("loanWrap").hidden=t==="cash";$("ownWrap").hidden=$("ownPayWrap").hidden=t==="refi";$("fthbWrap").hidden=$("bpstWrap").hidden=t==="refi";
  buildDocs();rebuild();$("buyerLbl").textContent=$("colB").textContent=t==="refi"?"Borrower":"Buyer";run()}
 function inputs(){return{type,state:$("state").value,county:$("county").value,uw:$("uw").value,price:+$("price").value,loan:+$("loan").value,payoff:+$("payoff").value,pol:$("pol").value,rate:$("rate").value,fthb:$("fthb").checked,occ:$("occ").checked,ownPay:$("ownPay").value,pres:$("pres").value,
@@ -219,10 +361,13 @@ function inputs(){return{type,state:$("state").value,county:$("county").value,uw
 const TN={purchase:"Purchase (financed)",cash:"Cash purchase",refi:"Refinance"};
 function run(){const i=inputs();$("cntyNote").textContent=!i.county?"Enter a ZIP or choose a county to include county taxes.":usesDefaults(R,i.state,i.county)?"Using state default rates for this county":"";const res=calc(R,i);last={i,res};
  $("summary").innerHTML=`${TN[type]} · ${i.county||"(no county)"}, ${i.state} · ${i.uw} ${src==="snapshot"?'<span class="flag">BUILT-IN SNAPSHOT</span>':""}`;
- $("tB").textContent=fmt(res.buyer);$("tS").textContent=fmt(res.seller);$("tA").textContent=fmt(res.total);let h="",sec="";
- for(const l of res.lines){if(l.sec!==sec){sec=l.sec;h+=`<tr class="sec-row"><td colspan="3">${sec}</td></tr>`}h+=`<tr><td>${l.item}</td><td class="num">${l.b?fmt(l.b):""}</td><td class="num">${l.s?fmt(l.s):""}</td></tr>`}
- h+=`<tr class="sec-row"><td>Total</td><td class="num">${fmt(res.buyer)}</td><td class="num">${fmt(res.seller)}</td></tr>`;$("ledger").innerHTML=h;
- $("warns").innerHTML=res.warnings.length?`<div class="warn"><b>Warnings</b><ul>${res.warnings.map(w=>`<li>${w}</li>`).join("")}</ul></div>`:""}
+ $("tB").textContent=fmt(res.buyer);$("tS").textContent=fmt(res.seller);$("tA").textContent=fmt(res.total);const bl=type==="refi"?"Borrower":"Buyer",groups=[];let g=null;
+ for(const l of res.lines){if(!g||l.sec!==g.sec){g={sec:l.sec,rows:"",b:0,s:0};groups.push(g)}g.b+=l.b||0;g.s+=l.s||0;
+  g.rows+=`<tr><td>${l.item}</td><td class="num${l.b?"":" z"}">${l.b?fmt(l.b):"—"}</td><td class="num${l.s?"":" z"}">${l.s?fmt(l.s):"—"}</td></tr>`}
+ $("ledger").innerHTML=groups.map(g=>{const m=String(g.sec).match(/^([A-Z])\.\s*(.*)$/),letter=m?m[1]:"•",name=m?m[2]:g.sec;
+  return`<section class="card sec"><div class="sh"><span class="l">${letter}</span><h3>${name}</h3></div><table class="ledger"><thead><tr><th>Item</th><th class="num">${bl}</th><th class="num s">Seller</th></tr></thead><tbody>${g.rows}<tr class="tot"><td>Section ${letter} total</td><td class="num${g.b?"":" z"}">${g.b?fmt(g.b):"—"}</td><td class="num${g.s?"":" z"}">${g.s?fmt(g.s):"—"}</td></tr></tbody></table></section>`}).join("");
+ $("grand").innerHTML=`<tr class="tot"><td>Total</td><td class="num">${fmt(res.buyer)}</td><td class="num">${fmt(res.seller)}</td></tr>`;
+ $("warns").innerHTML=res.warnings.length?`<div class="warn"><div><b>Warnings</b><ul>${res.warnings.map(w=>`<li>${w}</li>`).join("")}</ul></div></div>`:""}
 function quote(){const{i,res}=last,b=type==="refi"?"Borrower":"Buyer";let t=`C.L.A. Title & Escrow — Closing Cost Estimate\n${$("addr").value||"(no address)"} ${$("city").value} ${i.state} ${$("zip").value}\n${TN[type]} · ${i.county}, ${i.state} · ${i.uw}\n`;
  t+=type==="refi"?`Loan ${fmt(i.loan)} · Payoff ${fmt(i.payoff)}\n`:`Price ${fmt(i.price)}${type==="purchase"?" · Loan "+fmt(i.loan):""}\n`;let sec="";
  for(const l of res.lines){if(l.sec!==sec){sec=l.sec;t+=`\n${sec.toUpperCase()}\n`}t+=`  ${l.item}: ${l.b?b+" "+fmt(l.b):""}${l.b&&l.s?" / ":""}${l.s?"Seller "+fmt(l.s):""}\n`}
@@ -240,7 +385,7 @@ $("city").oninput=()=>{const c=$("city").value.trim();if(!c||zipHit)return;const
 $("state").onchange=()=>{counties();rebuild();run()};$("uw").onchange=()=>{rebuild();run()};
 document.querySelector("main").addEventListener("input",e=>{if(!["zip","city","state","addr"].includes(e.target.id))run()});document.querySelector("main").addEventListener("change",e=>{if(!["zip","state","uw"].includes(e.target.id))run()});
 function load(raw,label,kind,err){R=normalize(raw);src=kind;$("srcPill").textContent=label;
- $("status").innerHTML=kind==="sheet"?`Fees loaded from team sheet at ${new Date().toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}.`:kind==="xlsx"?`Using uploaded workbook “${label}” (overrides the team sheet until reload).`:`<b style="color:#ffd27a">⚠ Could not load the team sheet${err?" ("+err+")":""}. Using the built-in snapshot of the fee tables — rates may be out of date.</b>`;
+ $("status").innerHTML=kind==="sheet"?`Fees loaded from team sheet at ${new Date().toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}.`:kind==="xlsx"?`Using uploaded workbook “${label}” (overrides the team sheet until reload).`:`<b class="statuswarn">⚠ Could not load the team sheet${err?" ("+err+")":""}. Using the built-in snapshot of the fee tables — rates may be out of date.</b>`;
  buildUw();counties();setType(type)}
 async function loadLive(){$("srcPill").textContent="Loading fees…";const r=await loadFees((u,o)=>fetch(u,o));load(r.raw,r.source==="sheet"?"Team sheet (live)":"Built-in snapshot",r.source,r.error)}
 $("btnReload").onclick=()=>{$("file").value="";loadLive()};
