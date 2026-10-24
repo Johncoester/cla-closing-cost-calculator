@@ -4,8 +4,8 @@
 <meta name="theme-color" content="#000000">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="zip-county.js?v=20261024b"></script>
-<script src="fee-snapshot.js?v=20261024b"></script>
+<script src="zip-county.js?v=20261024c"></script>
+<script src="fee-snapshot.js?v=20261024c"></script>
 <style>
 :root{--g:#8dc63f;--gd:#6fa52a;--gdd:#4d7a17;--ink:#111;--mut:#5b6272;--line:#e3e8da;--bg:#f4f7ef;--field:#d5dbca}
 *{box-sizing:border-box}
@@ -70,6 +70,7 @@ input[type=checkbox]{width:18px;height:18px;margin:0;accent-color:var(--gd);flex
 /* fees */
 .fee{display:grid;grid-template-columns:20px minmax(0,1fr) 96px 64px;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid #f0f2ea;font-size:13px}
 .fee input[type=number]{min-height:38px;padding:6px 10px;font-size:14px;text-align:right}
+.fee input.locked{background:transparent;border-color:transparent;box-shadow:none;cursor:default;font-weight:600;pointer-events:none;-moz-appearance:textfield;appearance:textfield}.fee input.locked::-webkit-outer-spin-button,.fee input.locked::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .tag{font-size:11px;font-weight:700;padding:3px 0;border-radius:99px;text-align:center;background:#e4f2cc;color:#35560b;letter-spacing:.02em}
 .tag.s{background:#ffefd0;color:#7a4300}
 details{margin-top:6px}
@@ -191,7 +192,7 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 <h1 class="ht">C.L.A. Title &amp; Escrow <span>—</span> Closing Cost Estimator</h1>
 <div class="hr"><span class="pill" id="srcPill">Loading fees…</span>
 <button class="btn sec" id="btnReload" type="button">Reload team sheet</button>
-<label class="btn sec" for="file">Load .xlsx<input type="file" id="file" accept=".xlsx,.xls" class="vh"></label></div>
+<label class="btn sec" for="file" hidden style="display:none">Load .xlsx<input type="file" id="file" accept=".xlsx,.xls" class="vh"></label></div>
 </div></header>
 <div class="statusbar"><div class="wrap"><span id="status" role="status">Fees load from the CLA team Google Sheet on every page load.</span></div></div>
 <div class="modebar"><div class="wrap"><div class="seg mode" id="modes" role="group" aria-label="Calculator"><button type="button" data-mode="quote" class="on" aria-pressed="true">Buyer Quote</button><button type="button" data-mode="seller" aria-pressed="false">Seller Net Sheet</button></div></div></div>
@@ -472,7 +473,7 @@ function setCounty(c,p=""){const before=$(p+"county").value,o=[...$(p+"county").
 function buildUw(){const u=[...new Set(R.Premium_Tiers.concat(R.Premium_Rules,R.Endorsements).map(x=>String(x.Underwriter||"").trim()).filter(Boolean))];const cur=$("uw").value;
  $("uw").innerHTML=(u.length?u:["Fidelity National Title"]).map(x=>`<option>${x}</option>`).join("");if(u.includes(cur))$("uw").value=cur}
 function buildEnds(){const st=$("state").value;$("ends").innerHTML=uwRows(R.Endorsements,$("uw").value,st).filter(e=>txOK(e.Transaction,type)&&!(type==="cash"&&eq(e["Applies To"],"Lender"))).map(e=>`<label class="chk"><input type="checkbox" data-code="${e.Code}" ${e["Default On"]==="Y"?"checked":""}>${e.Code} ${e.Name} <span class="sum">(${String(e["Applies To"]).toLowerCase()}, ${String(e.Pricing).includes("%")?e.Amount+(/combined/i.test(e.Pricing)?"% of owner's + loan premium":"% of premium"):fmt(num(e.Amount)||0)})</span></label>`).join("")||'<span class="sum">No active endorsements for this state/underwriter.</span>'}
-function buildFees(){$("fees").innerHTML=claFees(R,$("state").value,type).map(f=>`<div class="fee"><input type="checkbox" ${f["Default On"]!=="N"?"checked":""} data-name="${String(f["Fee Name"]).replace(/"/g,"&quot;")}" data-payer="${f["Paid By"]}" data-tx="${f.Transaction}" data-sec="${f["LE Section"]||"C"}"><span>${f["Fee Name"]}${perDoc(f)?' <span class="sum">(per document)</span>':""}</span><input type="number" value="${num(f.Amount)||0}"><span class="tag ${eq(f["Paid By"],"Seller")?"s":""}">${f["Paid By"]}</span></div>`).join("")||'<span class="sum">No active CLA fees for this state.</span>'}
+function buildFees(){$("fees").innerHTML=claFees(R,$("state").value,type).map(f=>`<div class="fee"><input type="checkbox" ${f["Default On"]!=="N"?"checked":""} data-name="${String(f["Fee Name"]).replace(/"/g,"&quot;")}" data-payer="${f["Paid By"]}" data-tx="${f.Transaction}" data-sec="${f["LE Section"]||"C"}"><span>${f["Fee Name"]}${perDoc(f)?' <span class="sum">(per document)</span>':""}</span><input type="number" class="locked" readonly tabindex="-1" aria-readonly="true" value="${num(f.Amount)||0}"><span class="tag ${eq(f["Paid By"],"Seller")?"s":""}">${f["Paid By"]}</span></div>`).join("")||'<span class="sum">No active CLA fees for this state.</span>'}
 function buildDocs(){$("docs").innerHTML=Object.entries(DOC_DEFAULTS[type]).map(([d,[n,p]])=>`<tr data-doc="${d}"><td>${d}</td><td><input type="number" min="0" value="${n}"></td><td><input type="number" min="1" value="${p}"></td></tr>`).join("")}
 function rebuild(){buildEnds();buildFees()}
 function setType(t){type=t;document.querySelectorAll("#tabs button").forEach(b=>{b.classList.toggle("on",b.dataset.t===t);b.setAttribute("aria-pressed",b.dataset.t===t)});
@@ -521,7 +522,7 @@ $("file").onchange=async e=>{const f=e.target.files[0];if(!f)return;if(!window.X
 let mode="quote",sLast=null,ownTouched=false;const SC=$("s_other");
 function sOtherRow(){const d=document.createElement("div");d.className="orow";d.innerHTML='<div><input type="text" placeholder="Label (e.g. Repairs)" aria-label="Cost label" maxlength="60"></div><div class="money"><input type="number" placeholder="0" aria-label="Cost amount" inputmode="decimal"></div>';SC.appendChild(d)}
 function sOtherBtn(){$("s_addo").hidden=SC.children.length>=5}
-function buildSFees(){$("s_fees").innerHTML=sellerFeeRows(R,$("s_state").value).map(f=>`<div class="fee"><input type="checkbox" ${f["Default On"]!=="N"?"checked":""} data-name="${String(f["Fee Name"]).replace(/"/g,"&quot;")}" data-payer="${f["Paid By"]}" data-tx="${f.Transaction}" data-sec="${f["LE Section"]||"C"}"><span>${f["Fee Name"]}</span><input type="number" value="${num(f.Amount)||0}" aria-label="Amount"><span class="tag s">${f["Paid By"]}</span></div>`).join("")||'<span class="sum">No seller fees in the sheet for this state.</span>'}
+function buildSFees(){$("s_fees").innerHTML=sellerFeeRows(R,$("s_state").value).map(f=>`<div class="fee"><input type="checkbox" ${f["Default On"]!=="N"?"checked":""} data-name="${String(f["Fee Name"]).replace(/"/g,"&quot;")}" data-payer="${f["Paid By"]}" data-tx="${f.Transaction}" data-sec="${f["LE Section"]||"C"}"><span>${f["Fee Name"]}</span><input type="number" class="locked" readonly tabindex="-1" aria-readonly="true" value="${num(f.Amount)||0}" aria-label="Amount"><span class="tag s">${f["Paid By"]}</span></div>`).join("")||'<span class="sum">No seller fees in the sheet for this state.</span>'}
 function syncOwn(){const st=$("s_state").value,co=$("s_county").value,c=ownerPayDefault(R,st,co);if(!ownTouched)$("s_own").checked=c==="Seller";
  $("s_ownNote").textContent=co?`(local custom in ${co}: ${c.toLowerCase()} pays${ownTouched&&$("s_own").checked!==(c==="Seller")?" — overridden":""})`:""}
 function sinputs(){const n=id=>+$(id).value||0;return{state:$("s_state").value,county:$("s_county").value,uw:$("uw").value,price:n("s_price"),closing:$("s_close").value,
