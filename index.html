@@ -4,8 +4,8 @@
 <meta name="theme-color" content="#000000">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="zip-county.js?v=20261024a"></script>
-<script src="fee-snapshot.js?v=20261024a"></script>
+<script src="zip-county.js?v=20261024b"></script>
+<script src="fee-snapshot.js?v=20261024b"></script>
 <style>
 :root{--g:#8dc63f;--gd:#6fa52a;--gdd:#4d7a17;--ink:#111;--mut:#5b6272;--line:#e3e8da;--bg:#f4f7ef;--field:#d5dbca}
 *{box-sizing:border-box}
@@ -46,8 +46,9 @@ label{display:block;font-size:12px;font-weight:600;color:#3a3f36;margin:0 0 6px}
 .row,.row3{display:grid;gap:12px;margin-bottom:16px}.row{grid-template-columns:1fr 1fr}.row3{grid-template-columns:1fr 1fr}.row.one{grid-template-columns:minmax(0,1fr)}
 .row>div,.row3>div{min-width:0}
 .row>[hidden]+div:last-child{grid-column:auto}
-input[type=text],input[type=number],select{width:100%;min-height:44px;padding:10px 13px;border:1.5px solid var(--field);border-radius:11px;font:inherit;font-size:15px;color:var(--ink);background:#fff}
+input[type=text],input[type=number],input[type=date],select{width:100%;min-height:44px;padding:10px 13px;border:1.5px solid var(--field);border-radius:11px;font:inherit;font-size:15px;color:var(--ink);background:#fff}
 input::placeholder{color:#8a9080}
+input[type=date]{min-width:0;-webkit-appearance:none;appearance:none;text-align:left}
 input:focus,select:focus{outline:2px solid transparent;border-color:var(--gdd);box-shadow:0 0 0 4px rgba(141,198,63,.35)}
 select{appearance:none;-webkit-appearance:none;padding-right:34px;text-overflow:ellipsis;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23555' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 13px center}
 .money{position:relative}.money::before{content:"$";position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--mut);font-size:15px;pointer-events:none}
@@ -94,7 +95,7 @@ details summary::marker{color:var(--gd)}
 .warn::before{content:"!";flex:none;width:24px;height:24px;border-radius:50%;background:#f3c53b;color:#3d2f00;font-weight:800;display:grid;place-items:center;font-size:14px}
 .warn>div{min-width:0}.warn b{display:block;margin-bottom:2px;color:#3d2f00}.warn ul{margin:2px 0 0;padding-left:18px}.warn li{margin:3px 0}
 /* ledger */
-#ledger{display:flex;flex-direction:column;gap:24px}
+#ledger,#sLedger{display:flex;flex-direction:column;gap:24px}
 .card.sec{padding:0;overflow:hidden}
 .sh{display:flex;align-items:center;gap:12px;padding:16px 24px;background:#fafcf6;border-bottom:1px solid var(--line)}
 .sh .l{width:30px;height:30px;border-radius:9px;background:var(--g);display:grid;place-items:center;font-weight:800;font-size:14px;flex:none}
@@ -114,12 +115,27 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 #copied{flex:0 0 100%;margin:-4px 0 0}#copied:empty{display:none}
 .disc{max-width:1180px;margin:0 auto;padding:16px 24px 48px;font-size:12px;color:var(--mut)}
 .disc p{margin:0;max-width:760px}
+/* seller net sheet */
+.seg.mode{grid-template-columns:repeat(2,1fr);max-width:440px;margin:0}
+.seg.mode button{font-size:15px;min-height:44px}
+.modebar{background:#fff;border-bottom:1px solid var(--line)}
+.modebar .wrap{padding-top:12px;padding-bottom:12px}
+.cm{display:grid;grid-template-columns:84px minmax(0,1fr);gap:10px}
+.fh{margin:6px 0 0;font-size:12.5px;color:var(--mut)}.fh:empty{display:none}
+.orow{display:grid;grid-template-columns:minmax(0,1fr) 124px;gap:10px;margin-bottom:10px}
+.orow>div{min-width:0}
+.btn.sm{padding:8px 14px;font-size:13px;border-radius:10px}
+.tiles.t3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.ledger.one th.num,.ledger.one td.num{width:164px}
+.cr{color:var(--gdd);font-weight:700}
+.ph{display:none}
+.sub{margin:0 0 14px;font-size:13px;color:var(--mut)}
 /* tablet / phone */
 @media(max-width:900px){
  .wrap{padding-left:16px;padding-right:16px}
  main{grid-template-columns:minmax(0,1fr);padding:16px 14px 8px;gap:18px}
- .col.in{display:contents}.c1{order:1}.col.out{order:2}.c2{order:3}
- .col{gap:18px}#ledger{gap:18px}
+ .col.in{display:contents}.c1,.s1{order:1}.s2{order:2}.s3{order:3}.col.out{order:4}.c2,.s4{order:5}.s5{order:6}
+ .col{gap:18px}#ledger,#sLedger{gap:18px}
  .disc{padding:12px 16px 40px}
 }
 @media(max-width:600px){
@@ -132,10 +148,14 @@ table{width:100%;border-collapse:collapse;font-size:14px}
  .sh{padding:14px 16px}
  .ledger th,.ledger td{padding-left:16px;padding-right:12px}.ledger th.num,.ledger td.num{width:96px}
  .ledger td{font-size:13px}.ledger th:first-child,.ledger td:first-child{padding-right:6px}
- input[type=text],input[type=number],select{font-size:16px}
+ input[type=text],input[type=number],input[type=date],select{font-size:16px}
  .fee{grid-template-columns:20px minmax(0,1fr) 84px 58px;gap:8px}
  .foot{flex-direction:column;align-items:stretch}.foot .btn{flex:none}
  .seg button{font-size:13px}.seg button.on::before{margin-right:5px}
+ .seg.mode{max-width:none}.seg.mode button{font-size:14px}
+ .tiles.t3{grid-template-columns:1fr 1fr}.tiles.t3 .tile:last-child{grid-column:1/-1}
+ .ledger.one th.num,.ledger.one td.num{width:132px}
+ .orow{grid-template-columns:minmax(0,1fr) 108px}
 }
 @media(max-width:360px){.row{grid-template-columns:1fr}.row3{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:no-preference){.btn,.seg button{transition:background .15s,box-shadow .15s}}
@@ -144,7 +164,7 @@ table{width:100%;border-collapse:collapse;font-size:14px}
  @page{margin:14mm}
  body{background:#fff;font-size:11pt;color:#000}
  header{background:#fff!important;color:#000;border-bottom:3px solid #8dc63f}
- header .hr,.statusbar,.col.in,.foot,.btn,.seg{display:none!important}
+ header .hr,.statusbar,.modebar,.col.in,.foot,.btn,.seg{display:none!important}
  .logo{background:#fff;border:2px solid #8dc63f}
  .ht,.ht span{color:#000}
  main{display:block;padding:12px 0 0;max-width:none}
@@ -154,13 +174,16 @@ table{width:100%;border-collapse:collapse;font-size:14px}
  .hero small,.hero .sum,.tile small{color:#333}.big{color:#000}.tile{background:#fff;border:1px solid #999}.tile b{color:#000}
  .flag{background:#fff;color:#000;border:1px solid #000}
  .warn{background:#fff;border:1px solid #888;color:#000;break-inside:avoid;margin-bottom:12px}.warn::before{border:1px solid #000;background:#fff;color:#000}
- #ledger{display:block}
+ #ledger,#sLedger{display:block}
  .sh{background:#fff;border-bottom:1px solid #999}.sh .l{background:#fff;border:1.5px solid #000}
  .ledger td,.ledger th{padding:5px 8px;font-size:10.5pt}.ledger td{border-top:1px solid #ccc}
  .ledger tr.tot td,.grand .ledger tr.tot td{background:#fff;border-top:2px solid #000}
  .ledger th.num::before{display:none}
  tr{break-inside:avoid}
  .disc{padding:8px 0;color:#333}
+ .ph{display:block;margin:0 0 12px;padding:0 0 8px;border-bottom:2px solid #000}.ph h2{margin:0 0 4px;font-size:15pt;color:#000}.ph p{margin:2px 0;font-size:10.5pt;color:#000}
+ .cr{color:#000}.hero #sSum{display:none}
+ .ledger.one th.num,.ledger.one td.num{width:150px}
 }
 </style></head><body>
 <header><div class="wrap hwrap">
@@ -171,7 +194,8 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 <label class="btn sec" for="file">Load .xlsx<input type="file" id="file" accept=".xlsx,.xls" class="vh"></label></div>
 </div></header>
 <div class="statusbar"><div class="wrap"><span id="status" role="status">Fees load from the CLA team Google Sheet on every page load.</span></div></div>
-<main>
+<div class="modebar"><div class="wrap"><div class="seg mode" id="modes" role="group" aria-label="Calculator"><button type="button" data-mode="quote" class="on" aria-pressed="true">Buyer Quote</button><button type="button" data-mode="seller" aria-pressed="false">Seller Net Sheet</button></div></div></div>
+<main id="mainQ">
 <div class="col in">
 <section class="card c1"><h2>Your transaction</h2>
 <div class="seg" id="tabs" role="group" aria-label="Transaction type"><button type="button" data-t="purchase" class="on" aria-pressed="true">Purchase</button><button type="button" data-t="cash" aria-pressed="false">Cash</button><button type="button" data-t="refi" aria-pressed="false">Refinance</button></div>
@@ -213,7 +237,63 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 <div class="foot"><button class="btn" id="copy" type="button">Copy quote</button><button class="btn o" id="print" type="button" onclick="window.print()">Print / Save PDF</button><span id="copied" class="sum" role="status"></span></div>
 </div>
 </main>
-<footer class="disc"><p>Estimates only, not a Loan Estimate or Closing Disclosure; actual charges may vary. Contact C.L.A. Title &amp; Escrow for a binding quote.</p></footer>
+<main id="mainS" hidden>
+<div class="col in">
+<section class="card s1"><h2>Property &amp; sale</h2>
+<div class="fgrp"><label for="s_addr">Property address</label><input type="text" id="s_addr" placeholder="123 Main St" autocomplete="off"></div>
+<div class="row3"><div><label for="s_city">City</label><input type="text" id="s_city" autocomplete="off"></div><div><label for="s_zip">ZIP</label><input type="text" id="s_zip" maxlength="5" inputmode="numeric" placeholder="e.g. 20850" autocomplete="off"></div></div>
+<div class="sum hint" id="s_zipMsg"></div>
+<div class="row"><div><label for="s_state">State</label><select id="s_state"><option>MD</option><option>DC</option><option>VA</option><option>FL</option></select></div>
+<div><label for="s_county">County / city</label><select id="s_county"></select></div></div>
+<div class="sum hint" id="s_cntyNote"></div>
+<div class="row"><div><label for="s_price">Selling price</label><div class="money"><input type="number" id="s_price" value="450000" inputmode="decimal"></div></div>
+<div><label for="s_close">Closing date</label><input type="date" id="s_close"></div></div>
+</section>
+<section class="card s2"><h2>Commissions</h2>
+<div class="fgrp"><label for="s_bbv">Buyer's broker</label><div class="cm"><select id="s_bbm" aria-label="Buyer's broker commission type"><option value="pct">%</option><option value="flat">$ flat</option></select><div id="s_bbw"><input type="number" id="s_bbv" value="2.5" step="any" inputmode="decimal"></div></div><div class="fh" id="s_bbh"></div></div>
+<div class="fgrp" style="margin-bottom:0"><label for="s_slv">Seller's broker</label><div class="cm"><select id="s_slm" aria-label="Seller's broker commission type"><option value="pct">%</option><option value="flat">$ flat</option></select><div id="s_slw"><input type="number" id="s_slv" value="2.5" step="any" inputmode="decimal"></div></div><div class="fh" id="s_slh"></div></div>
+</section>
+<section class="card s3"><h2>Payoffs &amp; property taxes</h2>
+<div class="row"><div><label for="s_po1">1st mortgage payoff</label><div class="money"><input type="number" id="s_po1" placeholder="0" inputmode="decimal"></div></div>
+<div><label for="s_po2">2nd mortgage / HELOC</label><div class="money"><input type="number" id="s_po2" placeholder="0" inputmode="decimal"></div></div></div>
+<div class="row"><div><label for="s_tax">Annual property taxes</label><div class="money"><input type="number" id="s_tax" placeholder="0" inputmode="decimal"></div></div>
+<div><label for="s_ptd">Taxes paid through</label><input type="date" id="s_ptd"></div></div>
+<div class="fh" id="s_prorHint" style="margin:-6px 0 0"></div>
+</section>
+<section class="card s4"><h2>Credits &amp; other costs</h2>
+<div class="fgrp"><label for="s_cv">Seller concession / credit to buyer</label><div class="cm"><select id="s_cm" aria-label="Seller concession type"><option value="flat">$</option><option value="pct">%</option></select><div id="s_cw" class="money"><input type="number" id="s_cv" placeholder="0" step="any" inputmode="decimal"></div></div><div class="fh" id="s_ch"></div></div>
+<div class="row"><div><label for="s_hoa">HOA dues owed</label><div class="money"><input type="number" id="s_hoa" placeholder="0" inputmode="decimal"></div></div>
+<div><label for="s_hoat">HOA transfer / resale fee</label><div class="money"><input type="number" id="s_hoat" placeholder="0" inputmode="decimal"></div></div></div>
+<div class="row"><div><label for="s_spec">HOA special assessment</label><div class="money"><input type="number" id="s_spec" placeholder="0" inputmode="decimal"></div></div>
+<div><label for="s_war">Home warranty</label><div class="money"><input type="number" id="s_war" placeholder="0" inputmode="decimal"></div></div></div>
+<div class="row one"><div><label for="s_term">Termination / other fees</label><div class="money"><input type="number" id="s_term" placeholder="0" inputmode="decimal"></div></div></div>
+<h3>Repairs &amp; other seller costs</h3>
+<div id="s_other"></div>
+<button type="button" class="btn sec sm" id="s_addo">+ Add line</button>
+</section>
+<section class="card s5"><h2>Title &amp; settlement</h2>
+<label class="chk"><input type="checkbox" id="s_own"><span>Seller pays the owner's title policy <span class="sum" id="s_ownNote"></span></span></label>
+<label class="chk"><input type="checkbox" id="s_fthb"><span>Buyer is a first-time homebuyer <span class="sum">(can shift transfer tax to the seller)</span></span></label>
+<label class="chk"><input type="checkbox" id="s_bpst"><span>Buyer pays seller's transfer / deed tax <span class="sum">(contract term; e.g. FL deed stamps)</span></span></label>
+<details><summary>CLA seller fees</summary><div id="s_fees"></div></details>
+</section>
+</div>
+<div class="col out">
+<div class="ph"><h2>Seller's Net Sheet</h2><p id="s_phAddr"></p><p id="s_phLine"></p></div>
+<section class="hero" aria-label="Net seller proceeds">
+<small>Net seller proceeds · estimate</small>
+<div class="big" id="sNet">$0</div>
+<p class="sum" id="sSum"></p>
+<div class="tiles t3"><div class="tile"><small>Selling price</small><b id="sPrice">$0</b></div><div class="tile"><small>Total seller costs</small><b id="sCosts">$0</b></div><div class="tile"><small>Mortgage payoffs</small><b id="sPay">$0</b></div></div>
+</section>
+<div id="sWarns"></div>
+<div id="sLedger"></div>
+<section class="card sec grand"><table class="ledger one"><thead><tr><th>Net proceeds</th><th class="num">Amount</th></tr></thead><tbody id="sGrand"></tbody></table></section>
+<div class="foot"><button class="btn" id="sCopy" type="button">Copy summary</button><button class="btn o" id="sPrint" type="button" onclick="window.print()">Print / Save PDF</button><span id="sCopied" class="sum" role="status" style="flex:0 0 100%;margin:-4px 0 0"></span></div>
+</div>
+</main>
+
+<footer class="disc"><p id="discQ">Estimates only, not a Loan Estimate or Closing Disclosure; actual charges may vary. Contact C.L.A. Title &amp; Escrow for a binding quote.</p><p id="discS" hidden>Estimate only. Not a settlement statement. Actual proceeds depend on final payoff, prorations and charges at closing.</p></footer>
 <script>
 // ---------- config ----------
 const SHEET_ID="1kVBo3hchS-B5-g8NHn5ZSAdAZxXxOjuaHTv6SuXamOM"; // "CLA Fee Tables (Live - Calculator)" (anyone-with-link viewer)
@@ -293,7 +373,7 @@ function calc(R,i){const L=[],W=[],refi=i.type==="refi";
  const docs=Object.entries(i.docs||{}).filter(([d,[n]])=>n>0&&!(d==="Deed of Trust"&&cash));const nDocs=docs.reduce((a,[,[n]])=>a+n,0);
  // title premiums
  const P=premiums(R,i);W.push(...P.warnings);const trid=i.pres!=="actual";
- let ownPay=i.ownPay;if(!ownPay){const j=R.Jurisdictions.find(j=>eq(j.State,i.state)&&eq(j["County/City"],i.county));ownPay=j&&String(j["Owner Policy Paid By"]).trim()?j["Owner Policy Paid By"]:"Buyer"}
+ const ownPay=i.ownPay||ownerPayDefault(R,i.state,i.county);
  if(P.lenderFull!=null){const lend=trid?P.lenderFull:P.lenderActual;add(SEC.C,"Title – Lender's Title Policy",lend,0)}
  if(P.owner!=null){let own=P.owner;if(trid&&P.lenderFull!=null&&P.lenderActual!=null)own=P.owner+P.lenderActual-P.lenderFull;
   add(SEC.H,"Title – Owner's Title Policy (optional)"+(trid&&P.lenderFull!=null?" [TRID simultaneous-issue]":""),...split(ownPay,Math.max(0,own)))}
@@ -322,6 +402,51 @@ function calc(R,i){const L=[],W=[],refi=i.type==="refi";
 function fmt(x){return"$"+(+x).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}
 function claFees(R,st,type){return R.CLA_Fees.filter(f=>eq(f.State,st)&&txOK(f.Transaction,type)&&!(type==="refi"&&eq(f["Paid By"],"Seller"))&&!(type==="cash"&&lenderOnly(f)))}
 
+// ---------- seller net sheet (reuses calc's seller column; nothing about fees/taxes is re-derived here) ----------
+const MS_DAY=864e5,MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const pDate=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s||"").trim());if(!m)return null;const d=new Date(Date.UTC(+m[1],+m[2]-1,+m[3]));return d.getUTCMonth()===+m[2]-1&&d.getUTCDate()===+m[3]?d:null};
+const longDate=d=>d?`${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`:"";
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+// Default "taxes paid through" date = end of the latest billing period whose installment was due on or before closing (assumes bills are paid when due).
+// Installment: [start m,d, end m,d, end-year offset, due m,d, due-year offset] relative to the period's start year. Estimates; localities differ (esp. VA).
+const TAX_SCHED={
+ MD:{note:"MD fiscal year Jul 1–Jun 30, billed in advance; owner-occupied semiannual (due Sep 30 and Dec 31)",inst:[[7,1,12,31,0,9,30,0],[1,1,6,30,0,12,31,-1]]},
+ DC:{note:"DC tax year Oct 1–Sep 30; halves due Mar 31 and Sep 15",inst:[[10,1,3,31,1,3,31,1],[4,1,9,30,0,9,15,0]]},
+ VA:{note:"VA calendar year, Fairfax-style: Jan–Jun due Jul 28, Jul–Dec due Dec 5 (other localities differ)",inst:[[1,1,6,30,0,7,28,0],[7,1,12,31,0,12,5,0]]},
+ FL:{note:"FL calendar year, billed in arrears each November",inst:[[1,1,12,31,0,11,30,0]]}};
+function defaultPaidThrough(state,closing){const s=TAX_SCHED[state];if(!s||!closing)return null;let best=null;const y0=closing.getUTCFullYear();
+ for(let y=y0-2;y<=y0+1;y++)for(const[,,em,ed,ey,dm,dd,dy]of s.inst){const end=new Date(Date.UTC(y+ey,em-1,ed)),due=new Date(Date.UTC(y+dy,dm-1,dd));if(due<=closing&&(!best||end>best))best=end}return best}
+// Seller owns every day through the day BEFORE closing (buyer owns the day of closing); 365-day year.
+// days > 0: taxes unpaid for those days → debit to seller. days < 0: seller paid ahead → credit to seller.
+function prorateTaxes(i){const annual=+i.annual||0,closing=pDate(i.closing);const none={days:0,amount:0,paidThrough:null,assumed:false,note:(TAX_SCHED[i.state]||{}).note||""};
+ if(!(annual>0)||!closing)return none;let pt=pDate(i.paidThrough),assumed=false;if(!pt){pt=defaultPaidThrough(i.state,closing);assumed=true}if(!pt)return none;
+ const days=Math.round((closing-MS_DAY-pt)/MS_DAY);return{days,amount:r2(annual*days/365),paidThrough:pt,assumed,note:none.note}}
+function ownerPayDefault(R,st,co){const j=R.Jurisdictions.find(j=>eq(j.State,st)&&eq(j["County/City"],co));return j&&String(j["Owner Policy Paid By"]).trim()?j["Owner Policy Paid By"]:"Buyer"}
+const sellerFeeRows=(R,st)=>claFees(R,st,"cash").filter(f=>["seller","split"].includes(String(f["Paid By"]).trim().toLowerCase()));
+const sellerFeeInputs=(R,st)=>sellerFeeRows(R,st).filter(f=>f["Default On"]!=="N").map(f=>({name:f["Fee Name"],payer:f["Paid By"],tx:f.Transaction,sec:f["LE Section"],amt:num(f.Amount)||0}));
+const commission=(price,c)=>{c=c||{};const v=+c.val||0;return c.mode==="flat"?r2(v):r2(price*v/100)};
+function sellerNet(R,i){const price=+i.price||0,W=[],sum=a=>r2(a.reduce((t,x)=>t+x.amt,0));
+ const bc=commission(price,i.buyerComm),sc=commission(price,i.sellerComm),pc=c=>c&&c.mode!=="flat"?` (${+c.val||0}%)`:" (flat)";
+ const releases=(+i.payoff1>0?1:0)+(+i.payoff2>0?1:0),ownPay=i.ownerPays==null?ownerPayDefault(R,i.state,i.county):i.ownerPays?"Seller":"Buyer";
+ // a cash-style purchase (no buyer loan) so only seller lines remain; actual premium split, so the seller pays the full owner's premium
+ const q=calc(R,{type:"cash",state:i.state,county:i.county,uw:i.uw,price,loan:0,payoff:0,pol:i.pol||"enhanced",rate:i.rate||"basic",fthb:!!i.fthb,occ:true,ownPay,pres:"actual",ends:[],
+  docs:{"Deed":[1,3],"Deed of Trust":[0,30],"Release":[releases,3],"Power of Attorney":[0,3]},fees:i.fees||sellerFeeInputs(R,i.state),buyerPaysSellerTax:!!i.bpst});
+ W.push(...q.warnings.filter(w=>!/lender/i.test(w)&&!(/owner's premium/.test(w)&&ownPay!=="Seller")));
+ const gov=[],title=[];for(const l of q.lines)if(l.s>0)(/^Title – /.test(l.item)?title:gov).push({item:l.item.replace(/^Title – /,""),amt:l.s});
+ const commissions=[{item:"Buyer's broker commission"+pc(i.buyerComm),amt:bc},{item:"Seller's broker commission"+pc(i.sellerComm),amt:sc}];
+ const payoffs=[];if(+i.payoff1)payoffs.push({item:"1st mortgage payoff",amt:r2(+i.payoff1)});if(+i.payoff2)payoffs.push({item:"2nd mortgage / HELOC payoff",amt:r2(+i.payoff2)});
+ const pr=prorateTaxes({state:i.state,annual:i.annualTax,closing:i.closing,paidThrough:i.paidThrough}),pro=[];
+ if(pr.amount)pro.push({item:pr.days>0?`Real estate taxes — seller owes ${pr.days} day${pr.days===1?"":"s"}`:`Real estate taxes — credit to seller for ${-pr.days} day${pr.days===-1?"":"s"}`,amt:pr.amount});
+ if(Math.abs(pr.days)>366)W.push("The tax proration covers more than a year — check the “taxes paid through” date.");
+ if(+i.hoaDues)pro.push({item:"HOA dues owed through closing",amt:r2(+i.hoaDues)});
+ const cc=commission(price,i.concession);if(cc)pro.push({item:"Seller concession / credit to buyer"+(i.concession&&i.concession.mode==="pct"?` (${+i.concession.val||0}%)`:""),amt:cc});
+ const other=[];const o=(item,a)=>{if(+a)other.push({item,amt:r2(+a)})};
+ o("HOA transfer / resale package fee",i.hoaTransfer);o("HOA special assessment",i.special);o("Home warranty",i.warranty);o("Termination / other fees",i.termination);
+ (i.other||[]).slice(0,5).forEach(x=>o((x.label||"").trim()||"Other seller cost",x.amt));
+ const T={commissions:sum(commissions),gov:sum(gov),title:sum(title),pro:sum(pro),other:sum(other),payoffs:sum(payoffs)};
+ const totalCosts=r2(T.commissions+T.gov+T.title+T.pro+T.other);
+ return{price,commissions,gov,title,payoffs,prorations:pro,other,totals:T,totalCosts,payoffTotal:T.payoffs,net:r2(price-totalCosts-T.payoffs),warnings:W,proration:pr,calc:q,sellerColumn:q.seller}}
+
 // ---------- county list + ZIP lookup (data: zip-county.js, Census 2020) ----------
 const _C=typeof CLA_COUNTIES!=="undefined"?CLA_COUNTIES:{},_Z=typeof CLA_ZIPS!=="undefined"?CLA_ZIPS:{};
 function allCounties(R,st){const set=new Set(Object.values(_C).filter(c=>c[0]===st).map(c=>c[1]));const has=n=>[...set].some(x=>eq(x,n));
@@ -336,14 +461,14 @@ const SNAP=typeof CLA_FEES_SNAPSHOT!=="undefined"?CLA_FEES_SNAPSHOT:{};
 async function fetchSheet(fetchFn){const raw={};await Promise.all(TABS.map(async t=>{const r=await fetchFn(sheetCsvUrl(t),{cache:"no-store"});
  if(!r.ok)throw Error(`${t}: HTTP ${r.status}`);const rows=parseCSV(await r.text());if(!validTab(rows)){if(REQUIRED.includes(t))throw Error(`${t}: unexpected content (is the sheet shared "anyone with the link"?)`);return}raw[t]=rows}));return raw}
 async function loadFees(fetchFn){try{const raw=await fetchSheet(fetchFn);return{raw,source:"sheet",at:new Date()}}catch(e){return{raw:SNAP,source:"snapshot",error:String(e.message||e)}}}
-if(typeof module!=="undefined")module.exports={lenderOnly,perDoc,parseCSV,normalize,calc,premiums,taxAmount,DOC_DEFAULTS,allCounties,usesDefaults,zipLookup,loadFees,fetchSheet,claFees,SNAP,SHEET_ID,sheetCsvUrl,TABS};
+if(typeof module!=="undefined")module.exports={lenderOnly,perDoc,parseCSV,normalize,calc,premiums,taxAmount,DOC_DEFAULTS,allCounties,usesDefaults,zipLookup,loadFees,fetchSheet,claFees,SNAP,SHEET_ID,sheetCsvUrl,TABS,sellerNet,prorateTaxes,defaultPaidThrough,sellerFeeRows,sellerFeeInputs,commission,ownerPayDefault};
 
 // ---------- UI ----------
 if(typeof document!=="undefined"){
 const $=id=>document.getElementById(id);let R=normalize(SNAP),src="snapshot",type="purchase",last=null;
-function counties(){const st=$("state").value,list=allCounties(R,st);
- const cur=$("county").value;$("county").innerHTML='<option value="">Select county / city…</option>'+list.map(c=>`<option>${c}</option>`).join("");if(list.includes(cur))$("county").value=cur}
-function setCounty(c){const o=[...$("county").options].find(o=>eq(o.value,c));if(o)$("county").value=o.value}
+function counties(p=""){const st=$(p+"state").value,list=allCounties(R,st);
+ const cur=$(p+"county").value;$(p+"county").innerHTML='<option value="">Select county / city…</option>'+list.map(c=>`<option>${c}</option>`).join("");if(list.includes(cur))$(p+"county").value=cur}
+function setCounty(c,p=""){const before=$(p+"county").value,o=[...$(p+"county").options].find(o=>eq(o.value,c));if(o)$(p+"county").value=o.value;if(p&&$(p+"county").value!==before)ownTouched=false}
 function buildUw(){const u=[...new Set(R.Premium_Tiers.concat(R.Premium_Rules,R.Endorsements).map(x=>String(x.Underwriter||"").trim()).filter(Boolean))];const cur=$("uw").value;
  $("uw").innerHTML=(u.length?u:["Fidelity National Title"]).map(x=>`<option>${x}</option>`).join("");if(u.includes(cur))$("uw").value=cur}
 function buildEnds(){const st=$("state").value;$("ends").innerHTML=uwRows(R.Endorsements,$("uw").value,st).filter(e=>txOK(e.Transaction,type)&&!(type==="cash"&&eq(e["Applies To"],"Lender"))).map(e=>`<label class="chk"><input type="checkbox" data-code="${e.Code}" ${e["Default On"]==="Y"?"checked":""}>${e.Code} ${e.Name} <span class="sum">(${String(e["Applies To"]).toLowerCase()}, ${String(e.Pricing).includes("%")?e.Amount+(/combined/i.test(e.Pricing)?"% of owner's + loan premium":"% of premium"):fmt(num(e.Amount)||0)})</span></label>`).join("")||'<span class="sum">No active endorsements for this state/underwriter.</span>'}
@@ -375,22 +500,76 @@ function quote(){const{i,res}=last,b=type==="refi"?"Borrower":"Buyer";let t=`C.L
 $("copy").onclick=()=>{const t=quote();(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>$("copied").textContent="Copied!",()=>{prompt("Copy quote:",t)})};
 $("tabs").onclick=e=>{if(e.target.dataset.t)setType(e.target.dataset.t)};
 // ZIP is authoritative: handled on input, change (autofill/paste) and from a ZIP typed in the address line.
-let zipHit=null;
-function applyZip(){const z=$("zip").value.trim(),m=$("zipMsg");zipHit=null;if(z.length<5){m.textContent="";return}
+const zipHit={"":null,s_:null};
+function applyZip(p=""){const z=$(p+"zip").value.trim(),m=$(p+"zipMsg");zipHit[p]=null;if(z.length<5){m.textContent="";return}
  const r=zipLookup(z);if(!r){m.textContent=/^\d{5}$/.test(z)?"We don't have that ZIP on file (we cover MD, VA, DC and FL) — please pick the state and county below.":"Enter a 5-digit ZIP.";return}
- zipHit=r;const stChanged=$("state").value!==r.state;$("state").value=r.state;counties();setCounty(r.county);if(stChanged)rebuild();m.textContent=(r.approx?`ZIP not in Census ZIP areas; using nearest (${r.via}) — please confirm county. `:"")+(r.also.length?`This ZIP also covers ${r.also.join(", ")}.`:"");run()}
-$("zip").oninput=$("zip").onchange=applyZip;
+ zipHit[p]=r;const stChanged=$(p+"state").value!==r.state;$(p+"state").value=r.state;counties(p);setCounty(r.county,p);if(stChanged)p?buildSFees():rebuild();m.textContent=(r.approx?`ZIP not in Census ZIP areas; using nearest (${r.via}) — please confirm county. `:"")+(r.also.length?`This ZIP also covers ${r.also.join(", ")}.`:"");p?runS():run()}
+$("zip").oninput=$("zip").onchange=()=>applyZip();
 $("addr").addEventListener("input",()=>{const m=$("addr").value.match(/\b(\d{5})(?:-\d{4})?\s*$/);if(m&&m[1]!==$("zip").value){$("zip").value=m[1];applyZip()}});
-$("city").oninput=()=>{const c=$("city").value.trim();if(!c||zipHit)return;const o=[...$("county").options].find(o=>o.value&&eq(o.value,c));if(o){$("county").value=o.value;run()}};
+$("city").oninput=()=>{const c=$("city").value.trim();if(!c||zipHit[""])return;const o=[...$("county").options].find(o=>o.value&&eq(o.value,c));if(o){$("county").value=o.value;run()}};
 $("state").onchange=()=>{counties();rebuild();run()};$("uw").onchange=()=>{rebuild();run()};
-document.querySelector("main").addEventListener("input",e=>{if(!["zip","city","state","addr"].includes(e.target.id))run()});document.querySelector("main").addEventListener("change",e=>{if(!["zip","state","uw"].includes(e.target.id))run()});
+$("mainQ").addEventListener("input",e=>{if(!["zip","city","state","addr"].includes(e.target.id))run()});$("mainQ").addEventListener("change",e=>{if(!["zip","state","uw"].includes(e.target.id))run()});
 function load(raw,label,kind,err){R=normalize(raw);src=kind;$("srcPill").textContent=label;
  $("status").innerHTML=kind==="sheet"?`Fees loaded from team sheet at ${new Date().toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}.`:kind==="xlsx"?`Using uploaded workbook “${label}” (overrides the team sheet until reload).`:`<b class="statuswarn">⚠ Could not load the team sheet${err?" ("+err+")":""}. Using the built-in snapshot of the fee tables — rates may be out of date.</b>`;
- buildUw();counties();setType(type)}
+ buildUw();counties();setType(type);counties("s_");buildSFees();if(mode==="seller")runS()}
 async function loadLive(){$("srcPill").textContent="Loading fees…";const r=await loadFees((u,o)=>fetch(u,o));load(r.raw,r.source==="sheet"?"Team sheet (live)":"Built-in snapshot",r.source,r.error)}
 $("btnReload").onclick=()=>{$("file").value="";loadLive()};
 $("file").onchange=async e=>{const f=e.target.files[0];if(!f)return;if(!window.XLSX){alert("SheetJS failed to load");return}
  const wb=XLSX.read(await f.arrayBuffer());const raw={};wb.SheetNames.forEach(n=>raw[n]=XLSX.utils.sheet_to_json(wb.Sheets[n],{header:1,defval:""}).filter(r=>r.some(c=>c!=="")));
  const miss=REQUIRED.filter(n=>!raw[n]);if(miss.length)alert("Workbook missing tabs: "+miss.join(", "));load(raw,f.name,"xlsx")};
+// ---------- seller net sheet UI ----------
+let mode="quote",sLast=null,ownTouched=false;const SC=$("s_other");
+function sOtherRow(){const d=document.createElement("div");d.className="orow";d.innerHTML='<div><input type="text" placeholder="Label (e.g. Repairs)" aria-label="Cost label" maxlength="60"></div><div class="money"><input type="number" placeholder="0" aria-label="Cost amount" inputmode="decimal"></div>';SC.appendChild(d)}
+function sOtherBtn(){$("s_addo").hidden=SC.children.length>=5}
+function buildSFees(){$("s_fees").innerHTML=sellerFeeRows(R,$("s_state").value).map(f=>`<div class="fee"><input type="checkbox" ${f["Default On"]!=="N"?"checked":""} data-name="${String(f["Fee Name"]).replace(/"/g,"&quot;")}" data-payer="${f["Paid By"]}" data-tx="${f.Transaction}" data-sec="${f["LE Section"]||"C"}"><span>${f["Fee Name"]}</span><input type="number" value="${num(f.Amount)||0}" aria-label="Amount"><span class="tag s">${f["Paid By"]}</span></div>`).join("")||'<span class="sum">No seller fees in the sheet for this state.</span>'}
+function syncOwn(){const st=$("s_state").value,co=$("s_county").value,c=ownerPayDefault(R,st,co);if(!ownTouched)$("s_own").checked=c==="Seller";
+ $("s_ownNote").textContent=co?`(local custom in ${co}: ${c.toLowerCase()} pays${ownTouched&&$("s_own").checked!==(c==="Seller")?" — overridden":""})`:""}
+function sinputs(){const n=id=>+$(id).value||0;return{state:$("s_state").value,county:$("s_county").value,uw:$("uw").value,price:n("s_price"),closing:$("s_close").value,
+ buyerComm:{mode:$("s_bbm").value,val:n("s_bbv")},sellerComm:{mode:$("s_slm").value,val:n("s_slv")},payoff1:n("s_po1"),payoff2:n("s_po2"),annualTax:n("s_tax"),paidThrough:$("s_ptd").value,
+ hoaDues:n("s_hoa"),hoaTransfer:n("s_hoat"),special:n("s_spec"),concession:{mode:$("s_cm").value,val:n("s_cv")},warranty:n("s_war"),termination:n("s_term"),
+ other:[...SC.querySelectorAll(".orow")].map(r=>({label:r.querySelector("input[type=text]").value,amt:+r.querySelector("input[type=number]").value||0})),
+ ownerPays:$("s_own").checked,fthb:$("s_fthb").checked,bpst:$("s_bpst").checked,
+ fees:[...document.querySelectorAll("#s_fees .fee")].filter(d=>d.children[0].checked).map(d=>({name:d.children[0].dataset.name,payer:d.children[0].dataset.payer,tx:d.children[0].dataset.tx,sec:d.children[0].dataset.sec,amt:+d.children[2].value||0}))}}
+const sgn=x=>x<0?`<span class="cr">−${fmt(-x)}</span>`:fmt(x);
+function sCard(n,title,rows,total,tl){return`<section class="card sec"><div class="sh"><span class="l">${n}</span><h3>${title}</h3></div><table class="ledger one"><thead><tr><th>Item</th><th class="num">Amount</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.item)}</td><td class="num">${sgn(r.amt)}</td></tr>`).join("")||'<tr><td class="z">None</td><td class="num z">—</td></tr>'}<tr class="tot"><td>${tl}</td><td class="num">${sgn(total)}</td></tr></tbody></table></section>`}
+const fullAddr=i=>[[$("s_addr").value.trim(),$("s_city").value.trim()].filter(Boolean).join(", "),[i.state,$("s_zip").value.trim()].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+function runS(){syncOwn();const i=sinputs(),r=sellerNet(R,i),T=r.totals,cd=pDate(i.closing);sLast={i,r};
+ $("s_cntyNote").textContent=!i.county?"Enter a ZIP or choose a county to include county taxes.":usesDefaults(R,i.state,i.county)?"Using state default rates for this county":"";
+ for(const[k,c,h]of[["bb",i.buyerComm,"s_bbh"],["sl",i.sellerComm,"s_slh"]]){$("s_"+k+"w").className=c.mode==="flat"?"money":"";$(h).textContent=`= ${fmt(commission(i.price,c))}${c.mode==="flat"&&i.price>0?` (${(commission(i.price,c)/i.price*100).toFixed(2)}% of price)`:""}`}
+ $("s_cw").className=i.concession.mode==="flat"?"money":"";$("s_ch").textContent=i.concession.val?`= ${fmt(commission(i.price,i.concession))}`:"";
+ const pr=r.proration,dp=defaultPaidThrough(i.state,cd);
+ $("s_prorHint").textContent=!cd?"Enter a closing date to prorate taxes.":(i.annualTax>0&&pr.paidThrough?`${pr.assumed?"Assumed paid through "+longDate(pr.paidThrough)+" ("+pr.note+"). ":"Paid through "+longDate(pr.paidThrough)+". "}${pr.days>0?`Seller owes ${pr.days} day${pr.days===1?"":"s"} = ${fmt(pr.amount)}.`:pr.days<0?`Buyer credits seller for ${-pr.days} day${pr.days===-1?"":"s"} = ${fmt(-pr.amount)}.`:"No proration due (buyer owns the closing day)."}`:`Leave blank to assume ${dp?"paid through "+longDate(dp)+" — ":""}${pr.note||"(no schedule for this state)"}. Estimate only.`);
+ $("sNet").textContent=fmt(r.net);$("sPrice").textContent=fmt(r.price);$("sCosts").textContent=fmt(r.totalCosts);$("sPay").textContent=fmt(r.payoffTotal);
+ const addr=fullAddr(i),line=`${i.county?i.county+", ":""}${i.state}${cd?" · Closing "+longDate(cd):""}`;
+ $("sSum").innerHTML=`${esc(addr||"(no address)")}<br>${esc(line)} ${src==="snapshot"?'<span class="flag">BUILT-IN SNAPSHOT</span>':""}`;
+ $("s_phAddr").textContent=(addr||"(no address)")+(i.county?` · ${i.county}, ${i.state}`:"");$("s_phLine").textContent=`Selling price ${fmt(r.price)} · Closing date ${cd?longDate(cd):"—"}`;
+ let n=0;const cards=[[ "Commissions",r.commissions,T.commissions,"Total commissions",true],["Government tax &amp; recording fees",r.gov,T.gov,"Total government tax &amp; fees",true],["Title &amp; settlement fees",r.title,T.title,"Total title &amp; settlement",true],
+  ["Mortgage payoffs",r.payoffs,T.payoffs,"Total payoffs",r.payoffs.length>0],["Prorations &amp; credits",r.prorations,T.pro,"Total prorations &amp; credits",r.prorations.length>0],["Other costs",r.other,T.other,"Total other costs",r.other.length>0]];
+ $("sLedger").innerHTML=cards.filter(c=>c[4]).map(c=>sCard(++n,c[0],c[1],c[2],c[3])).join("");
+ $("sGrand").innerHTML=`<tr><td>Selling price</td><td class="num">${fmt(r.price)}</td></tr><tr><td>Less: total seller costs</td><td class="num">${r.totalCosts<0?sgn(-r.totalCosts).replace("−",""):"−"+fmt(r.totalCosts)}</td></tr>${r.payoffTotal?`<tr><td>Less: mortgage payoffs</td><td class="num">−${fmt(r.payoffTotal)}</td></tr>`:""}<tr class="tot"><td>Net seller proceeds</td><td class="num">${fmt(r.net)}</td></tr>`;
+ $("sWarns").innerHTML=r.warnings.length?`<div class="warn"><div><b>Heads up</b><ul>${r.warnings.map(w=>`<li>${esc(w)}</li>`).join("")}</ul></div></div>`:""}
+function sQuote(){const{i,r}=sLast,cd=pDate(i.closing);let t=`C.L.A. Title & Escrow — Seller's Net Sheet (estimate)\n${fullAddr(i)||"(no address)"}\n${i.county?i.county+", ":""}${i.state}${cd?" · Closing "+longDate(cd):""}\nSelling price: ${fmt(r.price)}\n`;
+ for(const[name,rows,tot]of[["Commissions",r.commissions,r.totals.commissions],["Government tax & recording fees",r.gov,r.totals.gov],["Title & settlement fees",r.title,r.totals.title],["Prorations & credits",r.prorations,r.totals.pro],["Other costs",r.other,r.totals.other]]){if(!rows.length)continue;t+=`\n${name.toUpperCase()}\n`;for(const x of rows)t+=`  ${x.item}: ${x.amt<0?"-"+fmt(-x.amt):fmt(x.amt)}\n`;t+=`  Subtotal: ${tot<0?"-"+fmt(-tot):fmt(tot)}\n`}
+ t+=`\nTotal seller costs: ${fmt(r.totalCosts)}\n`;if(r.payoffs.length){t+=`\nMORTGAGE PAYOFFS\n`;for(const x of r.payoffs)t+=`  ${x.item}: ${fmt(x.amt)}\n`;t+=`  Total payoffs: ${fmt(r.payoffTotal)}\n`}
+ return t+`\nNET SELLER PROCEEDS: ${fmt(r.net)}\n\nEstimate only. Not a settlement statement. Actual proceeds depend on final payoff, prorations and charges at closing.`}
+$("sCopy").onclick=()=>{const t=sQuote();(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>$("sCopied").textContent="Copied!",()=>{prompt("Copy summary:",t)})};
+$("s_addo").onclick=()=>{if(SC.children.length<5)sOtherRow();sOtherBtn();runS()};
+function pad(n){return String(n).padStart(2,"0")}
+const td=new Date();$("s_close").value=`${td.getFullYear()}-${pad(td.getMonth()+1)}-${pad(td.getDate())}`;sOtherRow();sOtherRow();
+// ZIP / state / county for the seller tab (same lookup as the quote tab)
+$("s_zip").oninput=$("s_zip").onchange=()=>applyZip("s_");
+$("s_addr").addEventListener("input",()=>{const m=$("s_addr").value.match(/\b(\d{5})(?:-\d{4})?\s*$/);if(m&&m[1]!==$("s_zip").value){$("s_zip").value=m[1];applyZip("s_")}});
+$("s_city").oninput=()=>{const c=$("s_city").value.trim();if(!c||zipHit.s_)return;const o=[...$("s_county").options].find(o=>o.value&&eq(o.value,c));if(o){$("s_county").value=o.value;ownTouched=false}};
+$("s_state").onchange=()=>{ownTouched=false;counties("s_");buildSFees();runS()};
+$("s_county").addEventListener("change",()=>{ownTouched=false});$("s_own").addEventListener("change",()=>{ownTouched=true});
+$("mainS").addEventListener("input",e=>{if(!["s_zip"].includes(e.target.id))runS()});$("mainS").addEventListener("change",e=>{if(!["s_zip","s_state"].includes(e.target.id))runS()});
+// switching tabs carries the shared property fields across
+function copyProps(fp,tp){for(const k of["addr","city","zip","price"])$(tp+k).value=$(fp+k).value;$(tp+"zipMsg").textContent=$(fp+"zipMsg").textContent;
+ const stChanged=$(tp+"state").value!==$(fp+"state").value;$(tp+"state").value=$(fp+"state").value;counties(tp);setCounty($(fp+"county").value,tp);zipHit[tp]=zipHit[fp];if(stChanged)tp?buildSFees():rebuild()}
+function setMode(m){if(m===mode)return;copyProps(mode==="seller"?"s_":"",m==="seller"?"s_":"");mode=m;const s=m==="seller";
+ $("mainQ").hidden=s;$("mainS").hidden=!s;$("discQ").hidden=s;$("discS").hidden=!s;
+ document.querySelectorAll("#modes button").forEach(b=>{b.classList.toggle("on",b.dataset.mode===m);b.setAttribute("aria-pressed",b.dataset.mode===m)});
+ s?runS():run()}
+$("modes").onclick=e=>{const b=e.target.closest("button");if(b&&b.dataset.mode)setMode(b.dataset.mode)};
 load(SNAP,"Built-in snapshot","snapshot");$("status").textContent="Loading fees from the team sheet…";loadLive();}
 </script></body></html>

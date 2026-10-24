@@ -2,7 +2,7 @@ const fs=require("fs"),assert=require("assert");const src=fs.readFileSync("index
 const js=src.split("<script>")[1].split("</script>")[0];const zjs=fs.readFileSync("zip-county.js","utf8"),sjs=fs.readFileSync("fee-snapshot.js","utf8");
 const strip=s=>s.replace(/if\(typeof module[^\n]*/,"");const m={exports:{}};new Function("module",strip(zjs)+"\n"+strip(sjs)+"\n"+js)(m);
 const X=m.exports,R=X.normalize(X.SNAP);let fails=0;const ok=(c,msg)=>{if(!c){fails++;console.error("FAIL",msg)}else console.log("ok",msg)};
-const near=(a,b,t=0.01)=>Math.abs(a-b)<=t;
+const near=(a,b,t=0.01)=>Math.abs(a-b)<=t;const X_fmt=x=>"$"+(+x).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
 const fees=(st,type)=>X.claFees(R,st,type).map(f=>({name:f["Fee Name"],payer:f["Paid By"],sec:f["LE Section"],amt:+f.Amount}));
 const inp=o=>Object.assign({type:"purchase",state:"MD",county:"Montgomery",uw:"Fidelity National Title",price:450000,loan:360000,payoff:300000,pol:"enhanced",rate:"basic",fthb:false,occ:true,ownPay:"",pres:"trid",ends:[],docs:X.DOC_DEFAULTS[o.type||"purchase"]},o,{fees:o.fees||fees(o.state||"MD",o.type||"purchase")});
 const line=(r,re)=>r.lines.filter(l=>re.test(l.item)).reduce((a,l)=>a+l.b+l.s,0);
@@ -100,6 +100,62 @@ for(const d of LP){const r=Q(d),P=r.premiums;
 let bad=0,cnt=0;for(const s of["MD","VA","DC","FL"])for(const co of X.allCounties(R,s))for(const type of["purchase","cash","refi"]){cnt++;try{const r=X.calc(R,inp({type,state:s,county:co}));
  if(!(r.total>0)||r.warnings.some(w=>/No (recording|transfer)/.test(w))||!r.lines.every(l=>isFinite(l.b)&&isFinite(l.s)))throw Error(r.warnings.join(";"))}catch(e){bad++;console.error("calc fail",s,co,type,e.message)}}
 ok(bad===0,`all ${cnt} county/type calcs succeed`);
+// ---------- Seller Net Sheet ----------
+// Reuses calc's seller column. Lodestar "Seller's Net Sheet" references (2.5% + 2.5% commissions, no payoff, no taxes, owner's policy NOT paid by seller).
+const SN=o=>X.sellerNet(R,Object.assign({state:"MD",county:"Frederick",uw:"Fidelity National Title",price:500000,closing:"2026-10-23",buyerComm:{mode:"pct",val:2.5},sellerComm:{mode:"pct",val:2.5}},o));
+const lode=(name,r,[comm,gov,title,total,net],t=1)=>{ok(near(r.totals.commissions,comm,t),`${name}: commissions ${r.totals.commissions} ≈ Lodestar ${comm}`);ok(near(r.totals.gov,gov,t),`${name}: gov't tax & fees ${r.totals.gov} ≈ Lodestar ${gov}`);
+ ok(near(r.totals.title,title,t),`${name}: title & closing ${r.totals.title} ≈ Lodestar ${title}`);ok(near(r.totalCosts,total,t),`${name}: total seller costs ${r.totalCosts} ≈ Lodestar ${total}`);ok(near(r.net,net,t),`${name}: net proceeds ${r.net} ≈ Lodestar ${net}`)};
+const snMD=SN({}),snVA=SN({state:"VA",county:"Fairfax"}),snFLo=SN({state:"FL",county:"Orange",price:400000,ownerPays:false}),snFL=SN({state:"FL",county:"Orange",price:400000});
+lode("SN MD Frederick $500k",snMD,[25000,4750,1159,30909,469091]);
+lode("SN VA Fairfax $500k",snVA,[25000,1500,1159,27659,472341]);
+lode("SN FL Orange $400k (owner's policy not seller-paid)",snFLo,[20000,2800,1209,24009,375991],0.01);
+// FL: our local custom for Orange is seller-paid owner's policy ($2,075 promulgated), which Lodestar's unchecked box omits
+ok(X.ownerPayDefault(R,"FL","Orange")==="Seller"&&X.ownerPayDefault(R,"MD","Frederick")==="Buyer"&&X.ownerPayDefault(R,"VA","Fairfax")==="Buyer","owner's policy local custom: FL Orange seller; MD Frederick, VA Fairfax buyer");
+ok(near(snFL.totals.title-snFLo.totals.title,2075)&&near(snFL.totalCosts,26084)&&near(snFL.net,373916)&&snFL.title.some(t=>/Owner's Title/.test(t.item)),"SN FL Orange default (local custom) adds seller-paid owner's policy $2,075 → costs 26,084, net 373,916");
+ok(near(snFLo.title.find(t=>/Settlement/.test(t.item)).amt,950)&&snFLo.gov.length===1&&/Doc stamps on deed/.test(snFLo.gov[0].item),"SN FL gov't = deed stamps only; title = notary 200 + Qualia 59 + settlement 950");
+ok(near(snMD.gov.reduce((a,x)=>a+x.amt,0),4750)&&snMD.gov.length===2,"SN MD Frederick gov't lines = state transfer 1,250 + county recordation 3,500");
+// seller costs equal the quote's seller column for the same inputs (same X.calc)
+for(const[n,r,st,co,price,ownPay]of[["MD Frederick",snMD,"MD","Frederick",500000,"Buyer"],["VA Fairfax",snVA,"VA","Fairfax",500000,"Buyer"],["FL Orange",snFL,"FL","Orange",400000,"Seller"]]){
+ const quote=X.calc(R,inp({state:st,county:co,price,loan:price*.8,pres:"actual",ownPay,fees:dflt(st,"purchase"),ends:dEnds(st,"purchase")}));
+ ok(near(r.totals.gov+r.totals.title,quote.seller),`SN ${n}: net-sheet gov't+title ${r.totals.gov+r.totals.title} = quote seller column ${quote.seller}`)}
+for(const[st,co]of[["MD","Frederick"],["VA","Fairfax"],["DC","District of Columbia"]]){const quote=Q({state:st,county:co,price:500000,loan:400000}),sn=SN({state:st,county:co});ok(near(sn.totals.gov+sn.totals.title,quote.seller),`SN ${st} ${co}: equals default quote's seller column (TRID presentation) ${quote.seller}`)}
+ok(snMD.totalCosts===snMD.sellerColumn+snMD.totals.commissions&&snMD.net===snMD.price-snMD.totalCosts,"SN identity: costs = commissions + calc seller column; net = price − costs");
+// release recording on payoff: $50 each in MD (seller-paid row), one per mortgage
+const p1=SN({payoff1:300000}),p2=SN({payoff1:300000,payoff2:50000});
+ok(near(p1.gov.find(g=>/Release/.test(g.item)).amt,50)&&near(p2.gov.find(g=>/Release/.test(g.item)).amt,100),"SN MD release recording $50 per payoff ($100 with a 2nd mortgage)");
+ok(near(p1.net,469091-50-300000)&&near(p2.net,469091-100-350000)&&p2.payoffs.length===2&&near(p2.payoffTotal,350000),"SN net = price − costs − payoffs (payoffs not counted as costs)");
+ok(near(p1.totalCosts,30959),"SN total seller costs exclude the payoff itself (30,909 + $50 release)");
+// commissions: % vs flat
+const cf=SN({buyerComm:{mode:"flat",val:10000},sellerComm:{mode:"pct",val:3}}),cf2=SN({buyerComm:{mode:"flat",val:12500},sellerComm:{mode:"flat",val:12500}});
+ok(cf.totals.commissions===25000&&cf.commissions[0].amt===10000&&cf.commissions[1].amt===15000,"SN commissions: $10,000 flat + 3% of $500k = 25,000");
+ok(near(cf2.net,snMD.net)&&near(SN({buyerComm:{mode:"pct",val:0},sellerComm:{mode:"pct",val:0}}).totals.commissions,0)&&near(SN({price:333333,buyerComm:{mode:"pct",val:2.25}}).commissions[0].amt,7499.99),"SN flat $12,500 ×2 = 2.5% ×2; 0% = 0; cents round");
+// tax proration (closing Oct 23, 2026; buyer owns the day of closing; 365-day year) — worked examples from title-escrow-reference §11
+const PR=(state,annual,paidThrough)=>X.prorateTaxes({state,annual,closing:"2026-10-23",paidThrough});
+let x=PR("MD",6000,"2027-06-30");ok(x.days===-251&&near(x.amount,-4126.03)&&!x.assumed,"MD paid through 6/30/2027: buyer credits seller 251 days = $4,126.03");
+x=PR("MD",6000);ok(x.assumed&&x.days===-70&&near(x.amount,-1150.68)&&x.paidThrough.toISOString().slice(0,10)==="2026-12-31","MD default (1st half paid, due Sep 30): credit 70 days = $1,150.68");
+x=PR("DC",5000);ok(x.days===22&&near(x.amount,301.37),"DC default: seller owes Oct 1–22 = 22 days = $301.37");
+x=PR("VA",8000);ok(x.days===114&&near(x.amount,2498.63),"VA (Fairfax) default: seller owes Jul 1–Oct 22 = 114 days = $2,498.63");
+x=PR("FL",7008);ok(x.days===295&&near(x.amount,5664.00),"FL default: seller owes Jan 1–Oct 22 = 295 days = $5,664.00");
+x=PR("MD",3650,"2026-10-22");ok(x.days===0&&x.amount===0,"paid through the day before closing → nothing due (buyer owns closing day)");
+x=PR("MD",3650,"2026-10-23");ok(x.days===-1&&near(x.amount,-10),"paid through the closing day → 1 day credit to seller");
+x=PR("MD",3650,"2026-10-12");ok(x.days===10&&near(x.amount,100),"override paid-through date: 10 days × $10 = $100 owed");
+ok(X.prorateTaxes({state:"MD",annual:0,closing:"2026-10-23"}).amount===0&&X.prorateTaxes({state:"MD",annual:5000,closing:""}).amount===0,"no taxes or no closing date → no proration");
+for(const[d,state,pt]of[["2026-07-15","MD","2026-06-30"],["2026-12-31","MD","2027-06-30"],["2027-02-01","MD","2027-06-30"],["2026-03-31","DC","2026-03-31"],["2026-12-10","VA","2026-12-31"],["2026-12-10","FL","2026-12-31"],["2026-02-10","FL","2025-12-31"]])
+ ok(X.defaultPaidThrough(state,new Date(d+"T00:00:00Z")).toISOString().slice(0,10)===pt,`default paid-through ${state} closing ${d} → ${pt}`);
+// the proration flows into the sheet: $4,800 annual taxes, MD Frederick, $300k payoff, closing Oct 23 2026
+const sp=SN({payoff1:300000,annualTax:4800});
+ok(sp.prorations.length===1&&near(sp.totals.pro,-4800*70/365)&&near(sp.net,469091-50-300000+4800*70/365,0.02),`SN taxes $4,800 MD: credit to seller ${sp.totals.pro} → net ${sp.net}`);
+const sp2=SN({state:"DC",county:"District of Columbia",annualTax:5000});ok(near(sp2.totals.pro,301.37)&&sp2.prorations[0].amt>0,"SN DC taxes: debit to seller $301.37");
+// credits / other costs / HOA / warranty
+const oc=SN({concession:{mode:"pct",val:2},hoaDues:150,hoaTransfer:300,special:1000,warranty:500,termination:75,other:[{label:"Roof repair",amt:2500},{label:"",amt:100},{label:"x",amt:0}]});
+ok(near(oc.totals.pro,10000+150)&&near(oc.totals.other,300+1000+500+75+2500+100)&&oc.other.some(o=>o.item==="Roof repair")&&oc.other.some(o=>o.item==="Other seller cost"),"SN concession 2% = $10,000; HOA dues; other lines (labels, blank label default, zero skipped)");
+ok(near(oc.totalCosts,snMD.totalCosts+10150+4475)&&near(oc.net,snMD.net-10150-4475),"SN totals include prorations/credits and other costs");
+ok(near(SN({concession:{mode:"flat",val:3000}}).totals.pro,3000)&&SN({other:Array(8).fill({label:"a",amt:10})}).other.length===5,"SN flat concession; other-cost list capped at 5");
+// toggles
+ok(SN({bpst:true,state:"FL",county:"Orange",price:400000,ownerPays:false}).totals.gov===0,"SN: buyer-pays-seller's-deed-tax toggle removes FL deed stamps from the seller");
+ok(SN({fthb:true,price:400000}).gov.some(g=>/State transfer/.test(g.item)&&near(g.amt,1000))&&near(SN({price:400000}).gov.find(g=>/State transfer/.test(g.item)).amt,1000),"SN MD state transfer at $400k = $1,000 (seller share)");
+ok(SN({state:"MD",county:"Frederick",ownerPays:true}).warnings.some(w=>/owner's premium/.test(w))&&!snMD.warnings.some(w=>/owner's premium|lender/.test(w)),"SN MD: missing owner's premium only warns when the seller pays it; never lender warnings");
+ok(SN({fees:[]}).totals.title===0&&near(SN({fees:[{name:"Custom",payer:"Seller",amt:100,sec:"C"}]}).totals.title,100),"SN fee list is editable (custom seller fee, none)");
 // live loader: fallback + success with mocked fetch
 (async()=>{
  const fb=await X.loadFees(async()=>({ok:false,status:401,text:async()=>""}));ok(fb.source==="snapshot"&&/401/.test(fb.error),"fetch 401 -> snapshot fallback");
@@ -115,5 +171,26 @@ ok(bad===0,`all ${cnt} county/type calcs succeed`);
  ok(/built-in snapshot/i.test(w.getElementById("status").textContent),"DOM shows snapshot warning when sheet unavailable");
  w.getElementById("zip").value="21704";w.getElementById("zip").dispatchEvent(new d.window.Event("input"));ok(w.getElementById("county").value==="Frederick","DOM ZIP 21704 -> Frederick");
  for(const t of["purchase","cash","refi"]){w.querySelector(`[data-t=${t}]`).click();console.log("DOM",t,w.getElementById("tB").textContent,w.getElementById("tS").textContent,w.getElementById("tA").textContent)}
- ok(w.getElementById("fees").querySelectorAll(".fee").length>0,"DOM CLA fees listed");ok(errs.length===0,"no DOM errors "+errs);
+ ok(w.getElementById("fees").querySelectorAll(".fee").length>0,"DOM CLA fees listed");
+ // Seller Net Sheet tab
+ const ev=n=>new d.window.Event(n,{bubbles:true}),setv=(id,v)=>{const e=w.getElementById(id);e.value=v;e.dispatchEvent(ev("input"));e.dispatchEvent(ev("change"))};
+ const qTot=["tB","tS","tA"].map(i=>w.getElementById(i).textContent).join("|");
+ w.querySelector("[data-t=purchase]").click();const qBefore=["tB","tS","tA"].map(i=>w.getElementById(i).textContent).join("|");
+ w.querySelector("[data-mode=seller]").click();
+ ok(w.getElementById("mainQ").hidden&&!w.getElementById("mainS").hidden&&w.getElementById("s_county").value==="Frederick","DOM seller tab shows; shared county carried over (Frederick)");
+ setv("s_price","500000");setv("s_close","2026-10-23");
+ ok(w.getElementById("s_bbv").value==="2.5"&&w.getElementById("s_slv").value==="2.5"&&w.getElementById("s_own").checked===false,"DOM commissions default 2.5% / 2.5%; owner's policy default follows local custom (MD: buyer)");
+ ok(w.getElementById("sNet").textContent==="$469,091.00","DOM MD Frederick $500k net = $469,091.00 (Lodestar 469,091)");
+ setv("s_po1","300000");setv("s_tax","4800");
+ ok(w.getElementById("sNet").textContent===X_fmt(sp.net)&&/Release/.test(w.getElementById("sLedger").textContent)&&/credit to seller/.test(w.getElementById("sLedger").textContent),"DOM payoff + taxes: net "+w.getElementById("sNet").textContent);
+ setv("s_bbm","flat");setv("s_bbv","10000");ok(/Buyer's broker commission \(flat\)/.test(w.getElementById("sLedger").textContent),"DOM flat commission");
+ setv("s_zip","32801");ok(w.getElementById("s_state").value==="FL"&&w.getElementById("s_county").value==="Orange"&&w.getElementById("s_own").checked===true,"DOM seller ZIP 32801 → FL Orange; owner's policy defaults to seller");
+ w.getElementById("s_own").checked=false;w.getElementById("s_own").dispatchEvent(ev("change"));ok(/Settlement/.test(w.getElementById("sLedger").textContent)&&!/Owner's Title/.test(w.getElementById("sLedger").textContent),"DOM owner's-policy toggle removes the line");
+ setv("s_addr","400 W Church St");ok(/400 W Church St/.test(w.getElementById("s_phAddr").textContent)&&/Selling price/.test(w.getElementById("s_phLine").textContent)&&/Closing date/.test(w.getElementById("s_phLine").textContent),"DOM print header has address, price, closing date");
+ for(let k=0;k<5;k++)w.getElementById("s_addo").click();ok(w.querySelectorAll("#s_other .orow").length===5&&w.getElementById("s_addo").hidden,"DOM other-cost lines capped at 5");
+ w.querySelector("[data-mode=quote]").click();w.querySelector("[data-t=purchase]").click();
+ ok(!w.getElementById("mainQ").hidden&&w.getElementById("mainS").hidden&&w.getElementById("state").value==="FL","DOM back to quote tab (state carried)");
+ w.getElementById("zip").value="21704";w.getElementById("zip").dispatchEvent(ev("input"));w.getElementById("price").value="450000";w.getElementById("price").dispatchEvent(ev("input"));
+ ok(["tB","tS","tA"].map(i=>w.getElementById(i).textContent).join("|")===qBefore,"DOM quote tab numbers unchanged after using the seller tab: "+qBefore);
+ok(errs.length===0,"no DOM errors "+errs);
  if(fails){console.error(fails,"FAILED");process.exit(1)}console.log("ALL PASS")})();
