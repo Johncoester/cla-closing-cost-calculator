@@ -5,16 +5,17 @@
   const id = (k) => "00000000-0000-4000-8000-0000000000" + k;
 
   // fictional cell numbers (555-01xx), stored the way the database stores them: +1XXXXXXXXXX. Pat has none (optional for clients).
-  const CELL = { a1: "+13015550101", b1: "+13015550112", b2: "+17035550123", c1: "+12405550132", c2: "+12025550142", c4: "+17035550162", c5: "+17035550172" };
+  const CELL = { a1: "+13015550101", b1: "+13015550112", b2: "+17035550123", c1: "+12405550132", c2: "+12025550142", c4: "+17035550162", c5: "+17035550172", c6: "+12025550182" };
   const P = (k, role, email, f, l, phone, co, extra) =>
     Object.assign({ id: id(k), role, status: "active", email, firstName: f, lastName: l, phone, cellPhone: CELL[k] || null, companyName: co,
       companyPhone: null, companyAddress: null, companyWebsite: null, licenseOrNmls: null, avatarPath: null,
-      termsAcceptedAt: "2026-10-01T12:00:00Z", createdAt: "2026-10-01T12:00:00Z" }, extra || {});
+      isRep: role === "rep", termsAcceptedAt: "2026-10-01T12:00:00Z", createdAt: "2026-10-01T12:00:00Z" }, extra || {});
 
   CLA.MOCK_SEED = function () {
     const now = Date.now(), day = 86400000, iso = (d) => new Date(now - d * day).toISOString();
     const users = [
-      P("a1", "super_admin", "sample.admin@clatitle.com", "Alex", "Admin", "301-555-0100", "C.L.A. Title & Escrow"),
+      // the sample admin ALSO works as a rep (isRep): she has clients Quinn and (pending) Rae, and a photo
+      P("a1", "super_admin", "sample.admin@clatitle.com", "Alex", "Admin", "301-555-0100", "C.L.A. Title & Escrow", { isRep: true, companyAddress: "Rockville, MD", avatarPath: id("a1") + "/avatar" }),
       P("b1", "rep", "sample.rep.jane@clatitle.com", "Jane", "Rep", "301-555-0111", "C.L.A. Title & Escrow", { companyAddress: "Rockville, MD", avatarPath: id("b1") + "/avatar" }),
       P("b2", "rep", "sample.rep.marcus@clatitle.com", "Marcus", "Rep", "703-555-0122", "C.L.A. Title & Escrow", { companyAddress: "Arlington, VA", avatarPath: id("b2") + "/avatar" }),
       P("c1", "client", "sam.agent@example.com", "Sam", "Agent", "240-555-0131", "Acme Realty", { companyPhone: "240-555-0130", companyAddress: "12 Elm St, Bethesda, MD", licenseOrNmls: "MD-SAMPLE-1001", avatarPath: id("c1") + "/avatar" }),
@@ -22,12 +23,14 @@
       P("c3", "client", "pat.homes@example.com", "Pat", "Homes", "757-555-0151", "Homes by Pat"),
       P("c4", "client", "dee.disabled@example.com", "Dee", "Disabled", "703-555-0161", "Old Dominion Realty", { status: "disabled" }),
       P("c5", "client", "omar.broker@example.com", "Omar", "Broker", "703-555-0171", "Potomac Brokers", { companyAddress: "9 Main St, Alexandria, VA" }),
+      P("c6", "client", "quinn.buyer@example.com", "Quinn", "Buyer", "202-555-0181", "Bright Realty", { companyPhone: "202-555-0180", companyAddress: "1 Dupont Cir, Washington, DC" }),
     ];
     const A = (n, email, rep, uid) => ({ id: "as" + n, clientEmail: email, clientUserId: uid ? id(uid) : null, repId: id(rep), active: true, createdAt: iso(20) });
     const assignments = [
       A(1, "sam.agent@example.com", "b1", "c1"), A(2, "lee.lender@example.com", "b1", "c2"),
       A(3, "dee.disabled@example.com", "b2", "c4"), A(4, "omar.broker@example.com", "b2", "c5"),
       A(5, "nina.newagent@example.com", "b2", null),
+      A(6, "quinn.buyer@example.com", "a1", "c6"), A(7, "rae.pending@example.com", "a1", null),   // the admin's own clients (admin who also works as a rep)
     ];
     const lines = (sec, items) => items.map((x) => ({ sec, item: x[0], b: x[1], s: x[2] || 0 }));
     const buyerResults = (total) => ({
@@ -56,6 +59,8 @@
       Q(6, "c5", "b2", "buyer", "Buyer, 41 River Rd", "VA", "Fairfax", "41 River Rd, Fairfax, VA", 680000, 3, 17400),
       Q(7, "c3", null, "buyer", "Buyer, 2 Unassigned Way", "VA", "Norfolk", "2 Unassigned Way, Norfolk, VA", 350000, 5, 8200),
       Q(8, "b1", "b1", "buyer", "Jane test quote", "MD", "Montgomery", "1 Rep Test Ct, Rockville, MD", 500000, 4, 13000),
+      Q(10, "c6", "a1", "buyer", "Buyer, 1 Quinn Way", "DC", "District of Columbia", "1 Quinn Way NW, Washington, DC", 640000, 2, 22500),
+      Q(11, "a1", "a1", "buyer", "Alex test quote (admin who also reps)", "MD", "Montgomery", "2 Admin Rep Ct, Rockville, MD", 550000, 1, 15000),
     ];
     const audit = [
       { id: "au1", at: iso(2), actorId: id("a1"), action: "invite_sent", targetType: "invitation", details: { email: "omar.broker@example.com", role: "client" } },
@@ -64,11 +69,13 @@
     ];
     // sample "photos": silhouettes in the sample colors, stored as data URLs keyed by user id
     const photos = {};
+    photos[id("a1")] = CLA.silhouette("#f1d9e6", "#8a2b5e");
     photos[id("b1")] = CLA.silhouette("#cfe6a6", "#4d7a17");
     photos[id("b2")] = CLA.silhouette("#d6dff0", "#33476b");
     photos[id("c1")] = CLA.silhouette("#f3dcc4", "#8a5a2b");
     // Nina has no account yet (pending); her invitation carries her cell so the rep can see it. Mirrors supabase/seed.sql.
-    const invitations = [{ email: "nina.newagent@example.com", role: "client", invitedBy: id("b2"), cellPhone: "+17035550181", createdAt: iso(20) }];
-    return { version: 1, users, assignments, quotes, audit, photos, invitations };
+    const invitations = [{ email: "nina.newagent@example.com", role: "client", invitedBy: id("b2"), cellPhone: "+17035550181", createdAt: iso(20) },
+      { email: "rae.pending@example.com", role: "client", invitedBy: id("a1"), cellPhone: "+15715550191", createdAt: iso(20) }];
+    return { version: 2, users, assignments, quotes, audit, photos, invitations };
   };
 })();

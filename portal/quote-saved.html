@@ -28,8 +28,8 @@
 (async () => {
   const { $, esc } = CLA; const { A, me } = await CLA.boot(null);
   const raw = sessionStorage.getItem("cla_pending_quote");
-  $("dash").href = CLA.homeFor(me.role);
-  if (!raw) { location.replace(CLA.homeFor(me.role)); return; }
+  $("dash").href = CLA.quotesHome(me);
+  if (!raw) { location.replace(CLA.quotesHome(me)); return; }
   try {
     const snap = JSON.parse(raw); const q = await A.saveQuote(snap); sessionStorage.removeItem("cla_pending_quote");
     $("what").textContent = q.label || q.propertyAddress || "Quote";

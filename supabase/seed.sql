@@ -13,16 +13,20 @@
 -- Omar's cell is entered on his invitation (typed with dashes on purpose: the trigger stores +1XXXXXXXXXX
 -- and sign-up copies it to his profile). Nina has no account yet: her invitation carries her cell so the
 -- rep can see it, and it lands on her profile when she signs up (the test suite signs her up).
-insert into public.invitations (email, role, cell_phone) values
-  ('sample.admin@clatitle.com',      'super_admin', null),
-  ('sample.rep.jane@clatitle.com',   'rep',         null),
-  ('sample.rep.marcus@clatitle.com', 'rep',         null),
-  ('sam.agent@example.com',          'client',      null),
-  ('lee.lender@example.com',         'client',      null),
-  ('pat.homes@example.com',          'client',      null),
-  ('dee.disabled@example.com',       'client',      null),
-  ('omar.broker@example.com',        'client',      '703-555-0172'),
-  ('nina.newagent@example.com',      'client',      '703-555-0181');
+-- The sample admin is a super admin who ALSO works as a rep (is_rep, migration 6): the invitation carries the flag
+-- and sign-up copies it to the profile. Quinn and Rae are her/his own clients (Rae has not signed up yet).
+insert into public.invitations (email, role, cell_phone, is_rep) values
+  ('sample.admin@clatitle.com',      'super_admin', null,           true),
+  ('sample.rep.jane@clatitle.com',   'rep',         null,           true),
+  ('sample.rep.marcus@clatitle.com', 'rep',         null,           true),
+  ('sam.agent@example.com',          'client',      null,           false),
+  ('lee.lender@example.com',         'client',      null,           false),
+  ('pat.homes@example.com',          'client',      null,           false),
+  ('dee.disabled@example.com',       'client',      null,           false),
+  ('omar.broker@example.com',        'client',      '703-555-0172', false),
+  ('nina.newagent@example.com',      'client',      '703-555-0181', false),
+  ('quinn.buyer@example.com',        'client',      null,           false),
+  ('rae.pending@example.com',        'client',      '571-555-0191', false);
 
 -- 2. auth users (fixed ids so tests and the mock adapter line up)
 insert into auth.users (id, aud, role, email, email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
@@ -38,7 +42,8 @@ from (values
   ('00000000-0000-4000-8000-0000000000c2', 'lee.lender@example.com'),
   ('00000000-0000-4000-8000-0000000000c3', 'pat.homes@example.com'),
   ('00000000-0000-4000-8000-0000000000c4', 'dee.disabled@example.com'),
-  ('00000000-0000-4000-8000-0000000000c5', 'omar.broker@example.com')
+  ('00000000-0000-4000-8000-0000000000c5', 'omar.broker@example.com'),
+  ('00000000-0000-4000-8000-0000000000c6', 'quinn.buyer@example.com')
 ) as v(id, email);
 
 -- 3. profile details (this seed runs as a superuser, so column grants do not apply)
@@ -55,7 +60,8 @@ from (values
   ('00000000-0000-4000-8000-0000000000c2', 'Lee',    'Lender',   '202-555-0141', '+12025550142', 'Capital Home Loans',    '202-555-0140', '500 K St NW, Washington, DC', 'NMLS-SAMPLE-2002'),
   ('00000000-0000-4000-8000-0000000000c3', 'Pat',    'Homes',    '757-555-0151', null, 'Homes by Pat',          null,           null, null),
   ('00000000-0000-4000-8000-0000000000c4', 'Dee',    'Disabled', '703-555-0161', '+17035550162', 'Old Dominion Realty',   null,           null, null),
-  ('00000000-0000-4000-8000-0000000000c5', 'Omar',   'Broker',   '703-555-0171', null, 'Potomac Brokers',       '703-555-0170', '9 Main St, Alexandria, VA', null)
+  ('00000000-0000-4000-8000-0000000000c5', 'Omar',   'Broker',   '703-555-0171', null, 'Potomac Brokers',       '703-555-0170', '9 Main St, Alexandria, VA', null),
+  ('00000000-0000-4000-8000-0000000000c6', 'Quinn',  'Buyer',    '202-555-0181', '+12025550182', 'Bright Realty',         '202-555-0180', '1 Dupont Cir, Washington, DC', null)
 ) as v(id, f, l, ph, cell, co, cph, ca, lic)
 where p.id = v.id::uuid;
 update public.profiles set status = 'disabled' where id = '00000000-0000-4000-8000-0000000000c4';
@@ -66,10 +72,14 @@ insert into public.assignments (client_email, rep_id) values
   ('lee.lender@example.com',     '00000000-0000-4000-8000-0000000000b1'),
   ('dee.disabled@example.com',   '00000000-0000-4000-8000-0000000000b2'),
   ('omar.broker@example.com',    '00000000-0000-4000-8000-0000000000b2'),
-  ('nina.newagent@example.com',  '00000000-0000-4000-8000-0000000000b2');
+  ('nina.newagent@example.com',  '00000000-0000-4000-8000-0000000000b2'),
+  -- the admin's own clients (admin who also works as a rep); Rae has no account yet
+  ('quinn.buyer@example.com',    '00000000-0000-4000-8000-0000000000a1'),
+  ('rae.pending@example.com',    '00000000-0000-4000-8000-0000000000a1');
 
 -- 5. photo metadata (no storage objects are created by SQL seed; upload through the app)
 insert into public.photos (owner_id, storage_path, mime_type, size_bytes) values
+  ('00000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-0000000000a1/avatar', 'image/jpeg', 45120),
   ('00000000-0000-4000-8000-0000000000b1', '00000000-0000-4000-8000-0000000000b1/avatar', 'image/jpeg', 48211),
   ('00000000-0000-4000-8000-0000000000c1', '00000000-0000-4000-8000-0000000000c1/avatar', 'image/png',  52114);
 
@@ -83,4 +93,6 @@ insert into public.quotes (id, owner_id, quote_type, label, state, county, prope
   ('00000000-0000-4000-8000-00000000f006', '00000000-0000-4000-8000-0000000000c5', 'buyer',      'Buyer, 41 River Rd',       'VA', 'Fairfax',    '41 River Rd, Fairfax, VA',   680000, '{}',                  '{"headline":{"label":"Buyer total","value":17400}}',      '20261023d', now() - interval '3 days',  null),
   ('00000000-0000-4000-8000-00000000f007', '00000000-0000-4000-8000-0000000000c3', 'buyer',      'Buyer, 2 Unassigned Way',  'VA', 'Norfolk',    '2 Unassigned Way, Norfolk, VA', 350000, '{}',               '{"headline":{"label":"Buyer total","value":8200}}',       '20261023d', now() - interval '5 days',  null),
   ('00000000-0000-4000-8000-00000000f008', '00000000-0000-4000-8000-0000000000b1', 'buyer',      'Jane test quote',          'MD', 'Montgomery', '1 Rep Test Ct, Rockville, MD', 500000, '{}',                '{"headline":{"label":"Buyer total","value":13000}}',      '20261023d', now() - interval '4 days',  null),
-  ('00000000-0000-4000-8000-00000000f009', '00000000-0000-4000-8000-0000000000c1', 'buyer',      'Buyer, 300 Hidden St (deleted by client)', 'MD', 'Montgomery', '300 Hidden St, Bethesda, MD', 400000, '{}', '{"headline":{"label":"Buyer total","value":10100}}',  '20261023d', now() - interval '6 days',  now() - interval '5 days');
+  ('00000000-0000-4000-8000-00000000f009', '00000000-0000-4000-8000-0000000000c1', 'buyer',      'Buyer, 300 Hidden St (deleted by client)', 'MD', 'Montgomery', '300 Hidden St, Bethesda, MD', 400000, '{}', '{"headline":{"label":"Buyer total","value":10100}}',  '20261023d', now() - interval '6 days',  now() - interval '5 days'),
+  ('00000000-0000-4000-8000-00000000f00a', '00000000-0000-4000-8000-0000000000c6', 'buyer',      'Buyer, 1 Quinn Way',       'DC', 'District of Columbia', '1 Quinn Way NW, Washington, DC', 640000, '{}', '{"headline":{"label":"Buyer total","value":22500}}', '20261023d', now() - interval '2 days',  null),
+  ('00000000-0000-4000-8000-00000000f00b', '00000000-0000-4000-8000-0000000000a1', 'buyer',      'Alex test quote (admin who also reps)', 'MD', 'Montgomery', '2 Admin Rep Ct, Rockville, MD', 550000, '{}', '{"headline":{"label":"Buyer total","value":15000}}', '20261023d', now() - interval '1 day',   null);

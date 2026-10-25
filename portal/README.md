@@ -19,7 +19,7 @@ portal/
   js/supabase-adapter.js                         real back end: supabase-js from CDN (pinned 2.118.0), RLS-reliant
   js/portal-ui.js  js/portal-hook.js             shared helpers; calculator hook (auto-save, co-brand header, Log in / Save buttons)
   config.example.js  (config.js is gitignored)   { mode: "mock" } or { mode: "supabase", url, anonKey }
-  test-portal.js                                 82 adapter checks, no browser:  node portal/test-portal.js
+  test-portal.js                                 119 adapter checks, no browser:  node portal/test-portal.js
   tools/screenshots.py                           regenerates /workspace/portal-preview/*.png
 supabase/
   migrations/20261024000001_schema.sql           tables, constraints, triggers, helper functions, invite gate
@@ -27,9 +27,10 @@ supabase/
   migrations/20261024000003_storage_photos.sql   private 'avatars' bucket + storage policies
   migrations/20261024000004_purge_job.sql        30-day purge function + pg_cron schedule
   migrations/20261025000005_cell_phone.sql       cell_phone on profiles + invitations (E.164 check), get_my_rep_contact(), create_invitation(+cell)
+  migrations/20261025000006_admin_also_rep.sql   profiles.is_rep: a super admin who ALSO works as a rep; admin_set_is_rep(); create_invitation(+is_rep, +as_rep)
   functions/invite-user, functions/set-user-status   Edge Functions (service-role key stays server side; untested)
   seed.sql                                       fictional local test data (never for a real project)
-  tests/run-tests.sh                             throwaway local Postgres + 217 access-rule checks
+  tests/run-tests.sh                             throwaway local Postgres + 314 access-rule checks + an upgrade check (migrations 1-5 with data, then 6)
 ```
 
 ## Run it
@@ -41,7 +42,7 @@ supabase/
 * Adapter tests: `node portal/test-portal.js`.
 * Database tests: `bash supabase/tests/run-tests.sh` (needs `postgresql` + `postgresql-17-cron` packages; prints SKIPPED if Postgres is absent).
   It starts a temporary cluster, loads a small Supabase stand-in (`tests/00_supabase_shim.sql`: auth.uid(), auth.users, storage tables, roles),
-  runs all five migrations twice (re-runnable), seeds, and impersonates each role the way PostgREST does.
+  runs all six migrations twice (re-runnable), seeds, and impersonates each role the way PostgREST does.
 
 ## John's decisions as built
 
@@ -51,7 +52,7 @@ supabase/
 | Quotes auto-save to the client's account | `portal-hook.js`: first change in the calculator creates the quote, later changes update it (3 s debounce, never on page load); "Save as new quote" starts another |
 | Auto-delete 30 days after creation | `quotes.expires_at` = `created_at + 30 days` set by trigger (clients can't set or extend it); RLS hides expired rows instantly; nightly pg_cron job `purge-expired-quotes` (03:15 UTC) deletes them and writes an audit row |
 | Photos only, JPEG/PNG, 2 MB | UI check (type, size, magic bytes) + `photos` table checks + bucket `allowed_mime_types`/`file_size_limit`; browser also crops to 512 px and re-encodes (drops GPS EXIF) |
-| Roles: super admin / rep / client | `profiles.role`; changed only by `admin_set_role()`; role is never read from user metadata |
+| Roles: super admin / rep / client | `profiles.role`; changed only by `admin_set_role()`; role is never read from user metadata. A super admin can ALSO work as a rep: `profiles.is_rep` (migration 6, below) |
 | Cell phone for everyone (reps, clients/agents, admins); optional | `profiles.cell_phone` (migration 5): US only, stored `+1XXXXXXXXXX` (trigger normalizes, CHECK backstops); the person edits their own; the assigned rep/client and admins see it; can be entered when inviting |
 | Rep: invited, CLA email, phone, assigned agents and clients | rep rows require `@clatitle.com` (DB check); phone required by the profile screen; assignments by email, one active rep per client email |
 | Clients/agents: matched to reps by email, name + company info | `assignments.client_email` works before the client has an account; links on sign-up |
@@ -78,6 +79,33 @@ Access rules in one table (details and comments in migration 2):
 * **Why a new `get_my_rep_contact()` instead of changing `get_my_rep()`:** a function's return type cannot change with `create or replace`, and migrations here are re-run in order; editing migration 2 was avoided. Before the first real deploy, `get_my_rep()` can be dropped and the adapter pointed at one function.
 * **Screens:** profile (edit, formats as typed, inline validation), invite forms (rep and admin), rep dashboard (client Cell column with `tel:` links, own cell in the header), client dashboard (rep's cell as a `tel:` link, own cell), admin users table, co-branded quote header/print (rep's cell, falling back to the office phone).
 
+### A super admin who also works as a rep (migration 6)
+
+John (super admin) also sells: he is assigned clients, invites clients, sees his own clients' quotes, appears on co-branded quotes
+with his photo, cell and office phone, and shows up in rep pickers, all with ONE login.
+
+* **Design (least risky): `role` is untouched; one new boolean `profiles.is_rep`.** "Is a rep" means `role = 'rep' OR (role = 'super_admin' AND is_rep)`.
+  It is defined once, in `private.is_rep()`, which every rep RLS policy and helper already called, so those policies did not change.
+  Added/changed: `rep_of()` (so `get_my_rep()` / `get_my_rep_contact()` find him), `assignments_before()` (who can be assigned clients),
+  `quotes_set_expiry()` (his own quotes carry `rep_id` = him, like a rep), `handle_new_user()`, `is_complete` (phone required for anyone who is a rep),
+  the `@clatitle.com` checks, `create_invitation()`.
+* **Guards:** `role='rep'` => `is_rep` is forced true; `role='client'` => forced false (trigger, plus CHECK `profiles_is_rep_role` as backstop), so a client can never be a rep.
+  The column is **not** in the per-column UPDATE grant, so nobody can flip it through the API. Only `public.admin_set_is_rep(user, bool)` (super admin only; target must
+  be a super admin with an `@clatitle.com` email; switching OFF is refused while the person still has active clients; audited as `rep_flag_changed`) or an invitation can set it.
+* **He keeps everything:** the admin policies are unchanged, so he still sees and does everything. Where he acts *as a rep* the app asks the database for rep rules:
+  `create_invitation(..., p_as_rep := true)` (from the rep dashboard: the client is assigned to him and he can never take over another rep's client; the admin form,
+  with an explicit rep, may reassign). His own-client list filters `assignments.rep_id = me` (an admin can read every assignment, so RLS alone would list everyone).
+* **MFA:** if `require_admin_mfa` is on and he is at aal1, `is_admin()` is false but `is_rep()` is still true: that session gets exactly rep-level access (his clients only), never more.
+* **Role changes:** rep promoted to super admin keeps `is_rep` (his clients stay his); super admin promoted to rep sets it; any move to client clears it. Turning it off later does not rewrite history (old quotes keep their `rep_id`).
+* **Screens:** admin Users table has an "Also works as a rep" checkbox on every super admin row (own row included); the admin invite form has the same option for a new super admin;
+  assignment pickers (Assign tab, invite form) list admin+rep accounts as "Name (admin + rep)"; the header shows **Rep dashboard** next to **Admin dashboard** for admin+rep accounts
+  (portal pages and the calculator header); the rep dashboard works for them and says it only shows *their* clients; the calculator header/quote viewer show his photo, cell and office phone like a rep.
+* **Adapters:** `Profile.isRep` (see `auth-adapter.js`), `adminSetIsRep(userId, on)`, `adminInvite({..., isRep})`; `inviteClient` always sends `repId` = me and `asRep`.
+* **Edge function `invite-user`:** passes `isRep` / `asRep` to `create_invitation()`. It is backwards compatible with the previous deploy (the new parameters have defaults), so the order does not matter, but apply the SQL first.
+* **Applying it to a live project:** run `20261025000006_admin_also_rep.sql` in the SQL editor (idempotent). To make a not-yet-signed-up admin an admin+rep from day one:
+  `update public.invitations set is_rep = true where email = 'jcoester@clatitle.com' and accepted_at is null;` Otherwise just tick "Also works as a rep" on the Users tab after signing in.
+  Do not re-run migration 5 on its own after this one (it would re-create the old 4-argument `create_invitation`; drop it again if that ever happens).
+
 ## What is mocked, what is real
 
 | Piece | State |
@@ -96,7 +124,7 @@ Access rules in one table (details and comments in migration 2):
 
 John creates and owns the account (CLA email, a second owner); then, in order:
 1. Create the project (Pro plan before real data). Database > Extensions: enable `pg_cron`.
-2. Apply the migrations: `supabase link` + `supabase db push`, or paste the five files into the SQL editor in order. **Do not** run `seed.sql` or `tests/00_supabase_shim.sql` there.
+2. Apply the migrations: `supabase link` + `supabase db push`, or paste the six files into the SQL editor in order. **Do not** run `seed.sql` or `tests/00_supabase_shim.sql` there.
 3. Auth settings: turn **off** "Allow new users to sign up"; password minimum length 12 and required character types; enable leaked-password protection (Pro) and CAPTCHA; add a custom SMTP sender (e.g. Resend on `auth.clatitle.com`; the built-in mailer only reaches team members); set Site URL and add the allowed redirect `…/portal/set-password.html*`; edit the invite and recovery email templates.
 4. Deploy the Edge Functions (`supabase functions deploy invite-user set-user-status`) and set `PORTAL_ORIGIN` to the site's origin.
 5. Bootstrap the first admin from the SQL editor (no one can invite before one exists):

@@ -19,6 +19,7 @@
   <div class="row"><div><label for="iEmail">Email</label><input type="email" id="iEmail" autocomplete="off" placeholder="name@clatitle.com"></div>
    <div><label for="iRole">Role</label><select id="iRole"><option value="rep">Sales rep (CLA email required)</option><option value="client">Real estate agent / client</option><option value="super_admin">Super admin</option></select></div></div>
   <div class="row"><div><label for="iCell">Cell phone (optional)</label><input type="tel" id="iCell" inputmode="tel" maxlength="14" autocomplete="off" placeholder="(240) 555-0142" aria-describedby="iCellErr"><p class="fielderr" id="iCellErr" role="alert"></p></div><div></div></div>
+  <div class="row" id="iAlsoRow" hidden><div><label class="chk"><input type="checkbox" id="iAlso"> Also works as a rep (can be assigned clients; needs an @clatitle.com email)</label></div><div></div></div>
   <div class="row" id="iRepRow" hidden><div><label for="iRep">Assign to rep (optional)</label><select id="iRep"></select></div><div></div></div>
   <div style="display:flex;gap:10px"><button class="btn" type="submit">Send invite</button><button class="btn o" id="invCancel" type="button">Cancel</button></div>
  </form>
@@ -50,20 +51,24 @@
 
   async function loadUsers() {
     users = await A.adminListUsers(); asg = await A.adminListAssignments();
-    $("uCount").textContent = users.length + " users · " + users.filter((u) => u.role === "rep").length + " reps · " + users.filter((u) => u.role === "client").length + " clients";
+    $("uCount").textContent = users.length + " users · " + users.filter((u) => u.role === "rep").length + " reps" + (users.some((u) => u.role === "super_admin" && u.isRep) ? " + " + users.filter((u) => u.role === "super_admin" && u.isRep).length + " admin" + (users.filter((u) => u.role === "super_admin" && u.isRep).length === 1 ? "" : "s") + " also reps" : "") + " · " + users.filter((u) => u.role === "client").length + " clients";
     $("users").innerHTML = users.map((u) => {
       const a = asg.find((x) => x.active && x.clientUserId === u.id), rep = a && uById(a.repId);
       const st = u.status === "active" ? '<span class="badge">Active</span>' : '<span class="badge off">Disabled</span>';
-      const roleSel = u.id === me.id ? '<span class="badge admin">Super admin (you)</span>' :
-        '<select data-role="' + esc(u.id) + '" aria-label="Role" style="min-height:34px;padding:4px 30px 4px 10px;font-size:13px;width:auto">' + ["super_admin", "rep", "client"].map((r) => '<option value="' + r + '"' + (r === u.role ? " selected" : "") + ">" + CLA.roleLabel(r) + "</option>").join("") + "</select>";
+      const alsoRep = u.role === "super_admin" ? '<label class="chk also"><input type="checkbox" data-also="' + esc(u.id) + '"' + (u.isRep ? " checked" : "") + (u.email.endsWith("@clatitle.com") ? "" : " disabled") + '> Also works as a rep</label>' : "";
+      const roleSel = (u.id === me.id ? '<span class="badge admin">Super admin (you)</span>' :
+        '<select data-role="' + esc(u.id) + '" aria-label="Role" style="min-height:34px;padding:4px 30px 4px 10px;font-size:13px;width:auto">' + ["super_admin", "rep", "client"].map((r) => '<option value="' + r + '"' + (r === u.role ? " selected" : "") + ">" + CLA.roleLabel(r) + "</option>").join("") + "</select>") + alsoRep;
       return "<tr><td><div class='who'>" + CLA.avImg(u, "sm") + "<div><b>" + esc(CLA.fullName(u)) + "</b><span>" + esc(u.email) + (u.companyName && u.role === "client" ? " · " + esc(u.companyName) : "") + "</span></div></div></td><td>" + (CLA.telLink(u.cellPhone) || '<span class="sum">—</span>') + "</td><td>" + roleSel + "</td><td>" + (u.role === "client" ? (rep ? esc(CLA.fullName(rep)) : '<span class="badge warn">Unassigned</span>') : "—") + "</td><td>" + st + '</td><td class="num">' + (u.id === me.id ? "" : '<button class="btn ' + (u.status === "active" ? "danger" : "o") + ' sm" data-st="' + esc(u.id) + '" data-to="' + (u.status === "active" ? "disabled" : "active") + '" type="button">' + (u.status === "active" ? "Disable" : "Re-enable") + "</button>") + "</td></tr>";
     }).join("");
     CLA.fillAvatars(A, $("users"));
-    const reps = users.filter((u) => u.role === "rep" && u.status === "active");
-    const opts = reps.map((r) => '<option value="' + esc(r.id) + '">' + esc(CLA.fullName(r)) + "</option>").join("");
+    const reps = users.filter((u) => CLA.isRep(u) && u.status === "active");   // real reps AND super admins who also work as a rep
+    const opts = reps.map((r) => '<option value="' + esc(r.id) + '">' + esc(CLA.fullName(r)) + (r.role === "super_admin" ? " (admin + rep)" : "") + "</option>").join("");
     $("aRep").innerHTML = opts; $("iRep").innerHTML = '<option value="">No rep yet</option>' + opts;
   }
-  $("users").onchange = async (e) => { const s = e.target.closest("[data-role]"); if (!s) return;
+  $("users").onchange = async (e) => {
+    const c = e.target.closest("[data-also]");
+    if (c) { try { await A.adminSetIsRep(c.dataset.also, c.checked); CLA.toast(c.checked ? "Now also works as a rep" : "No longer works as a rep"); } catch (ex) { CLA.toast(ex.message); } await loadUsers(); return; }
+    const s = e.target.closest("[data-role]"); if (!s) return;
     if (!confirm("Change this person's role to " + CLA.roleLabel(s.value) + "?")) { await loadUsers(); return; }
     try { await A.adminSetRole(s.dataset.role, s.value); CLA.toast("Role changed"); } catch (ex) { CLA.toast(ex.message); } await loadUsers(); };
   $("users").onclick = async (e) => { const b = e.target.closest("[data-st]"); if (!b) return;
@@ -96,15 +101,15 @@
 
   $("showInv").onclick = () => { $("invCard").hidden = false; $("iEmail").focus(); };
   $("invCancel").onclick = () => { $("invCard").hidden = true; };
-  $("iRole").onchange = () => { $("iRepRow").hidden = $("iRole").value !== "client"; };
+  $("iRole").onchange = () => { $("iRepRow").hidden = $("iRole").value !== "client"; $("iAlsoRow").hidden = $("iRole").value !== "super_admin"; if ($("iRole").value !== "super_admin") $("iAlso").checked = false; };
   CLA.bindPhoneInput($("iCell"), $("iCellErr"));
   $("inv").onsubmit = async (e) => { e.preventDefault(); $("iErr").textContent = ""; $("iOk").textContent = "";
     const email = $("iEmail").value.trim(), role = $("iRole").value;
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { $("iErr").textContent = "Enter a valid email address."; return; }
-    if (role === "rep" && !/@clatitle\.com$/i.test(email)) { $("iErr").textContent = "Reps must use an @clatitle.com email address."; return; }
+    if ((role === "rep" || (role === "super_admin" && $("iAlso").checked)) && !/@clatitle\.com$/i.test(email)) { $("iErr").textContent = "Reps must use an @clatitle.com email address."; return; }
     if (!$("iCell").check()) { $("iErr").textContent = CLA.PHONE_MSG; $("iCell").focus(); return; }
-    try { const r = await A.adminInvite({ email, role, repId: role === "client" ? $("iRep").value || null : null, cellPhone: $("iCell").value });
-      $("iOk").textContent = "Invitation recorded for " + email + ". " + ((r && r.mockNote) || "They will get an email shortly."); $("iEmail").value = ""; $("iCell").value = ""; }
+    try { const r = await A.adminInvite({ email, role, repId: role === "client" ? $("iRep").value || null : null, isRep: role === "super_admin" && $("iAlso").checked, cellPhone: $("iCell").value });
+      $("iOk").textContent = "Invitation recorded for " + email + ". " + ((r && r.mockNote) || "They will get an email shortly."); $("iEmail").value = ""; $("iCell").value = ""; $("iAlso").checked = false; }
     catch (ex) { $("iErr").textContent = ex.message; } };
   await loadUsers();
 })();

@@ -3,6 +3,7 @@
 # and the seed, then runs the access-rule tests. No network, no cloud, no data kept.
 #   bash supabase/tests/run-tests.sh
 # Needs Postgres server binaries (Debian/Ubuntu: apt install postgresql postgresql-17-cron).
+# Also checks the upgrade path (migrations 1-5 + data, then 6).
 # Without pg_cron the purge scheduling check is skipped with a notice.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"; ROOT="$(dirname "$HERE")"
@@ -23,4 +24,15 @@ echo "migrations are re-runnable? (second pass)"; for f in "$ROOT"/migrations/*.
 run "$ROOT/seed.sql"
 run "$HERE/10_access_rules.sql" 2>&1 | grep -E "PASS|FAIL|checks,|ERROR|WARNING" | sed 's/^psql:[^ ]* //' 
 STATUS=${PIPESTATUS[0]}
-exit $STATUS
+[ "$STATUS" -eq 0 ] || exit "$STATUS"
+
+# Upgrade check: a database that already has migrations 1-5 + data gets migration 6 on top (see 20_upgrade_from_5.sql).
+echo "upgrade check: migrations 1-5 + data, then migration 6"
+# (pg_cron is bound to the database named cla_test, so recreate that one instead of adding another)
+"${P[@]}" -d postgres -c "drop database cla_test with (force)" -c "create database cla_test"
+runu() { "${P[@]}" -d cla_test "$@"; }
+runu -f "$HERE/00_supabase_shim.sql"
+M6="$(ls "$ROOT"/migrations/*admin_also_rep.sql)"
+for f in "$ROOT"/migrations/*.sql; do [ "$f" = "$M6" ] || runu -f "$f" >/dev/null 2>&1; done
+runu -v migration6="$M6" -f "$HERE/20_upgrade_from_5.sql" 2>&1 | grep -E "PASS|FAIL|checks,|ERROR|WARNING" | sed 's/^psql:[^ ]* //'
+exit ${PIPESTATUS[0]}

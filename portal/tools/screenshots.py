@@ -10,6 +10,12 @@ os.makedirs(OUT, exist_ok=True)
 PORT = 8765
 class Q(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a): pass
+    # Always shoot in MOCK mode, whatever portal/config.js says (the committed one points at the live project).
+    def do_GET(self):
+        if self.path.split("?")[0].endswith("/portal/config.js"):
+            body = b'window.CLA_PORTAL_CONFIG = { mode: "mock" };'
+            self.send_response(200); self.send_header("Content-Type", "application/javascript"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body); return
+        return super().do_GET()
 handler = functools.partial(Q, directory=ROOT)
 socketserver.TCPServer.allow_reuse_address = True
 srv = socketserver.TCPServer(("127.0.0.1", PORT), handler)
@@ -84,10 +90,13 @@ with sync_playwright() as p:
 
     # --- admin ---
     ctx, pg = newpage(); login(pg, "sample.admin@clatitle.com"); pg.wait_for_selector("#users tr"); pg.wait_for_timeout(300); shot(pg, "30-admin-users")
-    pg.click("#showInv"); pg.select_option("#iRole", "client"); pg.fill("#iEmail", "new.agent@brokerage.com"); pg.type("#iCell", "7035550166"); shot(pg, "31-admin-invite")
+    pg.click("#showInv"); pg.select_option("#iRole", "super_admin"); pg.check("#iAlso"); pg.fill("#iEmail", "new.admin@clatitle.com"); shot(pg, "31c-admin-invite-also-rep")
+    pg.select_option("#iRole", "client"); pg.fill("#iEmail", ""); pg.select_option("#iRole", "client"); pg.fill("#iEmail", "new.agent@brokerage.com"); pg.type("#iCell", "7035550166"); shot(pg, "31-admin-invite")
     pg.click("#inv button[type=submit]"); pg.wait_for_timeout(300); shot(pg, "31b-admin-invite-sent", False)
     pg.click("#tabs button:nth-child(2)"); pg.wait_for_selector("#quotes tr"); shot(pg, "32-admin-quotes")
     pg.click("#tabs button:nth-child(3)"); pg.wait_for_selector("#asgRows tr"); shot(pg, "33-admin-assignments")
+    print("assignment picker options ->", pg.eval_on_selector_all("#aRep option", "o => o.map(x => x.textContent)"))
+    pg.select_option("#aRep", label="Alex Admin (admin + rep)"); pg.fill("#aEmail", "pat.homes@example.com"); pg.locator("#asg").scroll_into_view_if_needed(); shot(pg, "33b-admin-assign-picker-includes-admin-rep", False)
     pg.click("#tabs button:nth-child(4)"); pg.wait_for_selector("#auditRows tr"); shot(pg, "34-admin-audit-log")
     ctx.close()
 
@@ -107,6 +116,18 @@ with sync_playwright() as p:
     pg.pdf(path=f"{OUT}/43b-saved-quote-print.pdf", format="Letter", print_background=True)
     ctx.close()
     ctx, pg = newpage(390, 800, 2); login(pg, "sam.agent@example.com"); pg.goto(B + "client.html"); pg.wait_for_selector("#rows tr"); shot(pg, "20m-client-dashboard-mobile"); ctx.close()
+    # --- admin who also works as a rep (Alex): header link, rep dashboard, calculator co-brand; her clients' view ---
+    ctx, pg = newpage(); login(pg, "sample.admin@clatitle.com"); pg.wait_for_selector("#users tr"); pg.wait_for_selector("#repLink"); pg.wait_for_timeout(300)
+    print("header links ->", pg.inner_text(".hr").replace("\n", " | "))
+    pg.locator("#users").scroll_into_view_if_needed(); shot(pg, "35-admin-users-also-rep-toggle", False)
+    pg.click("#repLink"); pg.wait_for_url("**/rep.html"); pg.wait_for_selector("#clients tr"); pg.wait_for_timeout(400); shot(pg, "50-admin-also-rep-dashboard")
+    pg.click("#tabs button:nth-child(2)"); pg.wait_for_selector("#qRows tr"); shot(pg, "51-admin-also-rep-quotes")
+    pg.goto(f"http://127.0.0.1:{PORT}/index.html"); pg.wait_for_selector("#claBrand"); pg.wait_for_selector("#claRepLink"); pg.wait_for_timeout(400); shot(pg, "52-calculator-admin-also-rep-cobranded", False)
+    pg.fill("#price", "575000"); pg.fill("#addr", "7 Rep Admin Way"); pg.wait_for_selector("#claNote_quote:has-text('Saved to your account')", timeout=8000)
+    href = pg.get_attribute("#claNote_quote a", "href"); pg.goto(href); pg.wait_for_selector("#body:not([hidden])"); shot(pg, "53-admin-also-rep-saved-quote-cobranded", False)
+    ctx.close()
+    ctx, pg = newpage(); login(pg, "quinn.buyer@example.com"); pg.wait_for_selector("#rows tr"); pg.wait_for_timeout(300); shot(pg, "54-client-sees-admin-rep-as-their-rep")
+    ctx.close()
     br.close()
 srv.shutdown()
 print("ERRORS:", errors if errors else "none")

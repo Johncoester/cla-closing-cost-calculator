@@ -38,24 +38,32 @@
  *   listMyQuotes()                        -> Quote[]
  *   getQuote(id)                          -> Quote | null
  *   deleteQuote(id)                       (client "delete": hides it; purge removes it for real)
- *  Rep
+ *  Rep   (real reps AND super admins who also work as a rep: profile.isRep; see CLA.isRep(profile))
  *   listMyClients()                       -> [{email, profile|null, pending, cellPhone|null, quoteCount, lastQuoteAt}]
+ *                                            ONLY the caller's own clients, also for a super admin (who can otherwise read every assignment)
  *                                            cellPhone = the client's profile cell, or (before sign-up) the cell on the invitation
  *   listQuotesForClient(clientUserId)     -> Quote[]
  *   inviteClient(email, {cellPhone}?)     (cellPhone optional: any US format; stored as +1XXXXXXXXXX; throws on an invalid number)
+ *                                            always assigned to the caller, with the REP rules even for an admin+rep (never takes over another rep's client)
  *  Admin
  *   adminListUsers()                      -> Profile[]
  *   adminListAssignments()                -> Assignment[]
  *   adminListQuotes()                     -> Quote[]
- *   adminInvite({email, role, repId, cellPhone})   (repId, cellPhone optional)
+ *   adminInvite({email, role, repId, cellPhone, isRep})   (repId, cellPhone, isRep optional; isRep only with role "super_admin": the new admin also works as a rep, CLA email required)
+ *                                            repId may be any rep OR an admin who also works as a rep
  *   adminSetStatus(userId, "active"|"disabled")
- *   adminSetRole(userId, role)
+ *   adminSetRole(userId, role)            (role "rep" sets isRep, "client" clears it; super_admin keeps whatever it had)
+ *   adminSetIsRep(userId, on)             "Also works as a rep" switch. Super admin targets only (reps always are, clients never);
+ *                                            on needs an @clatitle.com email; off is refused while they still have active clients
  *   adminReassign(clientEmail, repId)
  *   adminAuditLog(limit)                  -> AuditRow[]
  *   adminLogQuoteView(quoteId)
  *
- * Profile : {id, role, status, email, firstName, lastName, phone, cellPhone, companyName, companyPhone,
+ * Profile : {id, role, isRep, status, email, firstName, lastName, phone, cellPhone, companyName, companyPhone,
  *            companyAddress, companyWebsite, licenseOrNmls, avatarPath, termsAcceptedAt, isComplete, createdAt}
+ * isRep   : boolean, "works as a rep": true for role "rep", false for "client", and for a "super_admin" true only when a super admin
+ *            switched it on (profiles.is_rep). Every rep feature (assignments, own-client list, co-branded quotes, rep pickers,
+ *            phone required) keys off this, never off role alone. A super admin keeps all admin access either way.
  * cellPhone : string|null, always E.164 US ("+12405550142") or null. Optional for everyone; `phone` (the main/office
  *            line, required for reps) is unchanged. Visible to the person, admins, and the assigned rep/client (the same
  *            rules as the rest of the profile; a client gets their rep's through getMyRep()).
