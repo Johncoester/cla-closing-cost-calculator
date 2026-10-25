@@ -65,6 +65,9 @@ select{appearance:none;-webkit-appearance:none;padding-right:34px;background:#ff
 input[type=checkbox]{width:18px;height:18px;margin:0;accent-color:var(--gd);flex:none}
 .chk{display:flex;gap:10px;align-items:flex-start;font-weight:400;font-size:13.5px;color:#2c3128;margin:0 0 14px}
 .hint{font-size:12.5px;color:var(--mut);margin:6px 0 0}
+.fielderr{font-size:12.5px;color:var(--bad);margin:6px 0 0;font-weight:600}.fielderr:empty{display:none}
+input[aria-invalid=true]{border-color:var(--bad)}
+a.tel{white-space:nowrap}
 .msg{border-radius:12px;padding:11px 14px;font-size:13.5px;margin:0 0 16px}
 .msg.err{background:var(--badbg);color:var(--bad);border:1px solid #f1bdb8}
 .msg.ok{background:#e9f3d8;color:#26370c;border:1px solid #d6e5bb}

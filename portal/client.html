@@ -27,9 +27,9 @@
   const { $, esc } = CLA; const { A, me } = await CLA.boot(["client"]);
   $("hi").textContent = "Hi " + (me.firstName || "there");
   $("incomplete").hidden = me.isComplete && !!me.companyName;
-  $("me").innerHTML = CLA.avatarImg(await A.getAvatarUrl(me), me, "lg") + "<div><h2>" + esc(CLA.fullName(me)) + "</h2><p>" + esc(me.companyName || "No company yet") + "</p><p>" + esc(me.email) + (me.phone ? " · " + esc(me.phone) : "") + '</p><p><a href="profile.html">Edit profile and photo</a></p></div>';
+  $("me").innerHTML = CLA.avatarImg(await A.getAvatarUrl(me), me, "lg") + "<div><h2>" + esc(CLA.fullName(me)) + "</h2><p>" + esc(me.companyName || "No company yet") + "</p><p>" + esc(me.email) + (me.phone ? " · " + esc(me.phone) : "") + '</p><p>' + (me.cellPhone ? "Cell " + CLA.telLink(me.cellPhone) : '<a href="profile.html">Add your cell number</a>') + '</p><p><a href="profile.html">Edit profile and photo</a></p></div>';
   const rep = await A.getMyRep();
-  $("rep").innerHTML = rep ? CLA.avatarImg(await A.getAvatarUrl(rep), rep, "lg") + "<div><h2>" + esc(CLA.fullName(rep)) + "</h2><p>C.L.A. Title &amp; Escrow</p><p>" + esc(rep.phone || "") + "</p><p><a href='mailto:" + esc(rep.email) + "'>" + esc(rep.email) + "</a></p></div>"
+  $("rep").innerHTML = rep ? CLA.avatarImg(await A.getAvatarUrl(rep), rep, "lg") + "<div><h2>" + esc(CLA.fullName(rep)) + "</h2><p>C.L.A. Title &amp; Escrow</p><p>" + (rep.cellPhone ? "Cell " + CLA.telLink(rep.cellPhone) + (rep.phone ? " · Office " + esc(rep.phone) : "") : esc(rep.phone || "")) + "</p><p><a href='mailto:" + esc(rep.email) + "'>" + esc(rep.email) + "</a></p></div>"
     : "<div><p>You have not been matched to a CLA rep yet. Your quotes still save, and CLA will connect you by email.</p></div>";
   async function load() {
     const qs = await A.listMyQuotes();

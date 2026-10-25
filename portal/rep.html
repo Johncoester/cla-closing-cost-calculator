@@ -17,7 +17,7 @@
 <div id="pClients" class="stack">
  <section class="card flush">
   <div class="sh"><h2>My clients and agents</h2><div class="grow"><span class="sum" id="cCount"></span></div></div>
-  <div class="tablewrap"><table><thead><tr><th>Client</th><th>Email</th><th class="num">Saved quotes</th><th>Last quote</th><th>Status</th></tr></thead><tbody id="clients"></tbody></table></div>
+  <div class="tablewrap"><table><thead><tr><th>Client</th><th>Email</th><th>Cell</th><th class="num">Saved quotes</th><th>Last quote</th><th>Status</th></tr></thead><tbody id="clients"></tbody></table></div>
  </section>
  <section class="card flush" id="detail" hidden>
   <div class="sh"><h2 id="dTitle"></h2><div class="grow"><button class="btn sec sm" id="dClose" type="button">Close</button></div></div>
@@ -27,9 +27,10 @@
   <h2>Invite a client or agent</h2>
   <p class="sub">They get an email to set a password. They are matched to you by email, so quotes they save show up here.</p>
   <div id="iErr" class="msg err" role="alert"></div><div id="iOk" class="msg ok" role="status"></div>
-  <form id="inv" class="row" style="grid-template-columns:minmax(0,1fr) auto;align-items:end;margin-bottom:0" novalidate>
+  <form id="inv" class="row" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;align-items:start;margin-bottom:0" novalidate>
    <div><label for="iEmail">Client email</label><input type="email" id="iEmail" placeholder="agent@brokerage.com" autocomplete="off"></div>
-   <button class="btn" type="submit">Send invite</button>
+   <div><label for="iCell">Client cell phone (optional)</label><input type="tel" id="iCell" inputmode="tel" maxlength="14" placeholder="(240) 555-0142" autocomplete="off" aria-describedby="iCellErr"><p class="fielderr" id="iCellErr" role="alert"></p></div>
+   <button class="btn" type="submit" style="margin-top:26px">Send invite</button>
   </form>
  </section>
 </div>
@@ -45,7 +46,7 @@
 (async () => {
   const { $, esc } = CLA; const { A, me } = await CLA.boot(["rep"]);
   const myUrl = await A.getAvatarUrl(me);
-  $("hello").innerHTML = CLA.avatarImg(myUrl, me, "lg") + "<div><h1 class='pt' style='margin-bottom:2px'>Hi " + esc(me.firstName || "there") + "</h1><p>" + esc(me.phone || "Add your phone number in your profile") + " · " + esc(me.email) + '</p><p><a href="profile.html">Edit profile and photo</a></p></div>';
+  $("hello").innerHTML = CLA.avatarImg(myUrl, me, "lg") + "<div><h1 class='pt' style='margin-bottom:2px'>Hi " + esc(me.firstName || "there") + "</h1><p>" + esc(me.phone || "Add your phone number in your profile") + (me.cellPhone ? " · Cell " + CLA.telLink(me.cellPhone) : " · <a href='profile.html'>Add your cell</a>") + " · " + esc(me.email) + '</p><p><a href="profile.html">Edit profile and photo</a></p></div>';
   CLA.tabs($("tabs"), ["My clients", "Quotes"], (i) => { $("pClients").hidden = i !== 0; $("pQuotes").hidden = i !== 1; if (i === 1) loadAll(); });
 
   const typeBadge = (q) => '<span class="badge ' + (q.quoteType === "buyer" ? "" : "warn") + '">' + (q.quoteType === "buyer" ? "Buyer quote" : "Seller net") + "</span>";
@@ -56,11 +57,12 @@
     $("clients").innerHTML = clients.length ? clients.map((c, i) => {
       const p = c.profile, name = p ? CLA.fullName(p) : c.email;
       const st = c.pending ? '<span class="badge warn">Invited, not signed up</span>' : p.status === "disabled" ? '<span class="badge off">Disabled</span>' : '<span class="badge">Active</span>';
-      return '<tr class="' + (p ? "click" : "") + '" data-i="' + i + '"><td><div class="who">' + (p ? CLA.avImg(p, "sm") : CLA.avatarImg(null, {}, "sm")) + "<div><b>" + esc(name) + "</b><span>" + esc(p && p.companyName || "") + "</span></div></div></td><td>" + esc(c.email) + '</td><td class="num">' + c.quoteCount + "</td><td>" + CLA.date(c.lastQuoteAt) + "</td><td>" + st + "</td></tr>";
-    }).join("") : '<tr><td colspan="5" class="empty">No clients yet. Invite one below, or ask an admin to assign you some.</td></tr>';
+      return '<tr class="' + (p ? "click" : "") + '" data-i="' + i + '"><td><div class="who">' + (p ? CLA.avImg(p, "sm") : CLA.avatarImg(null, {}, "sm")) + "<div><b>" + esc(name) + "</b><span>" + esc(p && p.companyName || "") + "</span></div></div></td><td>" + esc(c.email) + "</td><td>" + (CLA.telLink(c.cellPhone) || '<span class="sum">—</span>') + '</td><td class="num">' + c.quoteCount + "</td><td>" + CLA.date(c.lastQuoteAt) + "</td><td>" + st + "</td></tr>";
+    }).join("") : '<tr><td colspan="6" class="empty">No clients yet. Invite one below, or ask an admin to assign you some.</td></tr>';
     CLA.fillAvatars(A, $("clients"));
   }
   $("clients").onclick = async (e) => {
+    if (e.target.closest("a")) return;   // a tel: link dials; it does not open the quotes panel
     const tr = e.target.closest("tr[data-i]"); if (!tr) return; const c = clients[+tr.dataset.i]; if (!c.profile) return;
     const qs = await A.listQuotesForClient(c.profile.id);
     $("dTitle").textContent = "Saved quotes: " + CLA.fullName(c.profile); $("detail").hidden = false;
@@ -75,10 +77,12 @@
     rows.sort((a, b) => b[0].createdAt.localeCompare(a[0].createdAt));
     $("qRows").innerHTML = rows.length ? rows.map((r) => qRow(r[0], r[1].startsWith("<i>") ? r[1] : esc(r[1]))).join("") : '<tr><td colspan="6" class="empty">No saved quotes yet.</td></tr>';
   }
+  CLA.bindPhoneInput($("iCell"), $("iCellErr"));
   $("inv").onsubmit = async (e) => {
     e.preventDefault(); $("iErr").textContent = ""; $("iOk").textContent = ""; const email = $("iEmail").value.trim();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { $("iErr").textContent = "Enter a valid email address."; return; }
-    try { const r = await A.inviteClient(email); $("iOk").textContent = "Invitation recorded for " + email + ". " + ((r && r.mockNote) || "They will get an email shortly."); $("iEmail").value = ""; await loadClients(); }
+    if (!$("iCell").check()) { $("iErr").textContent = CLA.PHONE_MSG; $("iCell").focus(); return; }
+    try { const r = await A.inviteClient(email, { cellPhone: $("iCell").value }); $("iOk").textContent = "Invitation recorded for " + email + ". " + ((r && r.mockNote) || "They will get an email shortly."); $("iEmail").value = ""; $("iCell").value = ""; await loadClients(); }
     catch (ex) { $("iErr").textContent = ex.message; }
   };
   await loadClients();

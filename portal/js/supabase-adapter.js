@@ -25,7 +25,7 @@
     // ---- row <-> DTO mappers ----
     const toProfile = (r) => r && ({
       id: r.id, role: r.role, status: r.status, email: r.email, firstName: r.first_name || "", lastName: r.last_name || "",
-      phone: r.phone, companyName: r.company_name, companyPhone: r.company_phone, companyAddress: r.company_address,
+      phone: r.phone, cellPhone: r.cell_phone || null, companyName: r.company_name, companyPhone: r.company_phone, companyAddress: r.company_address,
       companyWebsite: r.company_website, licenseOrNmls: r.license_or_nmls_number, avatarPath: r.avatar_path,
       termsAcceptedAt: iso(r.terms_accepted_at), isComplete: !!r.is_complete, createdAt: r.created_at });
     const toQuote = (r) => r && ({
@@ -54,6 +54,8 @@
       if (data && data.error) throw new Error(data.error);
       return data;
     }
+    // optional cell on an invitation: friendly message here, normalized (and re-validated) by the database
+    async function invitedCell(v) { const n = CLA.normalizePhone(v); if (n === null) throw new Error(CLA.PHONE_MSG); return n || null; }
     const redirectBase = () => new URL("set-password.html", location.href.replace(/[?#].*$/, "")).href;
 
     // signed photo URLs are cached for 50 minutes of their 60
@@ -86,9 +88,13 @@
         return toProfile(r);
       },
       async updateMyProfile(p) {
-        const id = await uid(), m = { firstName: "first_name", lastName: "last_name", phone: "phone", companyName: "company_name",
+        const id = await uid(), m = { firstName: "first_name", lastName: "last_name", phone: "phone", cellPhone: "cell_phone", companyName: "company_name",
           companyPhone: "company_phone", companyAddress: "company_address", companyWebsite: "company_website", licenseOrNmls: "license_or_nmls_number" };
         const row = {}; for (const k in m) if (k in p) row[m[k]] = p[k] === "" ? (k === "firstName" || k === "lastName" ? "" : null) : p[k];
+        if ("cellPhone" in p) {   // check here for a friendly message; the database trigger + CHECK enforce it again and store +1XXXXXXXXXX
+          const n = CLA.normalizePhone(p.cellPhone); if (n === null) throw new Error(CLA.PHONE_MSG);
+          row.cell_phone = n || null;
+        }
         const r = must(await sb.from("profiles").update(row).eq("id", id).select(PROFILE_COLS).single());
         return toProfile(r);
       },
@@ -120,9 +126,9 @@
         return data.signedUrl;
       },
       async getMyRep() {
-        const rows = must(await sb.rpc("get_my_rep"));
+        const rows = must(await sb.rpc("get_my_rep_contact"));   // get_my_rep() (no cell) still exists; this one adds cell_phone
         const r = Array.isArray(rows) ? rows[0] : rows; if (!r) return null;
-        return { id: r.id, firstName: r.first_name, lastName: r.last_name, phone: r.phone, email: r.email, avatarPath: r.avatar_path };
+        return { id: r.id, firstName: r.first_name, lastName: r.last_name, phone: r.phone, cellPhone: r.cell_phone || null, email: r.email, avatarPath: r.avatar_path };
       },
 
       async saveQuote(snap) {
@@ -145,23 +151,27 @@
         const ids = asg.map((a) => a.clientUserId).filter(Boolean);
         const profs = ids.length ? must(await sb.from("profiles").select("*").in("id", ids)).map(toProfile) : [];
         const qs = ids.length ? must(await sb.from("quotes").select("id, owner_id, created_at").in("owner_id", ids)) : [];
+        // clients who have not signed up yet: the cell number lives on the pending invitation (RLS lets the assigned rep read it)
+        const waiting = asg.filter((a) => !a.clientUserId).map((a) => a.clientEmail);
+        const invs = waiting.length ? must(await sb.from("invitations").select("email, cell_phone").in("email", waiting).is("accepted_at", null)) : [];
         return asg.map((a) => {
           const p = profs.find((x) => x.id === a.clientUserId) || null, mine = qs.filter((q) => q.owner_id === a.clientUserId);
-          return { email: a.clientEmail, profile: p, pending: !p, quoteCount: mine.length,
+          const inv = !p && invs.find((i) => i.email === a.clientEmail);
+          return { email: a.clientEmail, profile: p, pending: !p, cellPhone: p ? p.cellPhone : (inv && inv.cell_phone) || null, quoteCount: mine.length,
             lastQuoteAt: mine.length ? mine.map((q) => q.created_at).sort().pop() : null };
         });
       },
       async listQuotesForClient(cid) {
         return must(await sb.from("quotes").select("*").eq("owner_id", cid).order("created_at", { ascending: false })).map(toQuote);
       },
-      async inviteClient(email) {
-        return fn("invite-user", { email, role: "client", redirectTo: redirectBase() + "?invite=1" });
+      async inviteClient(email, opts) {
+        return fn("invite-user", { email, role: "client", cellPhone: await invitedCell(opts && opts.cellPhone), redirectTo: redirectBase() + "?invite=1" });
       },
 
       async adminListUsers() { return must(await sb.from("profiles").select("*").order("created_at")).map(toProfile); },
       async adminListAssignments() { return must(await sb.from("assignments").select("*").order("created_at", { ascending: false })).map(toAssignment); },
       async adminListQuotes() { return must(await sb.from("quotes").select("*").order("created_at", { ascending: false })).map(toQuote); },
-      async adminInvite(o) { return fn("invite-user", { email: o.email, role: o.role, repId: o.repId || null, redirectTo: redirectBase() + "?invite=1" }); },
+      async adminInvite(o) { return fn("invite-user", { email: o.email, role: o.role, repId: o.repId || null, cellPhone: await invitedCell(o.cellPhone), redirectTo: redirectBase() + "?invite=1" }); },
       async adminSetStatus(id, status) { return fn("set-user-status", { userId: id, status }); },
       async adminSetRole(id, role) { must(await sb.rpc("admin_set_role", { p_user: id, p_role: role })); },
       async adminReassign(email, repId) { must(await sb.rpc("admin_reassign_client", { p_client_email: email, p_rep_id: repId })); },

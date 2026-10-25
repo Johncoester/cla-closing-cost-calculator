@@ -18,6 +18,7 @@
  <form id="inv" novalidate>
   <div class="row"><div><label for="iEmail">Email</label><input type="email" id="iEmail" autocomplete="off" placeholder="name@clatitle.com"></div>
    <div><label for="iRole">Role</label><select id="iRole"><option value="rep">Sales rep (CLA email required)</option><option value="client">Real estate agent / client</option><option value="super_admin">Super admin</option></select></div></div>
+  <div class="row"><div><label for="iCell">Cell phone (optional)</label><input type="tel" id="iCell" inputmode="tel" maxlength="14" autocomplete="off" placeholder="(240) 555-0142" aria-describedby="iCellErr"><p class="fielderr" id="iCellErr" role="alert"></p></div><div></div></div>
   <div class="row" id="iRepRow" hidden><div><label for="iRep">Assign to rep (optional)</label><select id="iRep"></select></div><div></div></div>
   <div style="display:flex;gap:10px"><button class="btn" type="submit">Send invite</button><button class="btn o" id="invCancel" type="button">Cancel</button></div>
  </form>
@@ -25,7 +26,7 @@
 <div class="seg" id="tabs" role="tablist"></div>
 
 <section class="card flush" id="pUsers"><div class="sh"><h2>Users</h2><div class="grow"><span class="sum" id="uCount"></span></div></div>
- <div class="tablewrap"><table><thead><tr><th>Person</th><th>Role</th><th>Rep</th><th>Status</th><th></th></tr></thead><tbody id="users"></tbody></table></div></section>
+ <div class="tablewrap"><table><thead><tr><th>Person</th><th>Cell</th><th>Role</th><th>Rep</th><th>Status</th><th></th></tr></thead><tbody id="users"></tbody></table></div></section>
 <section class="card flush" id="pQuotes" hidden><div class="sh"><h2>All saved quotes</h2><div class="grow"><input type="text" id="qFilter" placeholder="Search client, rep, address" style="min-height:36px;width:260px" aria-label="Filter quotes"></div></div>
  <div class="tablewrap"><table><thead><tr><th>Client / owner</th><th>Rep</th><th>Quote</th><th class="num">Price</th><th>Saved</th><th></th></tr></thead><tbody id="quotes"></tbody></table></div></section>
 <div id="pAssign" class="stack" hidden>
@@ -55,7 +56,7 @@
       const st = u.status === "active" ? '<span class="badge">Active</span>' : '<span class="badge off">Disabled</span>';
       const roleSel = u.id === me.id ? '<span class="badge admin">Super admin (you)</span>' :
         '<select data-role="' + esc(u.id) + '" aria-label="Role" style="min-height:34px;padding:4px 30px 4px 10px;font-size:13px;width:auto">' + ["super_admin", "rep", "client"].map((r) => '<option value="' + r + '"' + (r === u.role ? " selected" : "") + ">" + CLA.roleLabel(r) + "</option>").join("") + "</select>";
-      return "<tr><td><div class='who'>" + CLA.avImg(u, "sm") + "<div><b>" + esc(CLA.fullName(u)) + "</b><span>" + esc(u.email) + (u.companyName && u.role === "client" ? " · " + esc(u.companyName) : "") + "</span></div></div></td><td>" + roleSel + "</td><td>" + (u.role === "client" ? (rep ? esc(CLA.fullName(rep)) : '<span class="badge warn">Unassigned</span>') : "—") + "</td><td>" + st + '</td><td class="num">' + (u.id === me.id ? "" : '<button class="btn ' + (u.status === "active" ? "danger" : "o") + ' sm" data-st="' + esc(u.id) + '" data-to="' + (u.status === "active" ? "disabled" : "active") + '" type="button">' + (u.status === "active" ? "Disable" : "Re-enable") + "</button>") + "</td></tr>";
+      return "<tr><td><div class='who'>" + CLA.avImg(u, "sm") + "<div><b>" + esc(CLA.fullName(u)) + "</b><span>" + esc(u.email) + (u.companyName && u.role === "client" ? " · " + esc(u.companyName) : "") + "</span></div></div></td><td>" + (CLA.telLink(u.cellPhone) || '<span class="sum">—</span>') + "</td><td>" + roleSel + "</td><td>" + (u.role === "client" ? (rep ? esc(CLA.fullName(rep)) : '<span class="badge warn">Unassigned</span>') : "—") + "</td><td>" + st + '</td><td class="num">' + (u.id === me.id ? "" : '<button class="btn ' + (u.status === "active" ? "danger" : "o") + ' sm" data-st="' + esc(u.id) + '" data-to="' + (u.status === "active" ? "disabled" : "active") + '" type="button">' + (u.status === "active" ? "Disable" : "Re-enable") + "</button>") + "</td></tr>";
     }).join("");
     CLA.fillAvatars(A, $("users"));
     const reps = users.filter((u) => u.role === "rep" && u.status === "active");
@@ -96,12 +97,14 @@
   $("showInv").onclick = () => { $("invCard").hidden = false; $("iEmail").focus(); };
   $("invCancel").onclick = () => { $("invCard").hidden = true; };
   $("iRole").onchange = () => { $("iRepRow").hidden = $("iRole").value !== "client"; };
+  CLA.bindPhoneInput($("iCell"), $("iCellErr"));
   $("inv").onsubmit = async (e) => { e.preventDefault(); $("iErr").textContent = ""; $("iOk").textContent = "";
     const email = $("iEmail").value.trim(), role = $("iRole").value;
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { $("iErr").textContent = "Enter a valid email address."; return; }
     if (role === "rep" && !/@clatitle\.com$/i.test(email)) { $("iErr").textContent = "Reps must use an @clatitle.com email address."; return; }
-    try { const r = await A.adminInvite({ email, role, repId: role === "client" ? $("iRep").value || null : null });
-      $("iOk").textContent = "Invitation recorded for " + email + ". " + ((r && r.mockNote) || "They will get an email shortly."); $("iEmail").value = ""; }
+    if (!$("iCell").check()) { $("iErr").textContent = CLA.PHONE_MSG; $("iCell").focus(); return; }
+    try { const r = await A.adminInvite({ email, role, repId: role === "client" ? $("iRep").value || null : null, cellPhone: $("iCell").value });
+      $("iOk").textContent = "Invitation recorded for " + email + ". " + ((r && r.mockNote) || "They will get an email shortly."); $("iEmail").value = ""; $("iCell").value = ""; }
     catch (ex) { $("iErr").textContent = ex.message; } };
   await loadUsers();
 })();

@@ -54,7 +54,7 @@
       try { rep = me.role === "client" ? await A.getMyRep() : me; } catch (e) {}
       const party = async (p, line2, line3) => '<div class="party">' + ((await A.getAvatarUrl(p)) ? '<img src="' + esc(await A.getAvatarUrl(p)) + '" alt="Photo of ' + esc(CLA.fullName(p)) + '">' : '<img src="' + esc(CLA.silhouette("#e4e9da", "#9aa38a")) + '" alt="">') + "<div><b>" + esc(CLA.fullName(p)) + "</b><span>" + esc(line2 || "") + "</span><span>" + esc(line3 || "") + "</span></div></div>";
       const left = me.role === "client" ? await party(me, me.companyName, me.phone) : "";
-      const right = rep ? await party(rep, "C.L.A. Title & Escrow", rep.phone) : "";
+      const right = rep ? await party(rep, "C.L.A. Title & Escrow", rep.cellPhone ? "Cell " + CLA.displayPhone(rep.cellPhone) : rep.phone) : "";
       const html = left + (left && right ? '<div class="dv"></div>' : "") + right;
       const bar = document.querySelector(".modebar") || document.querySelector("header");
       if (html) bar.insertAdjacentHTML("afterend", '<div class="claBrand" id="claBrand"><div class="wrap">' + html + '<span class="claTag">Prepared with C.L.A. Title &amp; Escrow</span></div></div>');

@@ -37,6 +37,8 @@
    <div><label for="lastName">Last name</label><input type="text" id="lastName" autocomplete="family-name" maxlength="80"></div></div>
   <div class="row"><div><label for="email">Email (sign-in)</label><input type="email" id="email" readonly aria-describedby="emailHint"><p class="hint" id="emailHint">To change your email, ask a CLA admin.</p></div>
    <div><label for="phone" id="phoneLbl">Phone</label><input type="tel" id="phone" autocomplete="tel" maxlength="40"></div></div>
+  <div class="row"><div><label for="cellPhone">Cell phone (optional)</label><input type="tel" id="cellPhone" autocomplete="tel-national" inputmode="tel" maxlength="14" placeholder="(240) 555-0142" aria-describedby="cellHint cellErr">
+    <p class="fielderr" id="cellErr" role="alert"></p><p class="hint" id="cellHint"></p></div><div></div></div>
   <div id="co">
    <h3>Company</h3>
    <div class="row"><div><label for="companyName">Company / brokerage / lender</label><input type="text" id="companyName" autocomplete="organization" maxlength="160"></div>
@@ -56,9 +58,11 @@
   if (CLA.q("welcome")) $("welcome").hidden = false;
   const isClient = me.role === "client";
   $("co").hidden = !isClient; $("phoneLbl").textContent = me.role === "rep" ? "Phone (required for reps)" : "Phone";
+  $("cellHint").textContent = me.role === "rep" ? "US numbers only. Shown to the clients and agents assigned to you, and to CLA admins." : me.role === "client" ? "US numbers only. Shown to your CLA rep and CLA admins." : "US numbers only. Shown to CLA admins.";
+  CLA.bindPhoneInput($("cellPhone"), $("cellErr"));
   let staged = null;
-  const fields = ["firstName", "lastName", "phone", "companyName", "companyPhone", "companyAddress", "companyWebsite", "licenseOrNmls"];
-  const fill = () => { fields.forEach((k) => ($(k).value = me[k] || "")); $("email").value = me.email; };
+  const fields = ["firstName", "lastName", "phone", "cellPhone", "companyName", "companyPhone", "companyAddress", "companyWebsite", "licenseOrNmls"];
+  const fill = () => { fields.forEach((k) => ($(k).value = me[k] || "")); $("cellPhone").value = CLA.displayPhone(me.cellPhone); $("email").value = me.email; };
   async function paintAvatar() { $("avatar").src = (await A.getAvatarUrl(me)) || CLA.silhouette("#e4e9da", "#9aa38a"); $("remove").hidden = !me.avatarPath; }
   fill(); await paintAvatar();
 
@@ -84,9 +88,10 @@
     const v = {}; fields.forEach((k) => (v[k] = $(k).value.trim()));
     if (!v.firstName || !v.lastName) { $("err").textContent = "First and last name are required."; return; }
     if (me.role === "rep" && !v.phone) { $("err").textContent = "Reps need a phone number."; return; }
+    if (!$("cellPhone").check()) { $("err").textContent = CLA.PHONE_MSG; $("cellPhone").focus(); return; }
     if (v.companyWebsite && !/^https?:\/\//i.test(v.companyWebsite)) { $("err").textContent = "Website should start with https://"; return; }
     $("save").disabled = true;
-    try { me = await A.updateMyProfile(v); $("ok").textContent = "Saved."; document.querySelector(".chip span") && (document.querySelector(".chip span").firstChild.textContent = CLA.fullName(me)); }
+    try { me = await A.updateMyProfile(v); $("cellPhone").value = CLA.displayPhone(me.cellPhone); $("ok").textContent = "Saved."; document.querySelector(".chip span") && (document.querySelector(".chip span").firstChild.textContent = CLA.fullName(me)); }
     catch (ex) { $("err").textContent = ex.message; } $("save").disabled = false;
   };
 })();

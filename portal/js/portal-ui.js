@@ -13,6 +13,15 @@
     const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect width="128" height="128" fill="' + bg + '"/><circle cx="64" cy="50" r="22" fill="' + fg + '"/><path d="M20 128c2-30 20-46 44-46s42 16 44 46z" fill="' + fg + '"/></svg>';
     return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
   };
+  // tappable phone number: <a href="tel:+12405550142">(240) 555-0142</a>; empty string when there is none
+  CLA.telLink = (v) => { const h = CLA.telHref(v); return h ? '<a class="tel" href="' + CLA.esc(h) + '">' + CLA.esc(CLA.displayPhone(CLA.normalizePhone(v))) + "</a>" : ""; };
+  // attach live formatting + a validation message to a phone <input>; `errEl` shows CLA.PHONE_MSG when invalid
+  CLA.bindPhoneInput = function (input, errEl) {
+    const check = () => { const bad = CLA.normalizePhone(input.value) === null; input.setAttribute("aria-invalid", bad ? "true" : "false"); if (errEl) errEl.textContent = bad ? CLA.PHONE_MSG : ""; return !bad; };
+    input.addEventListener("input", () => { input.value = CLA.formatPhoneInput(input.value); if (input.getAttribute("aria-invalid") === "true") check(); });
+    input.addEventListener("blur", check);
+    input.check = check;
+  };
   CLA.daysLeft = (iso) => Math.max(0, Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000));
   CLA.expiryHtml = (q) => { const d = CLA.daysLeft(q.expiresAt); return '<span class="expiry' + (d <= 5 ? " soon" : "") + '">Auto-deletes ' + CLA.date(q.expiresAt) + " (" + d + " day" + (d === 1 ? "" : "s") + " left)</span>"; };
   CLA.roleLabel = (r) => ({ super_admin: "Super admin", rep: "CLA rep", client: "Client / agent" }[r] || r);

@@ -19,16 +19,17 @@ portal/
   js/supabase-adapter.js                         real back end: supabase-js from CDN (pinned 2.118.0), RLS-reliant
   js/portal-ui.js  js/portal-hook.js             shared helpers; calculator hook (auto-save, co-brand header, Log in / Save buttons)
   config.example.js  (config.js is gitignored)   { mode: "mock" } or { mode: "supabase", url, anonKey }
-  test-portal.js                                 50 adapter checks, no browser:  node portal/test-portal.js
+  test-portal.js                                 82 adapter checks, no browser:  node portal/test-portal.js
   tools/screenshots.py                           regenerates /workspace/portal-preview/*.png
 supabase/
   migrations/20261024000001_schema.sql           tables, constraints, triggers, helper functions, invite gate
   migrations/20261024000002_rls_and_rpc.sql      RLS policies, per-column grants, RPC functions
   migrations/20261024000003_storage_photos.sql   private 'avatars' bucket + storage policies
   migrations/20261024000004_purge_job.sql        30-day purge function + pg_cron schedule
+  migrations/20261025000005_cell_phone.sql       cell_phone on profiles + invitations (E.164 check), get_my_rep_contact(), create_invitation(+cell)
   functions/invite-user, functions/set-user-status   Edge Functions (service-role key stays server side; untested)
   seed.sql                                       fictional local test data (never for a real project)
-  tests/run-tests.sh                             throwaway local Postgres + 158 access-rule checks
+  tests/run-tests.sh                             throwaway local Postgres + 217 access-rule checks
 ```
 
 ## Run it
@@ -40,7 +41,7 @@ supabase/
 * Adapter tests: `node portal/test-portal.js`.
 * Database tests: `bash supabase/tests/run-tests.sh` (needs `postgresql` + `postgresql-17-cron` packages; prints SKIPPED if Postgres is absent).
   It starts a temporary cluster, loads a small Supabase stand-in (`tests/00_supabase_shim.sql`: auth.uid(), auth.users, storage tables, roles),
-  runs the four migrations twice (re-runnable), seeds, and impersonates each role the way PostgREST does.
+  runs all five migrations twice (re-runnable), seeds, and impersonates each role the way PostgREST does.
 
 ## John's decisions as built
 
@@ -51,6 +52,7 @@ supabase/
 | Auto-delete 30 days after creation | `quotes.expires_at` = `created_at + 30 days` set by trigger (clients can't set or extend it); RLS hides expired rows instantly; nightly pg_cron job `purge-expired-quotes` (03:15 UTC) deletes them and writes an audit row |
 | Photos only, JPEG/PNG, 2 MB | UI check (type, size, magic bytes) + `photos` table checks + bucket `allowed_mime_types`/`file_size_limit`; browser also crops to 512 px and re-encodes (drops GPS EXIF) |
 | Roles: super admin / rep / client | `profiles.role`; changed only by `admin_set_role()`; role is never read from user metadata |
+| Cell phone for everyone (reps, clients/agents, admins); optional | `profiles.cell_phone` (migration 5): US only, stored `+1XXXXXXXXXX` (trigger normalizes, CHECK backstops); the person edits their own; the assigned rep/client and admins see it; can be entered when inviting |
 | Rep: invited, CLA email, phone, assigned agents and clients | rep rows require `@clatitle.com` (DB check); phone required by the profile screen; assignments by email, one active rep per client email |
 | Clients/agents: matched to reps by email, name + company info | `assignments.client_email` works before the client has an account; links on sign-up |
 | Guest quoting undecided | The calculator is unchanged for guests. Without `portal/config.js` the hook does nothing at all. With config, guests only see a "Log in to save" button |
@@ -64,7 +66,17 @@ Access rules in one table (details and comments in migration 2):
 | quotes | read/insert/edit own live quotes | read assigned clients' live quotes | read all, delete |
 | photos + files | own | assigned clients' | all, can remove |
 | audit log | no | no | read only; append-only trigger |
-| client reads rep | `get_my_rep()` returns name, phone, email, photo path only | | |
+| client reads rep | `get_my_rep_contact()` returns name, phone, cell, email, photo path only (`get_my_rep()` is kept, without the cell) | | |
+
+### Cell phone number (migration 5)
+
+* **Columns:** `profiles.cell_phone` (nullable) and `invitations.cell_phone` (nullable). The older `profiles.phone` (main/office line, required for reps) is unchanged.
+* **Format:** US only. Anything typed ("(240) 555-0142", "240.555.0142", "1 240 555 0142", "+12405550142") is stored as `+12405550142`. Blank = none. A BEFORE trigger raises a readable error (SQLSTATE 22023) for bad input, and a CHECK constraint (`^\+1[2-9]\d{2}[2-9]\d{6}$`) is the backstop. The browser applies the same rule (`CLA.normalizePhone`) and formats as you type (`CLA.formatPhoneInput`).
+* **Who can edit:** the existing UPDATE policies and per-column grants, with `cell_phone` added to the grant list: the owner edits their own row, a rep cannot edit a client's, admins can (as for all non-sensitive profile fields).
+* **Who can see:** unchanged profile rules (self, admin, assigned rep). A client reads their rep's cell through the new `get_my_rep_contact()`. A rep also reads the *pending* invitation of a client assigned to them (new policy `invitations_select_rep_assigned`) so an invited-but-not-signed-up client's cell shows on the dashboard.
+* **Invitations:** `create_invitation(p_email, p_role, p_rep_id, p_cell_phone)` (the 3-argument version is dropped); the invite-user Edge Function passes `cellPhone` through; the number is copied to the new profile at sign-up (`private.handle_new_user`).
+* **Why a new `get_my_rep_contact()` instead of changing `get_my_rep()`:** a function's return type cannot change with `create or replace`, and migrations here are re-run in order; editing migration 2 was avoided. Before the first real deploy, `get_my_rep()` can be dropped and the adapter pointed at one function.
+* **Screens:** profile (edit, formats as typed, inline validation), invite forms (rep and admin), rep dashboard (client Cell column with `tel:` links, own cell in the header), client dashboard (rep's cell as a `tel:` link, own cell), admin users table, co-branded quote header/print (rep's cell, falling back to the office phone).
 
 ## What is mocked, what is real
 
@@ -84,7 +96,7 @@ Access rules in one table (details and comments in migration 2):
 
 John creates and owns the account (CLA email, a second owner); then, in order:
 1. Create the project (Pro plan before real data). Database > Extensions: enable `pg_cron`.
-2. Apply the migrations: `supabase link` + `supabase db push`, or paste the four files into the SQL editor in order. **Do not** run `seed.sql` or `tests/00_supabase_shim.sql` there.
+2. Apply the migrations: `supabase link` + `supabase db push`, or paste the five files into the SQL editor in order. **Do not** run `seed.sql` or `tests/00_supabase_shim.sql` there.
 3. Auth settings: turn **off** "Allow new users to sign up"; password minimum length 12 and required character types; enable leaked-password protection (Pro) and CAPTCHA; add a custom SMTP sender (e.g. Resend on `auth.clatitle.com`; the built-in mailer only reaches team members); set Site URL and add the allowed redirect `…/portal/set-password.html*`; edit the invite and recovery email templates.
 4. Deploy the Edge Functions (`supabase functions deploy invite-user set-user-status`) and set `PORTAL_ORIGIN` to the site's origin.
 5. Bootstrap the first admin from the SQL editor (no one can invite before one exists):

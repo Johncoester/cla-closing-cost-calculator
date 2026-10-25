@@ -10,15 +10,19 @@
 -- =====================================================================
 
 -- 1. invitations first: the auth.users trigger refuses emails without one
-insert into public.invitations (email, role) values
-  ('sample.admin@clatitle.com',      'super_admin'),
-  ('sample.rep.jane@clatitle.com',   'rep'),
-  ('sample.rep.marcus@clatitle.com', 'rep'),
-  ('sam.agent@example.com',          'client'),
-  ('lee.lender@example.com',         'client'),
-  ('pat.homes@example.com',          'client'),
-  ('dee.disabled@example.com',       'client'),
-  ('omar.broker@example.com',        'client');
+-- Omar's cell is entered on his invitation (typed with dashes on purpose: the trigger stores +1XXXXXXXXXX
+-- and sign-up copies it to his profile). Nina has no account yet: her invitation carries her cell so the
+-- rep can see it, and it lands on her profile when she signs up (the test suite signs her up).
+insert into public.invitations (email, role, cell_phone) values
+  ('sample.admin@clatitle.com',      'super_admin', null),
+  ('sample.rep.jane@clatitle.com',   'rep',         null),
+  ('sample.rep.marcus@clatitle.com', 'rep',         null),
+  ('sam.agent@example.com',          'client',      null),
+  ('lee.lender@example.com',         'client',      null),
+  ('pat.homes@example.com',          'client',      null),
+  ('dee.disabled@example.com',       'client',      null),
+  ('omar.broker@example.com',        'client',      '703-555-0172'),
+  ('nina.newagent@example.com',      'client',      '703-555-0181');
 
 -- 2. auth users (fixed ids so tests and the mock adapter line up)
 insert into auth.users (id, aud, role, email, email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
@@ -38,19 +42,21 @@ from (values
 ) as v(id, email);
 
 -- 3. profile details (this seed runs as a superuser, so column grants do not apply)
-update public.profiles p set first_name = v.f, last_name = v.l, phone = v.ph, company_name = v.co,
+-- cell_phone: fictional 555-01xx numbers; Pat deliberately has none (cell is optional for clients);
+-- Omar's came from his invitation (null here keeps it).
+update public.profiles p set first_name = v.f, last_name = v.l, phone = v.ph, cell_phone = coalesce(v.cell, p.cell_phone), company_name = v.co,
        company_phone = v.cph, company_address = v.ca, license_or_nmls_number = v.lic,
        terms_accepted_at = now()
 from (values
-  ('00000000-0000-4000-8000-0000000000a1', 'Alex',   'Admin',    '301-555-0100', 'C.L.A. Title & Escrow', null, null, null),
-  ('00000000-0000-4000-8000-0000000000b1', 'Jane',   'Rep',      '301-555-0111', 'C.L.A. Title & Escrow', '301-555-0100', 'Rockville, MD', null),
-  ('00000000-0000-4000-8000-0000000000b2', 'Marcus', 'Rep',      '703-555-0122', 'C.L.A. Title & Escrow', '703-555-0100', 'Arlington, VA', null),
-  ('00000000-0000-4000-8000-0000000000c1', 'Sam',    'Agent',    '240-555-0131', 'Acme Realty',           '240-555-0130', '12 Elm St, Bethesda, MD', 'MD-SAMPLE-1001'),
-  ('00000000-0000-4000-8000-0000000000c2', 'Lee',    'Lender',   '202-555-0141', 'Capital Home Loans',    '202-555-0140', '500 K St NW, Washington, DC', 'NMLS-SAMPLE-2002'),
-  ('00000000-0000-4000-8000-0000000000c3', 'Pat',    'Homes',    '757-555-0151', 'Homes by Pat',          null,           null, null),
-  ('00000000-0000-4000-8000-0000000000c4', 'Dee',    'Disabled', '703-555-0161', 'Old Dominion Realty',   null,           null, null),
-  ('00000000-0000-4000-8000-0000000000c5', 'Omar',   'Broker',   '703-555-0171', 'Potomac Brokers',       '703-555-0170', '9 Main St, Alexandria, VA', null)
-) as v(id, f, l, ph, co, cph, ca, lic)
+  ('00000000-0000-4000-8000-0000000000a1', 'Alex',   'Admin',    '301-555-0100', '+13015550101', 'C.L.A. Title & Escrow', null, null, null),
+  ('00000000-0000-4000-8000-0000000000b1', 'Jane',   'Rep',      '301-555-0111', '+13015550112', 'C.L.A. Title & Escrow', '301-555-0100', 'Rockville, MD', null),
+  ('00000000-0000-4000-8000-0000000000b2', 'Marcus', 'Rep',      '703-555-0122', '+17035550123', 'C.L.A. Title & Escrow', '703-555-0100', 'Arlington, VA', null),
+  ('00000000-0000-4000-8000-0000000000c1', 'Sam',    'Agent',    '240-555-0131', '+12405550132', 'Acme Realty',           '240-555-0130', '12 Elm St, Bethesda, MD', 'MD-SAMPLE-1001'),
+  ('00000000-0000-4000-8000-0000000000c2', 'Lee',    'Lender',   '202-555-0141', '+12025550142', 'Capital Home Loans',    '202-555-0140', '500 K St NW, Washington, DC', 'NMLS-SAMPLE-2002'),
+  ('00000000-0000-4000-8000-0000000000c3', 'Pat',    'Homes',    '757-555-0151', null, 'Homes by Pat',          null,           null, null),
+  ('00000000-0000-4000-8000-0000000000c4', 'Dee',    'Disabled', '703-555-0161', '+17035550162', 'Old Dominion Realty',   null,           null, null),
+  ('00000000-0000-4000-8000-0000000000c5', 'Omar',   'Broker',   '703-555-0171', null, 'Potomac Brokers',       '703-555-0170', '9 Main St, Alexandria, VA', null)
+) as v(id, f, l, ph, cell, co, cph, ca, lic)
 where p.id = v.id::uuid;
 update public.profiles set status = 'disabled' where id = '00000000-0000-4000-8000-0000000000c4';
 

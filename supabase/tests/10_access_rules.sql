@@ -275,7 +275,7 @@ do $$ begin
 end $$;
 -- assignment made before the account exists links on sign-up
 do $$ declare u uuid := gen_random_uuid(); begin
-  insert into public.invitations (email, role) values ('nina.newagent@example.com', 'client');
+  -- (her invitation, with a cell number, comes from the seed)
   insert into auth.users (id, email) values (u, 'nina.newagent@example.com');
   perform tests.is('assignment by email links when the client signs up',
     (select (client_user_id = u)::text from public.assignments where client_email = 'nina.newagent@example.com' and active), 'true');
@@ -305,6 +305,150 @@ select tests.is('rep sees only own invitations', tests.q(tests.id('b1'), 'select
 select tests.is('client sees no invitations (no policy matches)', tests.q(tests.id('c1'), 'select * from public.invitations'), '0');
 select tests.is('nobody can write invitations directly',
   tests.x(tests.id('a1'), 'insert into public.invitations (email, role) values (''direct@example.com'', ''client'')'), 'ERR:42501');
+
+-- ---------------- cell phone (migration 5) ----------------
+-- normalizer: formats in, E.164 out; anything not a US 10-digit number is NULL
+select tests.is('normalize: (240) 555-0142',      coalesce(private.normalize_us_phone('(240) 555-0142'), 'NULL'), '+12405550142');
+select tests.is('normalize: 240.555.0142',        coalesce(private.normalize_us_phone('240.555.0142'), 'NULL'), '+12405550142');
+select tests.is('normalize: 1 240 555 0142',      coalesce(private.normalize_us_phone('1 240 555 0142'), 'NULL'), '+12405550142');
+select tests.is('normalize: +1 (240) 555-0142',   coalesce(private.normalize_us_phone('+1 (240) 555-0142'), 'NULL'), '+12405550142');
+select tests.is('normalize: already E.164',       coalesce(private.normalize_us_phone('+12405550142'), 'NULL'), '+12405550142');
+select tests.is('normalize rejects 7 digits',     coalesce(private.normalize_us_phone('555-0142'), 'NULL'), 'NULL');
+select tests.is('normalize rejects area code 0xx',coalesce(private.normalize_us_phone('040-555-0142'), 'NULL'), 'NULL');
+select tests.is('normalize rejects area code 1xx',coalesce(private.normalize_us_phone('140-555-0142'), 'NULL'), 'NULL');
+select tests.is('normalize rejects exchange 1xx', coalesce(private.normalize_us_phone('240-155-0142'), 'NULL'), 'NULL');
+select tests.is('normalize rejects extensions',   coalesce(private.normalize_us_phone('240-555-0142 x5'), 'NULL'), 'NULL');
+select tests.is('normalize rejects letters',      coalesce(private.normalize_us_phone('call 2405550142'), 'NULL'), 'NULL');
+select tests.is('normalize rejects non-US +44',   coalesce(private.normalize_us_phone('+44 20 7946 0958'), 'NULL'), 'NULL');
+select tests.is('normalize rejects 12 digits',    coalesce(private.normalize_us_phone('1 1240 555 0142'), 'NULL'), 'NULL');
+
+select tests.is('seed: cell numbers are all E.164 (or null)',
+  (select count(*)::text from public.profiles where cell_phone is not null and cell_phone !~ '^\+1[2-9][0-9]{2}[2-9][0-9]{6}$'), '0');
+select tests.is('seed: Pat has no cell (optional for clients)',
+  (select (cell_phone is null)::text from public.profiles where id = tests.id('c3')), 'true');
+select tests.is('invitation cell copied to the profile at sign-up (Omar, typed with dashes)',
+  (select cell_phone from public.profiles where id = tests.id('c5')), '+17035550172');
+select tests.is('invitation cell copied to the profile at sign-up (Nina)',
+  (select cell_phone from public.profiles where email = 'nina.newagent@example.com'), '+17035550181');
+
+-- owner edits
+select tests.is('client sets own cell typed as (240) 555-0199',
+  tests.x(tests.id('c1'), 'update public.profiles set cell_phone = ''(240) 555-0199'' where id = ''' || tests.id('c1') || ''''), 'ok:1');
+select tests.is('...and it is stored as +12405550199',
+  (select cell_phone from public.profiles where id = tests.id('c1')), '+12405550199');
+select tests.is('client cell with letters is rejected (22023)',
+  tests.x(tests.id('c1'), 'update public.profiles set cell_phone = ''abc'' where id = ''' || tests.id('c1') || ''''), 'ERR:22023');
+select tests.is('client cell with 9 digits is rejected (22023)',
+  tests.x(tests.id('c1'), 'update public.profiles set cell_phone = ''240-555-019'' where id = ''' || tests.id('c1') || ''''), 'ERR:22023');
+select tests.is('rejected edit left the old value',
+  (select cell_phone from public.profiles where id = tests.id('c1')), '+12405550199');
+select tests.is('client clears cell with an empty string (stored NULL)',
+  tests.x(tests.id('c3'), 'update public.profiles set cell_phone = ''  '' where id = ''' || tests.id('c3') || ''''), 'ok:1');
+select tests.is('...NULL',
+  (select (cell_phone is null)::text from public.profiles where id = tests.id('c3')), 'true');
+select tests.is('client cannot edit another person''s cell',
+  tests.x(tests.id('c1'), 'update public.profiles set cell_phone = ''2025550100'' where id = ''' || tests.id('c2') || ''''), 'ok:0');
+select tests.is('rep cannot edit a client''s cell',
+  tests.x(tests.id('b1'), 'update public.profiles set cell_phone = ''2025550100'' where id = ''' || tests.id('c1') || ''''), 'ok:0');
+select tests.is('rep edits own cell',
+  tests.x(tests.id('b1'), 'update public.profiles set cell_phone = ''301.555.0112'' where id = ''' || tests.id('b1') || ''''), 'ok:1');
+select tests.is('admin can edit a client''s cell (existing admin policy)',
+  tests.x(tests.id('a1'), 'update public.profiles set cell_phone = ''2405550132'' where id = ''' || tests.id('c1') || ''''), 'ok:1');
+select tests.is('authenticated holds an UPDATE grant on cell_phone only through the column list',
+  (select string_agg(column_name, ',' order by column_name) from information_schema.column_privileges
+    where table_name = 'profiles' and grantee = 'authenticated' and privilege_type = 'UPDATE'
+      and column_name in ('cell_phone', 'role', 'email', 'status')), 'cell_phone');
+-- CHECK constraint is the backstop if the trigger were ever bypassed
+do $$ begin
+  alter table public.profiles disable trigger profiles_normalize_cell;
+  begin
+    update public.profiles set cell_phone = '240-555-0142' where id = tests.id('c2');
+    perform tests.is('check constraint rejects a non-E.164 value when the trigger is off', 'allowed', 'rejected');
+  exception when check_violation then
+    perform tests.is('check constraint rejects a non-E.164 value when the trigger is off', 'rejected', 'rejected');
+  end;
+  alter table public.profiles enable trigger profiles_normalize_cell;
+end $$;
+
+-- visibility follows the existing profile rules
+select tests.is('client sees only own cell (1 row with a cell)',
+  tests.q(tests.id('c1'), 'select * from public.profiles where cell_phone is not null'), '1');
+select tests.is('rep Jane sees cells of self + her clients Sam and Lee (3)',
+  tests.q(tests.id('b1'), 'select * from public.profiles where cell_phone is not null'), '3');
+select tests.is('rep Jane cannot read Omar''s cell (other rep''s client)',
+  tests.q(tests.id('b1'), 'select cell_phone from public.profiles where id = ''' || tests.id('c5') || ''''), '0');
+select tests.is('rep Marcus sees cells of self + Dee + Omar + Nina (4)',
+  tests.q(tests.id('b2'), 'select * from public.profiles where cell_phone is not null'), '4');
+select tests.is('admin sees every cell on file',
+  tests.q(tests.id('a1'), 'select * from public.profiles where cell_phone is not null'),
+  (select count(*)::text from public.profiles where cell_phone is not null));
+select tests.is('anon reads no cell numbers', tests.q(null, 'select cell_phone from public.profiles'), 'ERR:42501');
+do $$ declare r text; begin
+  perform set_config('request.jwt.claims', json_build_object('sub', tests.id('c1'), 'aal', 'aal1')::text, true);
+  perform set_config('role', 'authenticated', true);
+  select first_name || '/' || coalesce(cell_phone, '-') || '/' || coalesce(phone, '-') into r from public.get_my_rep_contact();
+  perform set_config('role', 'postgres', true);
+  perform tests.is('client Sam gets rep Jane with her cell', r, 'Jane/+13015550112/301-555-0111');
+  perform set_config('request.jwt.claims', '', true);
+end $$;
+do $$ declare r text; u uuid := gen_random_uuid(); begin
+  insert into public.invitations (email, role) values ('norep.client@example.com', 'client');
+  insert into auth.users (id, email) values (u, 'norep.client@example.com');
+  perform set_config('request.jwt.claims', json_build_object('sub', u, 'aal', 'aal1')::text, true);
+  perform set_config('role', 'authenticated', true);
+  select count(*)::text into r from public.get_my_rep_contact();
+  perform set_config('role', 'postgres', true);
+  perform tests.is('a client with no rep gets no rep contact', r, '0');
+  perform set_config('request.jwt.claims', '', true);
+end $$;
+select tests.is('get_my_rep_contact returns only name, phones, email, photo path (no company/license)',
+  pg_get_function_result('public.get_my_rep_contact'::regproc),
+  'TABLE(id uuid, first_name text, last_name text, phone text, cell_phone text, email text, avatar_path text)');
+select tests.is('anon cannot call get_my_rep_contact', tests.q(null, 'select * from public.get_my_rep_contact()'), 'ERR:42501');
+
+-- invitations carry an optional cell
+select tests.is('rep invites a client with a cell typed (301) 555-0150',
+  tests.x(tests.id('b1'), 'select public.create_invitation(''cell.client@example.com'', ''client'', null, ''(301) 555-0150'')'), 'ok:1');
+select tests.is('...invitation stores +13015550150',
+  (select cell_phone from public.invitations where email = 'cell.client@example.com'), '+13015550150');
+select tests.is('rep invite without a cell is fine (NULL)',
+  tests.x(tests.id('b1'), 'select public.create_invitation(''nocell.client@example.com'', ''client'')'), 'ok:1');
+select tests.is('...NULL',
+  (select (cell_phone is null)::text from public.invitations where email = 'nocell.client@example.com'), 'true');
+select tests.is('blank cell on an invite is treated as none',
+  tests.x(tests.id('b1'), 'select public.create_invitation(''blank.client@example.com'', ''client'', null, ''   '')'), 'ok:1');
+select tests.is('invalid cell on an invite is rejected (22023)',
+  tests.x(tests.id('b1'), 'select public.create_invitation(''bad.cell@example.com'', ''client'', null, ''12345'')'), 'ERR:22023');
+select tests.is('...and no invitation or assignment was left behind',
+  (select (select count(*) from public.invitations where email = 'bad.cell@example.com')::text || '/' ||
+          (select count(*) from public.assignments where client_email = 'bad.cell@example.com')::text), '0/0');
+select tests.is('admin invites a rep with a cell',
+  tests.x(tests.id('a1'), 'select public.create_invitation(''cell.rep@clatitle.com'', ''rep'', null, ''703 555 0155'')'), 'ok:1');
+select tests.is('re-inviting replaces the pending invitation and its cell',
+  tests.x(tests.id('a1'), 'select public.create_invitation(''cell.rep@clatitle.com'', ''rep'', null, ''703 555 0156'')'), 'ok:1');
+select tests.is('...one pending invitation, new cell',
+  (select count(*)::text || '/' || max(cell_phone) from public.invitations where email = 'cell.rep@clatitle.com' and accepted_at is null), '1/+17035550156');
+select tests.is('rep reads own invitation cell (for pending clients)',
+  tests.q(tests.id('b1'), 'select * from public.invitations where email = ''cell.client@example.com'' and cell_phone is not null'), '1');
+select tests.is('other rep cannot read that invitation',
+  tests.q(tests.id('b2'), 'select * from public.invitations where email = ''cell.client@example.com'''), '0');
+select tests.is('client cannot read invitations',
+  tests.q(tests.id('c1'), 'select cell_phone from public.invitations'), '0');
+select tests.is('admin invites a client for Jane with a cell',
+  tests.x(tests.id('a1'), 'select public.create_invitation(''admin.sent@example.com'', ''client'', ''' || tests.id('b1') || ''', ''202-555-0188'')'), 'ok:1');
+select tests.is('Jane reads the pending invitation of her assigned client although an admin sent it',
+  tests.q(tests.id('b1'), 'select * from public.invitations where email = ''admin.sent@example.com'' and cell_phone = ''+12025550188'''), '1');
+select tests.is('Marcus does not see it (client is not his)',
+  tests.q(tests.id('b2'), 'select * from public.invitations where email = ''admin.sent@example.com'''), '0');
+select tests.is('a client cannot read it',
+  tests.q(tests.id('c1'), 'select * from public.invitations where email = ''admin.sent@example.com'''), '0');
+select tests.is('only one create_invitation overload exists (no ambiguity for PostgREST)',
+  (select count(*)::text from pg_proc where proname = 'create_invitation' and pronamespace = 'public'::regnamespace), '1');
+do $$ declare u uuid := gen_random_uuid(); begin
+  insert into auth.users (id, email) values (u, 'cell.client@example.com');
+  perform tests.is('invited client signs up and the profile carries the invited cell',
+    (select cell_phone from public.profiles where id = u), '+13015550150');
+end $$;
 
 -- ---------------- admin RPCs ----------------
 select tests.is('client cannot change roles',

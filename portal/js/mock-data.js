@@ -4,8 +4,10 @@
   const CLA = (window.CLA = window.CLA || {});
   const id = (k) => "00000000-0000-4000-8000-0000000000" + k;
 
+  // fictional cell numbers (555-01xx), stored the way the database stores them: +1XXXXXXXXXX. Pat has none (optional for clients).
+  const CELL = { a1: "+13015550101", b1: "+13015550112", b2: "+17035550123", c1: "+12405550132", c2: "+12025550142", c4: "+17035550162", c5: "+17035550172" };
   const P = (k, role, email, f, l, phone, co, extra) =>
-    Object.assign({ id: id(k), role, status: "active", email, firstName: f, lastName: l, phone, companyName: co,
+    Object.assign({ id: id(k), role, status: "active", email, firstName: f, lastName: l, phone, cellPhone: CELL[k] || null, companyName: co,
       companyPhone: null, companyAddress: null, companyWebsite: null, licenseOrNmls: null, avatarPath: null,
       termsAcceptedAt: "2026-10-01T12:00:00Z", createdAt: "2026-10-01T12:00:00Z" }, extra || {});
 
@@ -65,6 +67,8 @@
     photos[id("b1")] = CLA.silhouette("#cfe6a6", "#4d7a17");
     photos[id("b2")] = CLA.silhouette("#d6dff0", "#33476b");
     photos[id("c1")] = CLA.silhouette("#f3dcc4", "#8a5a2b");
-    return { version: 1, users, assignments, quotes, audit, photos, invitations: [] };
+    // Nina has no account yet (pending); her invitation carries her cell so the rep can see it. Mirrors supabase/seed.sql.
+    const invitations = [{ email: "nina.newagent@example.com", role: "client", invitedBy: id("b2"), cellPhone: "+17035550181", createdAt: iso(20) }];
+    return { version: 1, users, assignments, quotes, audit, photos, invitations };
   };
 })();

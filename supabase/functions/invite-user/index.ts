@@ -23,7 +23,7 @@ Deno.serve(async (req) => {
   const auth = req.headers.get('Authorization')
   if (!auth) return json({ error: 'not signed in' }, 401)
 
-  const { email, role, repId, redirectTo } = await req.json().catch(() => ({}))
+  const { email, role, repId, cellPhone, redirectTo } = await req.json().catch(() => ({}))
   if (typeof email !== 'string' || !['rep', 'client', 'super_admin'].includes(role)) {
     return json({ error: 'email and role are required' }, 400)
   }
@@ -34,6 +34,7 @@ Deno.serve(async (req) => {
   // 1. database rules decide (admin: any role; rep: clients only, assigned to themselves)
   const { error: rpcError } = await asCaller.rpc('create_invitation', {
     p_email: email, p_role: role, p_rep_id: repId ?? null,
+    p_cell_phone: typeof cellPhone === 'string' && cellPhone.trim() ? cellPhone : null,   // optional; the database validates and normalizes to +1XXXXXXXXXX
   })
   if (rpcError) return json({ error: rpcError.message }, rpcError.code === '42501' ? 403 : 400)
 

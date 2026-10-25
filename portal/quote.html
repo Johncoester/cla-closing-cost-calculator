@@ -34,7 +34,7 @@
   else if (me.role === "rep") rep = owner && owner.role === "client" ? me : null;
   else if (q.repId) rep = (await A.adminListUsers()).find((u) => u.id === q.repId);
   if (owner && owner.role === "rep") rep = owner;
-  const party = async (p, role) => !p ? "" : '<div class="party">' + CLA.avatarImg(await A.getAvatarUrl(p), p, "lg") + "<div><b>" + esc(CLA.fullName(p)) + "</b><span>" + esc(role === "rep" ? "C.L.A. Title & Escrow" : p.companyName || "") + "</span><span>" + esc(p.phone || "") + (p.licenseOrNmls && role !== "rep" ? " · " + esc(p.licenseOrNmls) : "") + "</span></div></div>";
+  const party = async (p, role) => !p ? "" : '<div class="party">' + CLA.avatarImg(await A.getAvatarUrl(p), p, "lg") + "<div><b>" + esc(CLA.fullName(p)) + "</b><span>" + esc(role === "rep" ? "C.L.A. Title & Escrow" : p.companyName || "") + "</span><span>" + (role === "rep" && p.cellPhone ? "Cell " + CLA.telLink(p.cellPhone) : esc(p.phone || "")) + (p.licenseOrNmls && role !== "rep" ? " · " + esc(p.licenseOrNmls) : "") + "</span></div></div>";
   const clientSide = owner && owner.role === "client" ? await party(owner, "client") : "";
   const repSide = await party(rep, "rep");
   $("cobrand").innerHTML = (clientSide || "") + (clientSide && repSide ? '<div class="divider"></div>' : "") + (repSide || '<div class="party"><div class="logo" style="width:56px;height:56px;font-size:18px">CLA</div><div><b>C.L.A. Title &amp; Escrow</b><span>Closing cost estimate</span></div></div>') +

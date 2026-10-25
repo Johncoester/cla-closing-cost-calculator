@@ -30,7 +30,9 @@
       s.audit.unshift({ id: uid(), at: new Date().toISOString(), actorId: actor, action, targetType, targetId, details: details || {} });
     const repOf = (s, clientId) => { const a = s.assignments.find((x) => x.active && x.clientUserId === clientId); const r = a && s.users.find((u) => u.id === a.repId && u.status === "active"); return r || null; };
     const myClientIds = (s, repId) => s.assignments.filter((a) => a.active && a.repId === repId && a.clientUserId).map((a) => a.clientUserId);
-    const dto = (p) => { const o = clone(p); o.isComplete = complete(p); return o; };
+    const dto = (p) => { const o = clone(p); o.cellPhone = o.cellPhone || null; o.isComplete = complete(p); return o; };
+    // same rule as the database trigger: blank -> null, valid US -> +1XXXXXXXXXX, anything else -> error
+    const cellOrNull = (v) => { const n = CLA.normalizePhone(v); if (n === null) err(CLA.PHONE_MSG); return n || null; };
 
     // quotes visible to `u` (same rules as the quotes RLS policies)
     function visibleQuotes(s, u) {
@@ -73,6 +75,7 @@
         for (const k of ["firstName", "lastName", "phone", "companyName", "companyPhone", "companyAddress", "companyWebsite", "licenseOrNmls"]) {
           if (k in patch) u[k] = patch[k] == null || patch[k] === "" ? (k === "firstName" || k === "lastName" ? "" : null) : String(patch[k]).slice(0, 300);
         }
+        if ("cellPhone" in patch) u.cellPhone = cellOrNull(patch.cellPhone);   // owner edits own cell only (u = signed-in user)
         save(s); return dto(u);
       },
       async acceptTerms() { const s = load(), u = need(s); u.termsAcceptedAt = new Date().toISOString(); save(s); },
@@ -92,7 +95,7 @@
       },
       async getMyRep() {
         const s = load(), u = need(s), r = repOf(s, u.id); if (!r) return null;
-        return { id: r.id, firstName: r.firstName, lastName: r.lastName, phone: r.phone, email: r.email, avatarPath: r.avatarPath };
+        return { id: r.id, firstName: r.firstName, lastName: r.lastName, phone: r.phone, cellPhone: r.cellPhone || null, email: r.email, avatarPath: r.avatarPath };
       },
 
       async saveQuote(snap) { const s = load(), u = need(s); const q = snapToQuote(s, u, snap); s.quotes.unshift(q); save(s); return qdto(q); },
@@ -112,13 +115,14 @@
         return s.assignments.filter((a) => a.active && a.repId === u.id).map((a) => {
           const p = a.clientUserId && s.users.find((x) => x.id === a.clientUserId);
           const qs = p ? visibleQuotes(s, u).filter((q) => q.ownerId === p.id) : [];
-          return { email: a.clientEmail, profile: p ? dto(p) : null, pending: !p, quoteCount: qs.length,
+          const inv = !p && s.invitations.find((i) => i.email === a.clientEmail);   // RLS: a rep reads pending invitations of clients assigned to them
+          return { email: a.clientEmail, profile: p ? dto(p) : null, pending: !p, cellPhone: p ? p.cellPhone || null : (inv && inv.cellPhone) || null, quoteCount: qs.length,
             lastQuoteAt: qs.length ? qs.map((q) => q.createdAt).sort().pop() : null };
         });
       },
       async listQuotesForClient(clientId) { const s = load(), u = need(s); return visibleQuotes(s, u).filter((q) => q.ownerId === clientId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(qdto); },
-      async inviteClient(email) {
-        const s = load(), u = need(s); if (u.role !== "rep") err("Reps only."); return invite(s, u, { email, role: "client", repId: u.id });
+      async inviteClient(email, opts) {
+        const s = load(), u = need(s); if (u.role !== "rep") err("Reps only."); return invite(s, u, { email, role: "client", repId: u.id, cellPhone: opts && opts.cellPhone });
       },
 
       async adminListUsers() { const s = load(), u = need(s); if (u.role !== "super_admin") err("Admins only."); return s.users.map(dto); },
@@ -156,10 +160,11 @@
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) err("Enter a valid email address.");
       if (role === "rep" && !e.endsWith("@clatitle.com")) err("Reps must use an @clatitle.com email.");
       if (s.users.some((x) => x.email === e)) err("That email already has an account.");
+      const cell = cellOrNull(o.cellPhone);
       const existing = s.assignments.find((a) => a.clientEmail === e && a.active);
       if (role === "client" && existing && actor.role !== "super_admin" && existing.repId !== actor.id) err("That client already belongs to another rep.");
       s.invitations = s.invitations.filter((i) => i.email !== e);
-      s.invitations.push({ email: e, role, invitedBy: actor.id, createdAt: new Date().toISOString() });
+      s.invitations.push({ email: e, role, invitedBy: actor.id, cellPhone: cell, createdAt: new Date().toISOString() });
       if (role === "client" && o.repId) {
         s.assignments.filter((a) => a.clientEmail === e && a.active && a.repId !== o.repId).forEach((a) => (a.active = false));
         if (!s.assignments.some((a) => a.clientEmail === e && a.active))

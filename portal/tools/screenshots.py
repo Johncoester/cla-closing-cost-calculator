@@ -46,7 +46,12 @@ with sync_playwright() as p:
     # --- rep ---
     ctx, pg = newpage(); login(pg, "sample.rep.jane@clatitle.com"); pg.wait_for_selector("#clients tr")
     pg.wait_for_timeout(300); shot(pg, "10-rep-dashboard")
-    pg.click("#clients tr[data-i='0']"); pg.wait_for_selector("#dRows tr"); shot(pg, "11-rep-client-quotes")
+    # invite form with a cell number typed (shows live formatting), then a bad one (validation message)
+    pg.fill("#iEmail", "new.agent@brokerage.com"); pg.type("#iCell", "2405550177"); pg.locator("#inv").scroll_into_view_if_needed(); shot(pg, "13-rep-invite-form")
+    pg.fill("#iCell", ""); pg.type("#iCell", "24055"); pg.locator("#iEmail").focus(); pg.wait_for_timeout(200); shot(pg, "13b-rep-invite-form-invalid-cell")
+    pg.fill("#iCell", ""); pg.fill("#iEmail", ""); pg.locator("#iCell").blur(); pg.evaluate("window.scrollTo(0,0)")
+    pg.click("#clients tr[data-i='0'] b"); pg.wait_for_selector("#dRows tr"); shot(pg, "11-rep-client-quotes")
+    pg.evaluate("window.scrollTo(0,0)"); pg.wait_for_timeout(600)   # the detail panel scrolls smoothly; let it finish
     pg.click("#tabs button:nth-child(2)"); pg.wait_for_selector("#qRows tr"); shot(pg, "12-rep-all-quotes")
     ctx.close()
     ctx, pg = newpage(390, 800, 2); login(pg, "sample.rep.jane@clatitle.com"); pg.wait_for_selector("#clients tr"); shot(pg, "10m-rep-dashboard-mobile"); ctx.close()
@@ -54,6 +59,12 @@ with sync_playwright() as p:
     # --- client ---
     ctx, pg = newpage(); login(pg, "sam.agent@example.com"); pg.wait_for_selector("#rows tr"); pg.wait_for_timeout(300); shot(pg, "20-client-dashboard")
     pg.goto(B + "profile.html?welcome=1"); pg.wait_for_selector("#firstName"); shot(pg, "21-profile")
+    # cell field: formats as typed; a bad number shows the validation message and blocks saving
+    pg.fill("#cellPhone", ""); pg.type("#cellPhone", "24055"); pg.click("#firstName"); pg.wait_for_timeout(200); shot(pg, "21b-profile-cell-invalid")
+    pg.click("#save"); pg.wait_for_timeout(200); print("bad cell save ->", pg.inner_text("#err"))
+    pg.fill("#cellPhone", ""); pg.type("#cellPhone", "2405550199"); print("typed cell ->", pg.input_value("#cellPhone"))
+    pg.click("#save"); pg.wait_for_selector("#ok:not(:empty)"); shot(pg, "21c-profile-cell-saved")
+    pg.fill("#cellPhone", ""); pg.type("#cellPhone", "2405550132"); pg.click("#save"); pg.wait_for_timeout(200)
     # photo checks: bad type, too big, good
     d = tempfile.mkdtemp()
     open(d + "/x.gif", "wb").write(b"GIF89a" + b"0" * 2000)
@@ -73,7 +84,7 @@ with sync_playwright() as p:
 
     # --- admin ---
     ctx, pg = newpage(); login(pg, "sample.admin@clatitle.com"); pg.wait_for_selector("#users tr"); pg.wait_for_timeout(300); shot(pg, "30-admin-users")
-    pg.click("#showInv"); pg.select_option("#iRole", "client"); pg.fill("#iEmail", "new.agent@brokerage.com"); shot(pg, "31-admin-invite")
+    pg.click("#showInv"); pg.select_option("#iRole", "client"); pg.fill("#iEmail", "new.agent@brokerage.com"); pg.type("#iCell", "7035550166"); shot(pg, "31-admin-invite")
     pg.click("#inv button[type=submit]"); pg.wait_for_timeout(300); shot(pg, "31b-admin-invite-sent", False)
     pg.click("#tabs button:nth-child(2)"); pg.wait_for_selector("#quotes tr"); shot(pg, "32-admin-quotes")
     pg.click("#tabs button:nth-child(3)"); pg.wait_for_selector("#asgRows tr"); shot(pg, "33-admin-assignments")
