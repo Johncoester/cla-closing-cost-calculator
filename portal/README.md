@@ -106,6 +106,44 @@ with his photo, cell and office phone, and shows up in rep pickers, all with ONE
   `update public.invitations set is_rep = true where email = 'jcoester@clatitle.com' and accepted_at is null;` Otherwise just tick "Also works as a rep" on the Users tab after signing in.
   Do not re-run migration 5 on its own after this one (it would re-create the old 4-argument `create_invitation`; drop it again if that ever happens).
 
+### Roles and who can do what (migrations 9 and 10: the `admin` role)
+
+Four roles: **super_admin**, **admin**, **rep**, **client**. An **admin** gets the full admin dashboard (all users, quotes, assignments, invitations, audit log)
+but is a step below a super admin: **an admin can only disable, re-enable, change or reassign reps and clients. Never an admin or a super admin.**
+
+| Action | Super admin | Admin | Rep | Client |
+|---|---|---|---|---|
+| See all users, quotes, assignments, invitations, audit log, photos | yes | yes | own clients only | self |
+| Invite a rep or client | yes | yes | clients only (assigned to them) | no |
+| Invite an admin or super admin (with or without "also a rep") | yes | **no** | no | no |
+| Disable / re-enable a rep or client | yes | yes | no | no |
+| Disable / re-enable an admin or super admin | yes (never themselves, never the last active super admin) | **no** | no | no |
+| Change role rep <-> client | yes | yes | no | no |
+| Promote to admin / super admin, or change / demote an admin or super admin | yes (never themselves, never the last active super admin) | **no** | no | no |
+| Toggle "also works as a rep" on an admin or super admin (CLA email; off is refused while they have active clients) | yes | **no** (not even their own) | no | no |
+| Reassign clients to reps | yes | yes | no | no |
+| Edit profile fields / delete the photo of a rep or client | yes | yes | no | no |
+| Edit profile / photo of an admin or super admin | yes | **no** (their own row goes through the normal self-edit policy) | no | no |
+| Hard-delete quotes | yes | yes | no | no |
+| App settings (`require_admin_mfa` ...) | SQL editor / dashboard only (no API grants) | none | none | none |
+
+* **One rule everywhere.** `private.is_admin()` = super admin **or** admin (and aal2 when `require_admin_mfa` is on), so every existing "admin sees everything" policy and RPC works for both.
+  `private.is_super_admin()` is the stricter check. `private.can_manage_user(target)` is the single "may the caller act on this person" rule: a super admin can act on anyone,
+  an admin only on a rep or client. `admin_set_role`, `admin_set_status`, `admin_set_is_rep`, `create_invitation`, the `profiles_update_admin` policy and the photo/storage delete policies all use these helpers.
+* **Last-super-admin guard.** A trigger (`profiles_last_super_admin_trg`) refuses any change that would leave zero active super admins (demote, disable, delete, including the cascade from deleting an auth user,
+  the SQL editor and the service role). It serialises concurrent attempts with an advisory lock. A super admin also cannot disable or demote themselves (the older rule).
+* **"Also works as a rep" for an admin** follows the same rule as for a super admin (CLA email only, `is_rep` flag, `private.is_rep()` is the one definition), but only a super admin may flip it.
+* **UI.** The role dropdown (admin.html) shows all four roles to a super admin and only Rep / Client to an admin; rows an admin may not manage show a static badge, a greyed-out Disable button and a tooltip
+  explaining why (hover or keyboard focus). The invite form offers Admin / Super admin only to a super admin. Route guards (`boot(["super_admin","admin"])`), the header links and `CLA.roleLabel()` ("Admin", "Admin + rep") know the new role.
+  The database is the authority: the buttons are a courtesy, a forced call is still refused with a readable message.
+* **Why two migration files.** Postgres will not let a new enum value be *used* in the transaction that adds it (`unsafe use of new value`), and Supabase runs each migration file as one transaction.
+  `20261025000009_admin_role_enum.sql` only adds the value; `20261025000010_admin_role.sql` uses it. **Apply 9, then 10, as separate runs** (in the SQL editor: run the first, then the second).
+  Existing data is untouched: nobody becomes an admin automatically; make one with the Role dropdown (super admin) or an invitation.
+* **Tests.** `bash supabase/tests/run-tests.sh` (throwaway local Postgres; includes an upgrade-from-migration-6 stage that proves 9+10 in a single transaction fail and in two succeed, with data preserved),
+  `node portal/test-portal.js` (mock adapter, supabase adapter against a fake client, jsdom render of admin.html as Admin vs Super admin), `node test.js`.
+  Screenshots (demo mode): `portal/tools/screenshots_admin_role.py`.
+* **Not covered here:** the Edge Functions `invite-user` / `set-user-status` only forward to the DB RPCs (the allow-list now includes `admin`); redeploy `invite-user` after applying the SQL. If the `?v=` cache-bust in `index.html` is used, bump it with the release.
+
 ## What is mocked, what is real
 
 | Piece | State |

@@ -24,10 +24,23 @@
   };
   CLA.daysLeft = (iso) => Math.max(0, Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000));
   CLA.expiryHtml = (q) => { const d = CLA.daysLeft(q.expiresAt); return '<span class="expiry' + (d <= 5 ? " soon" : "") + '">Auto-deletes ' + CLA.date(q.expiresAt) + " (" + d + " day" + (d === 1 ? "" : "s") + " left)</span>"; };
-  // "Is a rep" = role rep, OR a super admin with the also-a-rep switch on (profile.isRep, from profiles.is_rep). Pass a profile.
-  CLA.isRep = (p) => !!p && (p.role === "rep" || (p.role === "super_admin" && !!p.isRep));
-  CLA.roleLabel = (r, p) => (r === "super_admin" && p && p.isRep ? "Super admin + rep" : { super_admin: "Super admin", rep: "CLA rep", client: "Client / agent" }[r] || r);
-  CLA.homeFor = (role) => (role === "super_admin" ? "admin.html" : role === "rep" ? "rep.html" : "client.html");
+  // Roles: super_admin | admin | rep | client.  "Admin" (migration 10) has the full admin dashboard but may only manage
+  // reps and clients; only a super admin can create / change / disable an admin or super admin. The database enforces it;
+  // the helpers below only decide what the screens show or grey out.
+  CLA.isAdmin = (p) => !!p && (p.role === "super_admin" || p.role === "admin");   // may open the admin dashboard
+  CLA.isSuperAdmin = (p) => !!p && p.role === "super_admin";
+  // "Is a rep" = role rep, OR an admin / super admin with the also-a-rep switch on (profile.isRep, from profiles.is_rep). Pass a profile.
+  CLA.isRep = (p) => !!p && (p.role === "rep" || (CLA.isAdmin(p) && !!p.isRep));
+  CLA.ROLE_NAMES = { super_admin: "Super admin", admin: "Admin", rep: "CLA rep", client: "Client / agent" };
+  CLA.roleLabel = (r, p) => (CLA.isAdmin({ role: r }) && p && p.isRep ? CLA.ROLE_NAMES[r] + " + rep" : CLA.ROLE_NAMES[r] || r);
+  CLA.homeFor = (role) => (role === "super_admin" || role === "admin" ? "admin.html" : role === "rep" ? "rep.html" : "client.html");
+  // May `actor` change `target` (role, status, rep switch, profile)?  Same rule as private.can_manage_user():
+  // a super admin anyone; an admin only reps and clients. Never yourself (the database refuses that too).
+  CLA.canManage = (actor, target) => !!actor && !!target && actor.id !== target.id && (actor.role === "super_admin" || (actor.role === "admin" && (target.role === "rep" || target.role === "client")));
+  // tooltip for a control the actor may not use on `target` ("" when allowed)
+  CLA.manageBlock = (actor, target) => CLA.canManage(actor, target) ? "" :
+    target.id === actor.id ? "You cannot change your own account." :
+    "Only a super admin can change " + (target.role === "admin" ? "an admin" : "a super admin") + ".";
   // where "my quotes / my clients" live: reps and admin+rep accounts use the rep dashboard
   CLA.quotesHome = (p) => (CLA.isRep(p) ? "rep.html" : CLA.homeFor(p && p.role));
   CLA.q = (name) => new URLSearchParams(location.search).get(name);
@@ -51,8 +64,8 @@
     let right = '<a class="navlink" href="../index.html">Calculator (guest)</a>';
     if (profile) {
       const url = await A.getAvatarUrl(profile);
-      right = '<a class="navlink" href="../index.html">Calculator</a><a class="navlink" href="' + CLA.homeFor(profile.role) + '">' + (profile.role === "super_admin" && profile.isRep ? "Admin dashboard" : "Dashboard") + "</a>" +
-        (profile.role === "super_admin" && profile.isRep ? '<a class="navlink" id="repLink" href="rep.html">Rep dashboard</a>' : "") +
+      right = '<a class="navlink" href="../index.html">Calculator</a><a class="navlink" href="' + CLA.homeFor(profile.role) + '">' + (CLA.isAdmin(profile) && profile.isRep ? "Admin dashboard" : "Dashboard") + "</a>" +
+        (CLA.isAdmin(profile) && profile.isRep ? '<a class="navlink" id="repLink" href="rep.html">Rep dashboard</a>' : "") +
         '<a class="chip" href="profile.html">' + CLA.avatarImg(url, profile, "sm") + '<span>' + CLA.esc(CLA.fullName(profile)) + '<small>' + CLA.roleLabel(profile.role, profile) + "</small></span></a>" +
         '<button class="btn sec" id="signOut" type="button">Sign out</button>';
     }
@@ -73,7 +86,7 @@
     if (!s) { toLogin(); throw new Error("redirect"); }
     let me;
     try { me = await A.getMyProfile(); } catch (e) { await A.signOut(); toLogin(); throw e; }
-    // "rep" admits real reps AND super admins who also work as a rep; every other entry is an exact role
+    // "rep" admits real reps AND admins / super admins who also work as a rep; every other entry is an exact role
     if (roles && !roles.some((r) => (r === "rep" ? CLA.isRep(me) : r === me.role))) { location.replace(CLA.homeFor(me.role)); throw new Error("redirect"); }
     await CLA.renderHeader(A, me);
     return { A, me };

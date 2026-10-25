@@ -12,11 +12,14 @@
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "implicit" },
     });
     const must = ({ data, error }) => { if (error) throw new Error(friendly(error)); return data; };
+    // the database's own refusals (migrations 6 and 10) are written for people: show them, capitalized
+    const ownRefusal = (m) => /^(only a super admin|only an admin|you cannot|there must always|reps can only)/i.test(m) ? m.charAt(0).toUpperCase() + m.slice(1) + (/[.!?]$/.test(m) ? "" : ".") : null;
     function friendly(e) {
       const m = e.message || String(e);
       if (/Invalid login credentials/i.test(m)) return "Invalid email or password.";
       if (/Email not confirmed/i.test(m)) return "Check your email for the invitation link first.";
       if (/rate limit|too many/i.test(m)) return "Too many attempts. Wait a minute and try again.";
+      const own = ownRefusal(m); if (own) return own;
       if (e.code === "42501" || /row-level security|permission denied/i.test(m)) return "You do not have access to that.";
       return m;
     }
@@ -27,7 +30,7 @@
       id: r.id, role: r.role, status: r.status, email: r.email, firstName: r.first_name || "", lastName: r.last_name || "",
       phone: r.phone, cellPhone: r.cell_phone || null, companyName: r.company_name, companyPhone: r.company_phone, companyAddress: r.company_address,
       companyWebsite: r.company_website, licenseOrNmls: r.license_or_nmls_number, avatarPath: r.avatar_path,
-      isRep: r.role === "rep" || (r.role === "super_admin" && !!r.is_rep),   // "works as a rep": real reps, or a super admin with profiles.is_rep
+      isRep: r.role === "rep" || ((r.role === "super_admin" || r.role === "admin") && !!r.is_rep),   // "works as a rep": real reps, or an admin / super admin with profiles.is_rep
       termsAcceptedAt: iso(r.terms_accepted_at), isComplete: !!r.is_complete, createdAt: r.created_at });
     const toQuote = (r) => r && ({
       id: r.id, ownerId: r.owner_id, repId: r.rep_id, quoteType: r.quote_type, label: r.label, state: r.state, county: r.county,
@@ -50,9 +53,9 @@
       if (error) {
         let msg = error.message;
         try { const j = await error.context.json(); if (j && j.error) msg = j.error; } catch (e) {}
-        throw new Error(msg);
+        throw new Error(ownRefusal(msg) || msg);
       }
-      if (data && data.error) throw new Error(data.error);
+      if (data && data.error) throw new Error(ownRefusal(data.error) || data.error);
       return data;
     }
     // optional cell on an invitation: friendly message here, normalized (and re-validated) by the database
@@ -176,10 +179,10 @@
       async adminListUsers() { return must(await sb.from("profiles").select("*").order("created_at")).map(toProfile); },
       async adminListAssignments() { return must(await sb.from("assignments").select("*").order("created_at", { ascending: false })).map(toAssignment); },
       async adminListQuotes() { return must(await sb.from("quotes").select("*").order("created_at", { ascending: false })).map(toQuote); },
-      async adminInvite(o) { return fn("invite-user", { email: o.email, role: o.role, repId: o.repId || null, isRep: o.role === "super_admin" && !!o.isRep, cellPhone: await invitedCell(o.cellPhone), redirectTo: redirectBase() + "?invite=1" }); },
+      async adminInvite(o) { return fn("invite-user", { email: o.email, role: o.role, repId: o.repId || null, isRep: (o.role === "super_admin" || o.role === "admin") && !!o.isRep, cellPhone: await invitedCell(o.cellPhone), redirectTo: redirectBase() + "?invite=1" }); },
       async adminSetStatus(id, status) { return fn("set-user-status", { userId: id, status }); },
       async adminSetRole(id, role) { must(await sb.rpc("admin_set_role", { p_user: id, p_role: role })); },
-      async adminSetIsRep(id, on) { must(await sb.rpc("admin_set_is_rep", { p_user: id, p_is_rep: !!on })); },   // super admins only ("Also works as a rep")
+      async adminSetIsRep(id, on) { must(await sb.rpc("admin_set_is_rep", { p_user: id, p_is_rep: !!on })); },   // super admins only; targets: admin or super admin ("Also works as a rep")
       async adminReassign(email, repId) { must(await sb.rpc("admin_reassign_client", { p_client_email: email, p_rep_id: repId })); },
       async adminAuditLog(limit) {
         return must(await sb.from("audit_log").select("*").order("at", { ascending: false }).limit(limit || 100))

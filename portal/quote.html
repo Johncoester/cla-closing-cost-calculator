@@ -25,14 +25,14 @@
   $("print").onclick = () => window.print();
   const id = CLA.q("id"); const q = id && (await A.getQuote(id));
   if (!q) { $("err").textContent = "That quote was not found. Quotes are deleted automatically 30 days after they are created."; return; }
-  if (me.role === "super_admin" && q.ownerId !== me.id) A.adminLogQuoteView(q.id).catch(() => {});
+  if (CLA.isAdmin(me) && q.ownerId !== me.id) A.adminLogQuoteView(q.id).catch(() => {});
   // who owns it, and who is their rep
   let owner = me.id === q.ownerId ? me : null, rep = null;
   if (!owner && CLA.isRep(me)) { const c = (await A.listMyClients()).find((x) => x.profile && x.profile.id === q.ownerId); owner = c && c.profile; }
-  if (!owner && me.role === "super_admin") owner = (await A.adminListUsers()).find((u) => u.id === q.ownerId);
+  if (!owner && CLA.isAdmin(me)) owner = (await A.adminListUsers()).find((u) => u.id === q.ownerId);
   if (me.role === "client") rep = await A.getMyRep();
   else if (me.role === "rep") rep = owner && owner.role === "client" ? me : null;
-  else if (q.repId) rep = (await A.adminListUsers()).find((u) => u.id === q.repId);   // super admins (also when they work as a rep): the quote's own rep_id decides
+  else if (q.repId) rep = (await A.adminListUsers()).find((u) => u.id === q.repId);   // admins and super admins (also when they work as a rep): the quote's own rep_id decides
   if (owner && CLA.isRep(owner)) rep = owner;   // a rep's, or an admin+rep's, own quote carries their own photo
   const party = async (p, role) => !p ? "" : '<div class="party">' + CLA.avatarImg(await A.getAvatarUrl(p), p, "lg") + "<div><b>" + esc(CLA.fullName(p)) + "</b><span>" + esc(role === "rep" ? "C.L.A. Title & Escrow" : p.companyName || "") + "</span><span>" + (role === "rep" && p.cellPhone ? "Cell " + CLA.telLink(p.cellPhone) : esc(p.phone || "")) + (p.licenseOrNmls && role !== "rep" ? " · " + esc(p.licenseOrNmls) : "") + "</span></div></div>";
   const clientSide = owner && owner.role === "client" ? await party(owner, "client") : "";

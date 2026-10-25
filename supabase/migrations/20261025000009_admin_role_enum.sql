@@ -1,0 +1,19 @@
+-- =====================================================================
+-- CLA Quote Portal: new role "admin" (part 1 of 2: the enum value only)
+-- Migration 9 (new file; migrations 1-6 are untouched). Safe to run twice.
+--
+-- WHY THIS IS ITS OWN FILE
+--   Postgres will not let a transaction USE an enum value it has just added
+--   ("unsafe use of new value ... New enum values must be committed before they can be used").
+--   Supabase applies each migration file as one transaction, so the value has to be committed by
+--   THIS file before anything can mention 'admin' in a function body, policy, CHECK constraint or
+--   comparison. Everything that uses it is in migration 10 (20261025000010_admin_role.sql), which runs
+--   as a separate transaction after this one has committed. Do not merge the two files.
+--   (ADD VALUE ... IF NOT EXISTS makes this file re-runnable. Enum values can never be removed again,
+--   which is fine: a forward-only change.)
+--
+-- Roles after migrations 9 + 10:   super_admin | admin | rep | client
+--   super_admin  everything
+--   admin        the full dashboard, but may only manage reps and clients (see README, "Roles")
+-- =====================================================================
+alter type public.user_role add value if not exists 'admin' after 'super_admin';

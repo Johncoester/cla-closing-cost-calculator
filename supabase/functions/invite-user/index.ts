@@ -24,16 +24,20 @@ Deno.serve(async (req) => {
   if (!auth) return json({ error: 'not signed in' }, 401)
 
   const { email, role, repId, cellPhone, isRep, asRep, redirectTo } = await req.json().catch(() => ({}))
-  if (typeof email !== 'string' || !['rep', 'client', 'super_admin'].includes(role)) {
+  if (typeof email !== 'string' || !['rep', 'client', 'admin', 'super_admin'].includes(role)) {
     return json({ error: 'email and role are required' }, 400)
   }
 
   const url = Deno.env.get('SUPABASE_URL')!
   const asCaller = createClient(url, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: auth } } })
 
-  // 1. database rules decide (admin: any role; rep: clients only, assigned to themselves).
-  //    isRep: an admin inviting another super admin who ALSO works as a rep. asRep: an admin+rep inviting from the rep
-  //    dashboard (rep rules apply; it can only reduce privileges). Both are re-checked by create_invitation().
+  // 1. database rules decide (create_invitation, migration 10). This function only passes the request through:
+  //      super admin       any role: super_admin, admin, rep, client
+  //      admin             rep and client only. super_admin / admin (and isRep) are refused with 42501 -> HTTP 403
+  //      rep               clients only, assigned to themselves
+  //    isRep: a super admin inviting an admin or super admin who ALSO works as a rep (needs an @clatitle.com email).
+  //    asRep: an admin / super admin inviting from the rep dashboard (rep rules apply; it can only reduce privileges).
+  //    Nothing here is trusted: the browser can send any role, and the database rejects what the caller may not do.
   const { error: rpcError } = await asCaller.rpc('create_invitation', {
     p_email: email, p_role: role, p_rep_id: repId ?? null,
     p_is_rep: isRep === true, p_as_rep: asRep === true,

@@ -9,7 +9,7 @@
 </head><body>
 <main class="pg">
 <div style="display:flex;gap:16px;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;margin-bottom:20px">
- <div><h1 class="pt">Admin</h1><p class="sub" style="margin:0">All reps, clients and saved quotes. Everything you do here is written to the audit log.</p></div>
+ <div><h1 class="pt">Admin</h1><p class="sub" style="margin:0">All reps, clients and saved quotes. Everything you do here is written to the audit log.</p><p class="sum" id="roleNote" style="margin:6px 0 0"></p></div>
  <button class="btn" id="showInv" type="button">Invite user</button>
 </div>
 <section class="card" id="invCard" hidden style="margin-bottom:24px">
@@ -17,7 +17,7 @@
  <div id="iErr" class="msg err" role="alert"></div><div id="iOk" class="msg ok" role="status"></div>
  <form id="inv" novalidate>
   <div class="row"><div><label for="iEmail">Email</label><input type="email" id="iEmail" autocomplete="off" placeholder="name@clatitle.com"></div>
-   <div><label for="iRole">Role</label><select id="iRole"><option value="rep">Sales rep (CLA email required)</option><option value="client">Real estate agent / client</option><option value="super_admin">Super admin</option></select></div></div>
+   <div><label for="iRole">Role</label><select id="iRole"><option value="rep">Sales rep (CLA email required)</option><option value="client">Real estate agent / client</option></select><p class="sum" id="iRoleNote" style="margin:6px 0 0"></p></div></div>
   <div class="row"><div><label for="iCell">Cell phone (optional)</label><input type="tel" id="iCell" inputmode="tel" maxlength="14" autocomplete="off" placeholder="(240) 555-0142" aria-describedby="iCellErr"><p class="fielderr" id="iCellErr" role="alert"></p></div><div></div></div>
   <div class="row" id="iAlsoRow" hidden><div><label class="chk"><input type="checkbox" id="iAlso"> Also works as a rep (can be assigned clients; needs an @clatitle.com email)</label></div><div></div></div>
   <div class="row" id="iRepRow" hidden><div><label for="iRep">Assign to rep (optional)</label><select id="iRep"></select></div><div></div></div>
@@ -43,26 +43,48 @@
 </main>
 <script>
 (async () => {
-  const { $, esc } = CLA; const { A, me } = await CLA.boot(["super_admin"]);
+  const { $, esc } = CLA; const { A, me } = await CLA.boot(["super_admin", "admin"]);
   const panels = ["pUsers", "pQuotes", "pAssign", "pAudit"];
   let users = [], asg = [], quotes = [];
   const uById = (id) => users.find((u) => u.id === id), nm = (id) => (id && uById(id) ? CLA.fullName(uById(id)) : id ? "(removed user)" : "System");
   CLA.tabs($("tabs"), ["Users", "Quotes", "Assignments", "Audit log"], (i) => { panels.forEach((p, j) => ($(p).hidden = i !== j)); ({ 1: loadQuotes, 2: loadAsg, 3: loadAudit })[i] && ({ 1: loadQuotes, 2: loadAsg, 3: loadAudit })[i](); });
 
+  // What this signed-in person may do (the database enforces the same rules; this only hides / greys out the rest):
+  //   super admin: everything. admin: manage reps and clients only (see CLA.canManage / README "Roles").
+  const isSuper = CLA.isSuperAdmin(me);
+  $("roleNote").innerHTML = isSuper ? "You are a <b>Super admin</b>: you can manage everyone, including admins and other super admins."
+    : "You are an <b>Admin</b>: you can manage reps and clients. Only a super admin can invite, change or disable an admin or super admin.";
+  // invite form: an admin may only invite reps and clients
+  $("iRole").innerHTML = '<option value="rep">Sales rep (CLA email required)</option><option value="client">Real estate agent / client</option>' +
+    (isSuper ? '<option value="admin">Admin (full dashboard; manages reps and clients only)</option><option value="super_admin">Super admin (everything, including admins)</option>' : "");
+  $("iRoleNote").textContent = isSuper ? "" : "Only a super admin can invite admins and super admins.";
+  const adminRole = (r) => r === "admin" || r === "super_admin";
+  const cnt = (f) => users.filter(f).length;
+
   async function loadUsers() {
     users = await A.adminListUsers(); asg = await A.adminListAssignments();
-    $("uCount").textContent = users.length + " users · " + users.filter((u) => u.role === "rep").length + " reps" + (users.some((u) => u.role === "super_admin" && u.isRep) ? " + " + users.filter((u) => u.role === "super_admin" && u.isRep).length + " admin" + (users.filter((u) => u.role === "super_admin" && u.isRep).length === 1 ? "" : "s") + " also reps" : "") + " · " + users.filter((u) => u.role === "client").length + " clients";
+    const sup = cnt((u) => u.role === "super_admin"), adm = cnt((u) => u.role === "admin"), alsoRep = cnt((u) => adminRole(u.role) && u.isRep);
+    $("uCount").textContent = users.length + " users · " + cnt((u) => u.role === "rep") + " reps · " + sup + " super admin" + (sup === 1 ? "" : "s") + " · " + adm + " admin" + (adm === 1 ? "" : "s") + " · " + cnt((u) => u.role === "client") + " clients" + (alsoRep ? " · " + alsoRep + " admin" + (alsoRep === 1 ? "" : "s") + " also work" + (alsoRep === 1 ? "s" : "") + " as rep" + (alsoRep === 1 ? "" : "s") : "");
+    // tooltip text lives in data-tip (shown by CSS on hover / keyboard focus, see .tip in portal.css; also works on a disabled button's wrapper)
+    const tip = (t) => t ? ' data-tip="' + esc(t) + '" tabindex="0"' : "";
     $("users").innerHTML = users.map((u) => {
       const a = asg.find((x) => x.active && x.clientUserId === u.id), rep = a && uById(a.repId);
       const st = u.status === "active" ? '<span class="badge">Active</span>' : '<span class="badge off">Disabled</span>';
-      const alsoRep = u.role === "super_admin" ? '<label class="chk also"><input type="checkbox" data-also="' + esc(u.id) + '"' + (u.isRep ? " checked" : "") + (u.email.endsWith("@clatitle.com") ? "" : " disabled") + '> Also works as a rep</label>' : "";
-      const roleSel = (u.id === me.id ? '<span class="badge admin">Super admin (you)</span>' :
-        '<select data-role="' + esc(u.id) + '" aria-label="Role" style="min-height:34px;padding:4px 30px 4px 10px;font-size:13px;width:auto">' + ["super_admin", "rep", "client"].map((r) => '<option value="' + r + '"' + (r === u.role ? " selected" : "") + ">" + CLA.roleLabel(r) + "</option>").join("") + "</select>") + alsoRep;
-      return "<tr><td><div class='who'>" + CLA.avImg(u, "sm") + "<div><b>" + esc(CLA.fullName(u)) + "</b><span>" + esc(u.email) + (u.companyName && u.role === "client" ? " · " + esc(u.companyName) : "") + "</span></div></div></td><td>" + (CLA.telLink(u.cellPhone) || '<span class="sum">—</span>') + "</td><td>" + roleSel + "</td><td>" + (u.role === "client" ? (rep ? esc(CLA.fullName(rep)) : '<span class="badge warn">Unassigned</span>') : "—") + "</td><td>" + st + '</td><td class="num">' + (u.id === me.id ? "" : '<button class="btn ' + (u.status === "active" ? "danger" : "o") + ' sm" data-st="' + esc(u.id) + '" data-to="' + (u.status === "active" ? "disabled" : "active") + '" type="button">' + (u.status === "active" ? "Disable" : "Re-enable") + "</button>") + "</td></tr>";
+      const mine = u.id === me.id, block = mine ? "" : CLA.manageBlock(me, u);   // "" = this person may be changed by me
+      // "Also works as a rep": only for admin / super admin rows; only a super admin may switch it (CLA email needed to switch on)
+      const cla = u.email.endsWith("@clatitle.com"), canAlso = isSuper && (cla || u.isRep);
+      const alsoTip = !isSuper ? "Only a super admin can switch this." : !cla && !u.isRep ? "Needs an @clatitle.com email." : "";
+      const alsoBox = adminRole(u.role) ? '<label class="chk also' + (alsoTip ? " tip" : "") + '"' + tip(alsoTip) + '><input type="checkbox" data-also="' + esc(u.id) + '"' + (u.isRep ? " checked" : "") + (canAlso ? "" : " disabled") + '> Also works as a rep</label>' : "";
+      const roleSel = mine ? '<span class="badge admin">' + esc(CLA.roleLabel(u.role)) + " (you)</span>"
+        : block ? '<span class="badge admin tip"' + tip(block) + ">" + esc(CLA.roleLabel(u.role)) + "</span>"
+        : '<select data-role="' + esc(u.id) + '" aria-label="Role" style="min-height:34px;padding:4px 30px 4px 10px;font-size:13px;width:auto">' + (isSuper ? ["super_admin", "admin", "rep", "client"] : ["rep", "client"]).map((r) => '<option value="' + r + '"' + (r === u.role ? " selected" : "") + ">" + CLA.roleLabel(r) + "</option>").join("") + "</select>";
+      const btn = '<button class="btn ' + (u.status === "active" ? "danger" : "o") + ' sm" data-st="' + esc(u.id) + '" data-to="' + (u.status === "active" ? "disabled" : "active") + '" type="button"' + (block ? ' disabled aria-disabled="true"' : "") + ">" + (u.status === "active" ? "Disable" : "Re-enable") + "</button>";
+      const action = mine ? "" : block ? '<span class="tip"' + tip(block) + ">" + btn + "</span>" : btn;   // the tooltip sits on a wrapper: a disabled button gets no hover / focus events
+      return "<tr><td><div class='who'>" + CLA.avImg(u, "sm") + "<div><b>" + esc(CLA.fullName(u)) + "</b><span>" + esc(u.email) + (u.companyName && u.role === "client" ? " · " + esc(u.companyName) : "") + "</span></div></div></td><td>" + (CLA.telLink(u.cellPhone) || '<span class="sum">—</span>') + "</td><td>" + roleSel + alsoBox + "</td><td>" + (u.role === "client" ? (rep ? esc(CLA.fullName(rep)) : '<span class="badge warn">Unassigned</span>') : "—") + "</td><td>" + st + '</td><td class="num">' + action + "</td></tr>";
     }).join("");
     CLA.fillAvatars(A, $("users"));
-    const reps = users.filter((u) => CLA.isRep(u) && u.status === "active");   // real reps AND super admins who also work as a rep
-    const opts = reps.map((r) => '<option value="' + esc(r.id) + '">' + esc(CLA.fullName(r)) + (r.role === "super_admin" ? " (admin + rep)" : "") + "</option>").join("");
+    const reps = users.filter((u) => CLA.isRep(u) && u.status === "active");   // real reps AND admins / super admins who also work as a rep
+    const opts = reps.map((r) => '<option value="' + esc(r.id) + '">' + esc(CLA.fullName(r)) + (adminRole(r.role) ? " (admin + rep)" : "") + "</option>").join("");
     $("aRep").innerHTML = opts; $("iRep").innerHTML = '<option value="">No rep yet</option>' + opts;
   }
   $("users").onchange = async (e) => {
@@ -101,14 +123,14 @@
 
   $("showInv").onclick = () => { $("invCard").hidden = false; $("iEmail").focus(); };
   $("invCancel").onclick = () => { $("invCard").hidden = true; };
-  $("iRole").onchange = () => { $("iRepRow").hidden = $("iRole").value !== "client"; $("iAlsoRow").hidden = $("iRole").value !== "super_admin"; if ($("iRole").value !== "super_admin") $("iAlso").checked = false; };
+  $("iRole").onchange = () => { $("iRepRow").hidden = $("iRole").value !== "client"; $("iAlsoRow").hidden = !adminRole($("iRole").value); if (!adminRole($("iRole").value)) $("iAlso").checked = false; };
   CLA.bindPhoneInput($("iCell"), $("iCellErr"));
   $("inv").onsubmit = async (e) => { e.preventDefault(); $("iErr").textContent = ""; $("iOk").textContent = "";
     const email = $("iEmail").value.trim(), role = $("iRole").value;
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { $("iErr").textContent = "Enter a valid email address."; return; }
-    if ((role === "rep" || (role === "super_admin" && $("iAlso").checked)) && !/@clatitle\.com$/i.test(email)) { $("iErr").textContent = "Reps must use an @clatitle.com email address."; return; }
+    if ((role === "rep" || (adminRole(role) && $("iAlso").checked)) && !/@clatitle\.com$/i.test(email)) { $("iErr").textContent = "Reps must use an @clatitle.com email address."; return; }
     if (!$("iCell").check()) { $("iErr").textContent = CLA.PHONE_MSG; $("iCell").focus(); return; }
-    try { const r = await A.adminInvite({ email, role, repId: role === "client" ? $("iRep").value || null : null, isRep: role === "super_admin" && $("iAlso").checked, cellPhone: $("iCell").value });
+    try { const r = await A.adminInvite({ email, role, repId: role === "client" ? $("iRep").value || null : null, isRep: adminRole(role) && $("iAlso").checked, cellPhone: $("iCell").value });
       $("iOk").textContent = "Invitation recorded for " + email + ". " + ((r && r.mockNote) || "They will get an email shortly."); $("iEmail").value = ""; $("iCell").value = ""; $("iAlso").checked = false; }
     catch (ex) { $("iErr").textContent = ex.message; } };
   await loadUsers();

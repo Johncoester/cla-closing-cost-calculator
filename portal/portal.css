@@ -32,6 +32,10 @@ button{font:inherit}
 .btn.danger{background:#fff;color:var(--bad);border-color:#e3b3af}.btn.danger:hover{background:var(--badbg)}
 .btn.sm{padding:7px 12px;font-size:13px;border-radius:10px}
 .btn[disabled]{opacity:.55;cursor:not-allowed}
+/* tooltip for controls a person may not use (data-tip): sits to the LEFT so a scrolling table never clips it */
+.tip{position:relative;display:inline-block}.tip[data-tip]{cursor:not-allowed}
+.tip[data-tip]:hover::after,.tip[data-tip]:focus::after{content:attr(data-tip);position:absolute;z-index:30;right:calc(100% + 8px);top:50%;transform:translateY(-50%);width:max-content;max-width:230px;background:#111;color:#fff;font:500 12px/1.35 Inter,system-ui,sans-serif;padding:7px 10px;border-radius:8px;text-align:left;white-space:normal;box-shadow:0 4px 14px rgba(0,0,0,.28);pointer-events:none}
+label.chk.tip{display:flex}
 header .btn.sec{background:transparent;color:#fff;border-color:#555;padding:7px 13px;font-size:13px;border-radius:10px}
 header .btn.sec:hover{background:#1c1c1c;border-color:#888}
 :focus-visible{outline:3px solid var(--gdd);outline-offset:2px}

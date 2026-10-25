@@ -38,22 +38,26 @@
  *   listMyQuotes()                        -> Quote[]
  *   getQuote(id)                          -> Quote | null
  *   deleteQuote(id)                       (client "delete": hides it; purge removes it for real)
- *  Rep   (real reps AND super admins who also work as a rep: profile.isRep; see CLA.isRep(profile))
+ *  Rep   (real reps AND admins / super admins who also work as a rep: profile.isRep; see CLA.isRep(profile))
  *   listMyClients()                       -> [{email, profile|null, pending, cellPhone|null, quoteCount, lastQuoteAt}]
- *                                            ONLY the caller's own clients, also for a super admin (who can otherwise read every assignment)
+ *                                            ONLY the caller's own clients, also for an admin / super admin (who can otherwise read every assignment)
  *                                            cellPhone = the client's profile cell, or (before sign-up) the cell on the invitation
  *   listQuotesForClient(clientUserId)     -> Quote[]
  *   inviteClient(email, {cellPhone}?)     (cellPhone optional: any US format; stored as +1XXXXXXXXXX; throws on an invalid number)
  *                                            always assigned to the caller, with the REP rules even for an admin+rep (never takes over another rep's client)
- *  Admin
+ *  Admin   (roles super_admin and admin may call the read/assign methods; the "super admin only" ones are marked.
+ *           An ADMIN may only act on reps and clients; the database refuses anything on an admin or super admin, see the README "Roles")
  *   adminListUsers()                      -> Profile[]
  *   adminListAssignments()                -> Assignment[]
  *   adminListQuotes()                     -> Quote[]
- *   adminInvite({email, role, repId, cellPhone, isRep})   (repId, cellPhone, isRep optional; isRep only with role "super_admin": the new admin also works as a rep, CLA email required)
+ *   adminInvite({email, role, repId, cellPhone, isRep})   role: "rep" | "client" for an admin; also "admin" | "super_admin" for a SUPER ADMIN only.
+ *                                            (repId, cellPhone, isRep optional; isRep only with role "admin" / "super_admin": the new admin also works as a rep, CLA email required)
  *                                            repId may be any rep OR an admin who also works as a rep
- *   adminSetStatus(userId, "active"|"disabled")
- *   adminSetRole(userId, role)            (role "rep" sets isRep, "client" clears it; super_admin keeps whatever it had)
- *   adminSetIsRep(userId, on)             "Also works as a rep" switch. Super admin targets only (reps always are, clients never);
+ *   adminSetStatus(userId, "active"|"disabled")   admin: reps and clients only. super admin: anyone but themselves.
+ *                                            Never leaves zero ACTIVE super admins (rejected by the database)
+ *   adminSetRole(userId, role)            admin: rep <-> client only, for reps and clients only. super admin: any role for anyone but themselves.
+ *                                            (role "rep" sets isRep, "client" clears it; admin / super_admin keep whatever they had)
+ *   adminSetIsRep(userId, on)             SUPER ADMIN ONLY. "Also works as a rep" switch for an admin or super admin target (reps always are, clients never);
  *                                            on needs an @clatitle.com email; off is refused while they still have active clients
  *   adminReassign(clientEmail, repId)
  *   adminAuditLog(limit)                  -> AuditRow[]
@@ -61,9 +65,10 @@
  *
  * Profile : {id, role, isRep, status, email, firstName, lastName, phone, cellPhone, companyName, companyPhone,
  *            companyAddress, companyWebsite, licenseOrNmls, avatarPath, termsAcceptedAt, isComplete, createdAt}
- * isRep   : boolean, "works as a rep": true for role "rep", false for "client", and for a "super_admin" true only when a super admin
+ * role    : "super_admin" | "admin" | "rep" | "client"
+ * isRep   : boolean, "works as a rep": true for role "rep", false for "client", and for an "admin" or "super_admin" true only when a super admin
  *            switched it on (profiles.is_rep). Every rep feature (assignments, own-client list, co-branded quotes, rep pickers,
- *            phone required) keys off this, never off role alone. A super admin keeps all admin access either way.
+ *            phone required) keys off this, never off role alone. An admin / super admin keeps all admin access either way.
  * cellPhone : string|null, always E.164 US ("+12405550142") or null. Optional for everyone; `phone` (the main/office
  *            line, required for reps) is unchanged. Visible to the person, admins, and the assigned rep/client (the same
  *            rules as the rest of the profile; a client gets their rep's through getMyRep()).

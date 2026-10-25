@@ -44,15 +44,15 @@
       if (me) {
         const url = await A.getAvatarUrl(me);
         hr.insertAdjacentHTML("afterbegin", '<a class="claHdr" href="' + base + CLA.homeFor(me.role) + '">' + (url ? '<img src="' + esc(url) + '" alt="">' : "") + "<span>" + esc(CLA.fullName(me)) + " · My account</span></a>" +
-          (me.role === "super_admin" && me.isRep ? '<a class="claHdr" id="claRepLink" href="' + base + 'rep.html"><span>Rep dashboard</span></a>' : ""));   // admin who also works as a rep
+          (CLA.isAdmin(me) && me.isRep ? '<a class="claHdr" id="claRepLink" href="' + base + 'rep.html"><span>Rep dashboard</span></a>' : ""));   // admin who also works as a rep
       } else {
         hr.insertAdjacentHTML("afterbegin", '<a class="btn sec" href="' + base + 'login.html?next=quote-saved.html">Log in</a>');
       }
     }
 
     // ---- co-branded header (client photo + rep photo); shows on screen and in print ----
-    // (a plain super admin has no co-brand; a super admin who also works as a rep brands their own quotes like a rep)
-    if (me && (me.role !== "super_admin" || me.isRep)) {
+    // (a plain admin / super admin has no co-brand; one who also works as a rep brands their own quotes like a rep)
+    if (me && (!CLA.isAdmin(me) || me.isRep)) {
       try { rep = me.role === "client" ? await A.getMyRep() : me; } catch (e) {}
       const party = async (p, line2, line3) => '<div class="party">' + ((await A.getAvatarUrl(p)) ? '<img src="' + esc(await A.getAvatarUrl(p)) + '" alt="Photo of ' + esc(CLA.fullName(p)) + '">' : '<img src="' + esc(CLA.silhouette("#e4e9da", "#9aa38a")) + '" alt="">') + "<div><b>" + esc(CLA.fullName(p)) + "</b><span>" + esc(line2 || "") + "</span><span>" + esc(line3 || "") + "</span></div></div>";
       const left = me.role === "client" ? await party(me, me.companyName, me.phone) : "";

@@ -46,7 +46,7 @@
 (async () => {
   const { $, esc } = CLA; const { A, me } = await CLA.boot(["rep"]);
   const myUrl = await A.getAvatarUrl(me);
-  $("hello").innerHTML = CLA.avatarImg(myUrl, me, "lg") + "<div><h1 class='pt' style='margin-bottom:2px'>Hi " + esc(me.firstName || "there") + "</h1>" + (me.role === "super_admin" ? "<p class='sum' style='margin:0 0 4px'>You are signed in as a super admin who also works as a rep. This page shows only <b>your</b> clients and quotes. <a href='admin.html'>Open the admin dashboard</a></p>" : "") + "<p>" + esc(me.phone || "Add your phone number in your profile") + (me.cellPhone ? " · Cell " + CLA.telLink(me.cellPhone) : " · <a href='profile.html'>Add your cell</a>") + " · " + esc(me.email) + '</p><p><a href="profile.html">Edit profile and photo</a></p></div>';
+  $("hello").innerHTML = CLA.avatarImg(myUrl, me, "lg") + "<div><h1 class='pt' style='margin-bottom:2px'>Hi " + esc(me.firstName || "there") + "</h1>" + (CLA.isAdmin(me) ? "<p class='sum' style='margin:0 0 4px'>You are signed in as " + (me.role === "admin" ? "an admin" : "a super admin") + " who also works as a rep. This page shows only <b>your</b> clients and quotes. <a href='admin.html'>Open the admin dashboard</a></p>" : "") + "<p>" + esc(me.phone || "Add your phone number in your profile") + (me.cellPhone ? " · Cell " + CLA.telLink(me.cellPhone) : " · <a href='profile.html'>Add your cell</a>") + " · " + esc(me.email) + '</p><p><a href="profile.html">Edit profile and photo</a></p></div>';
   CLA.tabs($("tabs"), ["My clients", "Quotes"], (i) => { $("pClients").hidden = i !== 0; $("pQuotes").hidden = i !== 1; if (i === 1) loadAll(); });
 
   const typeBadge = (q) => '<span class="badge ' + (q.quoteType === "buyer" ? "" : "warn") + '">' + (q.quoteType === "buyer" ? "Buyer quote" : "Seller net") + "</span>";
@@ -58,7 +58,7 @@
       const p = c.profile, name = p ? CLA.fullName(p) : c.email;
       const st = c.pending ? '<span class="badge warn">Invited, not signed up</span>' : p.status === "disabled" ? '<span class="badge off">Disabled</span>' : '<span class="badge">Active</span>';
       return '<tr class="' + (p ? "click" : "") + '" data-i="' + i + '"><td><div class="who">' + (p ? CLA.avImg(p, "sm") : CLA.avatarImg(null, {}, "sm")) + "<div><b>" + esc(name) + "</b><span>" + esc(p && p.companyName || "") + "</span></div></div></td><td>" + esc(c.email) + "</td><td>" + (CLA.telLink(c.cellPhone) || '<span class="sum">—</span>') + '</td><td class="num">' + c.quoteCount + "</td><td>" + CLA.date(c.lastQuoteAt) + "</td><td>" + st + "</td></tr>";
-    }).join("") : '<tr><td colspan="6" class="empty">No clients yet. Invite one below, or ' + (me.role === "super_admin" ? "assign some from the admin dashboard." : "ask an admin to assign you some.") + '</td></tr>';
+    }).join("") : '<tr><td colspan="6" class="empty">No clients yet. Invite one below, or ' + (CLA.isAdmin(me) ? "assign some from the admin dashboard." : "ask an admin to assign you some.") + '</td></tr>';
     CLA.fillAvatars(A, $("clients"));
   }
   $("clients").onclick = async (e) => {

@@ -15,8 +15,10 @@
 -- rep can see it, and it lands on her profile when she signs up (the test suite signs her up).
 -- The sample admin is a super admin who ALSO works as a rep (is_rep, migration 6): the invitation carries the flag
 -- and sign-up copies it to the profile. Quinn and Rae are her/his own clients (Rae has not signed up yet).
+-- Robin is an "admin" (migration 10): the full dashboard, but may only manage reps and clients, never a super admin or another admin.
 insert into public.invitations (email, role, cell_phone, is_rep) values
   ('sample.admin@clatitle.com',      'super_admin', null,           true),
+  ('sample.robin.admin@clatitle.com','admin',       null,           false),
   ('sample.rep.jane@clatitle.com',   'rep',         null,           true),
   ('sample.rep.marcus@clatitle.com', 'rep',         null,           true),
   ('sam.agent@example.com',          'client',      null,           false),
@@ -36,6 +38,7 @@ select v.id::uuid, 'authenticated', 'authenticated', v.email, now(),
        '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb, now(), now(), '', '', '', '', ''
 from (values
   ('00000000-0000-4000-8000-0000000000a1', 'sample.admin@clatitle.com'),
+  ('00000000-0000-4000-8000-0000000000a2', 'sample.robin.admin@clatitle.com'),
   ('00000000-0000-4000-8000-0000000000b1', 'sample.rep.jane@clatitle.com'),
   ('00000000-0000-4000-8000-0000000000b2', 'sample.rep.marcus@clatitle.com'),
   ('00000000-0000-4000-8000-0000000000c1', 'sam.agent@example.com'),
@@ -54,6 +57,7 @@ update public.profiles p set first_name = v.f, last_name = v.l, phone = v.ph, ce
        terms_accepted_at = now()
 from (values
   ('00000000-0000-4000-8000-0000000000a1', 'Alex',   'Admin',    '301-555-0100', '+13015550101', 'C.L.A. Title & Escrow', null, null, null),
+  ('00000000-0000-4000-8000-0000000000a2', 'Robin',  'Admin',    '301-555-0105', null, 'C.L.A. Title & Escrow', null, null, null),
   ('00000000-0000-4000-8000-0000000000b1', 'Jane',   'Rep',      '301-555-0111', '+13015550112', 'C.L.A. Title & Escrow', '301-555-0100', 'Rockville, MD', null),
   ('00000000-0000-4000-8000-0000000000b2', 'Marcus', 'Rep',      '703-555-0122', '+17035550123', 'C.L.A. Title & Escrow', '703-555-0100', 'Arlington, VA', null),
   ('00000000-0000-4000-8000-0000000000c1', 'Sam',    'Agent',    '240-555-0131', '+12405550132', 'Acme Realty',           '240-555-0130', '12 Elm St, Bethesda, MD', 'MD-SAMPLE-1001'),
