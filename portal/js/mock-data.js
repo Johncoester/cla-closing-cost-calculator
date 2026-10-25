@@ -16,8 +16,10 @@
     const users = [
       // the sample admin ALSO works as a rep (isRep): she has clients Quinn and (pending) Rae, and a photo
       P("a1", "super_admin", "sample.admin@clatitle.com", "Alex", "Admin", "301-555-0100", "C.L.A. Title & Escrow", { isRep: true, companyAddress: "Rockville, MD", avatarPath: id("a1") + "/avatar" }),
-      // Robin is an "admin" (migration 10): the full dashboard, but may only manage reps and clients, never a super admin or another admin
+      // Robin is an "admin" (migration 10): the full dashboard; manages reps, clients and other admins (migration 11), never a super admin
       P("a2", "admin", "sample.robin.admin@clatitle.com", "Robin", "Admin", "301-555-0105", "C.L.A. Title & Escrow", { companyAddress: "Rockville, MD", avatarPath: id("a2") + "/avatar" }),
+      // Casey is a second Admin (migration 11): an admin may manage ANOTHER admin (disable, demote to rep / client), never a super admin
+      P("a3", "admin", "sample.casey.admin@clatitle.com", "Casey", "Admin", "301-555-0106", "C.L.A. Title & Escrow", { companyAddress: "Rockville, MD", avatarPath: id("a3") + "/avatar" }),
       P("b1", "rep", "sample.rep.jane@clatitle.com", "Jane", "Rep", "301-555-0111", "C.L.A. Title & Escrow", { companyAddress: "Rockville, MD", avatarPath: id("b1") + "/avatar" }),
       P("b2", "rep", "sample.rep.marcus@clatitle.com", "Marcus", "Rep", "703-555-0122", "C.L.A. Title & Escrow", { companyAddress: "Arlington, VA", avatarPath: id("b2") + "/avatar" }),
       P("c1", "client", "sam.agent@example.com", "Sam", "Agent", "240-555-0131", "Acme Realty", { companyPhone: "240-555-0130", companyAddress: "12 Elm St, Bethesda, MD", licenseOrNmls: "MD-SAMPLE-1001", avatarPath: id("c1") + "/avatar" }),
@@ -73,12 +75,13 @@
     const photos = {};
     photos[id("a1")] = CLA.silhouette("#f1d9e6", "#8a2b5e");
     photos[id("a2")] = CLA.silhouette("#d9e8f1", "#2b5e8a");
+    photos[id("a3")] = CLA.silhouette("#e4dcf1", "#5e2b8a");
     photos[id("b1")] = CLA.silhouette("#cfe6a6", "#4d7a17");
     photos[id("b2")] = CLA.silhouette("#d6dff0", "#33476b");
     photos[id("c1")] = CLA.silhouette("#f3dcc4", "#8a5a2b");
     // Nina has no account yet (pending); her invitation carries her cell so the rep can see it. Mirrors supabase/seed.sql.
     const invitations = [{ email: "nina.newagent@example.com", role: "client", invitedBy: id("b2"), cellPhone: "+17035550181", createdAt: iso(20) },
       { email: "rae.pending@example.com", role: "client", invitedBy: id("a1"), cellPhone: "+15715550191", createdAt: iso(20) }];
-    return { version: 3, users, assignments, quotes, audit, photos, invitations };
+    return { version: 4, users, assignments, quotes, audit, photos, invitations };
   };
 })();

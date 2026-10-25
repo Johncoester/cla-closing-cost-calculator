@@ -25,7 +25,7 @@
   CLA.daysLeft = (iso) => Math.max(0, Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000));
   CLA.expiryHtml = (q) => { const d = CLA.daysLeft(q.expiresAt); return '<span class="expiry' + (d <= 5 ? " soon" : "") + '">Auto-deletes ' + CLA.date(q.expiresAt) + " (" + d + " day" + (d === 1 ? "" : "s") + " left)</span>"; };
   // Roles: super_admin | admin | rep | client.  "Admin" (migration 10) has the full admin dashboard but may only manage
-  // reps and clients; only a super admin can create / change / disable an admin or super admin. The database enforces it;
+  // reps, clients and other admins; only a super admin can create / promote an admin or touch a super admin. The database enforces it;
   // the helpers below only decide what the screens show or grey out.
   CLA.isAdmin = (p) => !!p && (p.role === "super_admin" || p.role === "admin");   // may open the admin dashboard
   CLA.isSuperAdmin = (p) => !!p && p.role === "super_admin";
@@ -34,13 +34,14 @@
   CLA.ROLE_NAMES = { super_admin: "Super admin", admin: "Admin", rep: "CLA rep", client: "Client / agent" };
   CLA.roleLabel = (r, p) => (CLA.isAdmin({ role: r }) && p && p.isRep ? CLA.ROLE_NAMES[r] + " + rep" : CLA.ROLE_NAMES[r] || r);
   CLA.homeFor = (role) => (role === "super_admin" || role === "admin" ? "admin.html" : role === "rep" ? "rep.html" : "client.html");
-  // May `actor` change `target` (role, status, rep switch, profile)?  Same rule as private.can_manage_user():
-  // a super admin anyone; an admin only reps and clients. Never yourself (the database refuses that too).
-  CLA.canManage = (actor, target) => !!actor && !!target && actor.id !== target.id && (actor.role === "super_admin" || (actor.role === "admin" && (target.role === "rep" || target.role === "client")));
+  // May `actor` change `target` (status, demote, profile, photo)?  Same rule as private.can_manage_user() (migration 11):
+  // a super admin anyone; an admin reps, clients and OTHER admins, never a super admin. Never yourself (the database refuses that too).
+  // (Promoting to admin / super admin, inviting them and the rep switch stay super-admin-only: see CLA.isSuperAdmin at the call site.)
+  CLA.canManage = (actor, target) => !!actor && !!target && actor.id !== target.id && (actor.role === "super_admin" || (actor.role === "admin" && target.role !== "super_admin"));
   // tooltip for a control the actor may not use on `target` ("" when allowed)
   CLA.manageBlock = (actor, target) => CLA.canManage(actor, target) ? "" :
     target.id === actor.id ? "You cannot change your own account." :
-    "Only a super admin can change " + (target.role === "admin" ? "an admin" : "a super admin") + ".";
+    "Only a super admin can change a super admin.";
   // where "my quotes / my clients" live: reps and admin+rep accounts use the rep dashboard
   CLA.quotesHome = (p) => (CLA.isRep(p) ? "rep.html" : CLA.homeFor(p && p.role));
   CLA.q = (name) => new URLSearchParams(location.search).get(name);

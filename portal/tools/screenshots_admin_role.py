@@ -1,11 +1,11 @@
-"""Screenshots of the admin dashboard for the new 'admin' role (demo / mock mode). Usage:
+"""Screenshots of the admin dashboard for the 'admin' role (demo / mock mode; migration 11: an Admin also manages other Admins). Usage:
   /workspace/design-preview/.venv/bin/python portal/tools/screenshots_admin_role.py [outdir]
 Serves the repo on a local port (no network), always in MOCK mode, and drives Chrome with Playwright."""
 import http.server, socketserver, threading, sys, os, functools
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-OUT = sys.argv[1] if len(sys.argv) > 1 else "/workspace/portal-preview/admin-role"
+OUT = sys.argv[1] if len(sys.argv) > 1 else "/workspace/portal-preview/admin-manage-admins"
 os.makedirs(OUT, exist_ok=True)
 PORT = 8766
 class Q(http.server.SimpleHTTPRequestHandler):
@@ -45,10 +45,16 @@ with sync_playwright() as p:
     # hover the greyed-out Disable button on the super admin's row: tooltip says why
     alex = pg.locator("#users tr", has_text="Alex Admin")
     alex.locator(".tip").last.hover(); pg.wait_for_timeout(250)
-    pg.screenshot(path=f"{OUT}/03-as-admin-disabled-action-tooltip.png", clip={"x": 0, "y": 0, "width": 1280, "height": 600}); print("saved 03")
+    pg.screenshot(path=f"{OUT}/03a-as-admin-super-admin-locked-tooltip.png", clip={"x": 0, "y": 0, "width": 1280, "height": 600}); print("saved 03")
     pg.mouse.move(5, 5); alex.locator("label.tip").hover(); pg.wait_for_timeout(250)
     pg.screenshot(path=f"{OUT}/04-as-admin-rep-switch-locked-tooltip.png", clip={"x": 0, "y": 0, "width": 1280, "height": 600}); print("saved 04")
     pg.mouse.move(5, 5)
+    # migration 11: an Admin manages ANOTHER Admin (Casey): her Disable button is live, her role list is Admin / CLA rep / Client only (no way up)
+    casey = pg.locator("#users tr", has_text="Casey Admin")
+    print("admin viewing admin Casey: role options ->", casey.locator("select[data-role] option").evaluate_all("o => o.map(x => x.value)"), "| disable disabled:", casey.locator("button[data-st]").is_disabled())
+    casey.locator("button[data-st]").click(); pg.wait_for_timeout(500)
+    pg.screenshot(path=f"{OUT}/03b-as-admin-disabled-another-admin.png", clip={"x": 0, "y": 0, "width": 1280, "height": 760}); print("saved 03b")
+    pg.locator("#users tr", has_text="Casey Admin").locator("button[data-st]").click(); pg.wait_for_timeout(400)
     pg.click("#tabs button:nth-child(3)"); pg.wait_for_selector("#asgRows tr"); shot(pg, "05-as-admin-assignments")
     ctx.close()
 

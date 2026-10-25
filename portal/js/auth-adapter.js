@@ -46,7 +46,7 @@
  *   inviteClient(email, {cellPhone}?)     (cellPhone optional: any US format; stored as +1XXXXXXXXXX; throws on an invalid number)
  *                                            always assigned to the caller, with the REP rules even for an admin+rep (never takes over another rep's client)
  *  Admin   (roles super_admin and admin may call the read/assign methods; the "super admin only" ones are marked.
- *           An ADMIN may only act on reps and clients; the database refuses anything on an admin or super admin, see the README "Roles")
+ *           An ADMIN may act on reps, clients and other admins (disable, demote to rep/client, edit); the database refuses anything on a super admin and any promotion to admin / super admin, see the README "Roles")
  *   adminListUsers()                      -> Profile[]
  *   adminListAssignments()                -> Assignment[]
  *   adminListQuotes()                     -> Quote[]

@@ -1,7 +1,7 @@
 // Supabase Edge Function: set-user-status   (UNTESTED against a live project)
-// Disable / re-enable a user. The database function public.admin_set_status() (migration 10) decides who may:
+// Disable / re-enable a user. The database function public.admin_set_status() (migrations 10 and 11) decides who may:
 //   super admin  anyone except themselves, and never the last active super admin
-//   admin        reps and clients only (an admin or super admin target is refused with 42501 -> HTTP 403)
+//   admin        reps, clients and other admins (migration 11); a super admin target is refused with 42501 -> HTTP 403
 // and writes the audit row. Only AFTER the database accepted it does this function ban (or unban) the
 // Auth user so existing sessions stop refreshing, so a refused request never bans anyone.
 // Needs the service-role key (server side only).

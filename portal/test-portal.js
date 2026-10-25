@@ -117,7 +117,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
 
   // admin
   await as("sample.admin@clatitle.com");
-  assert.strictEqual((await A.adminListUsers()).length, 10); ok("admin lists all users (incl. the sample Admin)");
+  assert.strictEqual((await A.adminListUsers()).length, 11); ok("admin lists all users (incl. the sample Admin)");
   const aq = await A.adminListQuotes(); assert.ok(aq.length >= 7); ok("admin sees all live quotes");
   await reject(A.adminSetRole(id("a1"), "client"), /own role/, "admin cannot change own role");
   await reject(A.adminInvite({ email: "r@gmail.com", role: "rep" }), /clatitle/, "rep invite needs CLA email");
@@ -177,24 +177,24 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
   assert.strictEqual(CLA.roleLabel("admin"), "Admin"); assert.strictEqual(CLA.roleLabel("admin", { isRep: true }), "Admin + rep"); assert.strictEqual(CLA.roleLabel("super_admin"), "Super admin"); assert.strictEqual(CLA.roleLabel("rep"), "CLA rep"); ok("roleLabel: Admin / Admin + rep / Super admin / CLA rep");
   assert.strictEqual(CLA.homeFor("admin"), "admin.html"); assert.strictEqual(CLA.quotesHome({ role: "admin" }), "admin.html"); assert.strictEqual(CLA.quotesHome({ role: "admin", isRep: true }), "rep.html"); ok("route helpers: admins land on admin.html; admin+rep quotes live on rep.html");
   const T = (role) => ({ id: "t", role });
-  assert.deepStrictEqual(["rep", "client", "admin", "super_admin"].map((r) => CLA.canManage(Adm, T(r))), [true, true, false, false]);
+  assert.deepStrictEqual(["rep", "client", "admin", "super_admin"].map((r) => CLA.canManage(Adm, T(r))), [true, true, true, false]);
   assert.deepStrictEqual(["rep", "client", "admin", "super_admin"].map((r) => CLA.canManage(Sup, T(r))), [true, true, true, true]);
   assert.ok(!CLA.canManage(Adm, { id: "x", role: "client" }) && !CLA.canManage(Sup, { id: "y", role: "rep" }) && !CLA.canManage(null, T("rep")) && !CLA.canManage({ role: "rep", id: "r" }, T("client")));
-  assert.strictEqual(CLA.manageBlock(Adm, T("super_admin")), "Only a super admin can change a super admin."); assert.strictEqual(CLA.manageBlock(Adm, T("admin")), "Only a super admin can change an admin.");
-  assert.strictEqual(CLA.manageBlock(Adm, T("rep")), ""); assert.strictEqual(CLA.manageBlock(Sup, T("admin")), ""); ok("CLA.canManage / manageBlock: admin -> reps and clients only; super admin -> anyone; nobody -> themselves; tooltips");
+  assert.strictEqual(CLA.manageBlock(Adm, T("super_admin")), "Only a super admin can change a super admin."); assert.strictEqual(CLA.manageBlock(Adm, T("admin")), "");
+  assert.strictEqual(CLA.manageBlock(Adm, T("rep")), ""); assert.strictEqual(CLA.manageBlock(Sup, T("admin")), ""); ok("CLA.canManage / manageBlock: admin -> reps, clients and other admins (never a super admin); super admin -> anyone; nobody -> themselves; tooltips");
 
   await as("sample.robin.admin@clatitle.com");
   const robin = await A.getMyProfile(); assert.ok(robin.role === "admin" && robin.isRep === false && robin.isComplete === true); ok("demo Admin Robin: role admin, not a rep");
-  assert.strictEqual((await A.adminListUsers()).length, 10); assert.ok((await A.adminListQuotes()).length >= 9); assert.ok((await A.adminAuditLog(10)).length > 0); assert.ok((await A.adminListAssignments()).length >= 7); ok("admin sees all users, quotes, assignments and the audit log");
+  assert.strictEqual((await A.adminListUsers()).length, 11); assert.ok((await A.adminListQuotes()).length >= 9); assert.ok((await A.adminAuditLog(10)).length > 0); assert.ok((await A.adminListAssignments()).length >= 7); ok("admin sees all users, quotes, assignments and the audit log");
   await A.adminInvite({ email: "robin.rep@clatitle.com", role: "rep" }); await A.adminInvite({ email: "robin.client@example.com", role: "client", repId: id("b1") }); ok("admin invites a rep and a client (assigned to Jane)");
   await reject(A.adminInvite({ email: "no.sa@clatitle.com", role: "super_admin" }), /Only a super admin can invite an admin or super admin/, "admin cannot invite a super admin");
   await reject(A.adminInvite({ email: "no.admin@clatitle.com", role: "admin" }), /Only a super admin can invite an admin or super admin/, "admin cannot invite an admin");
   await reject(A.adminInvite({ email: "no.admin@clatitle.com", role: "admin", isRep: true }), /Only a super admin can invite/, "admin cannot invite a flagged admin");
   await reject(A.adminInvite({ email: "no.rep@clatitle.com", role: "rep", isRep: true }), /Only a super admin can invite an admin or super admin who also works as a rep/, "admin cannot use the rep flag on a rep invitation");
   await A.adminSetStatus(id("c1"), "disabled"); await A.adminSetStatus(id("c1"), "active"); await A.adminSetStatus(id("b1"), "disabled"); await A.adminSetStatus(id("b1"), "active"); ok("admin disables and re-enables a client and a rep");
-  await reject(A.adminSetStatus(id("a1"), "disabled"), /Only a super admin can disable or re-enable an admin or super admin/, "admin cannot disable a super admin");
+  await reject(A.adminSetStatus(id("a1"), "disabled"), /Only a super admin can disable or re-enable a super admin/, "admin cannot disable a super admin");
   await reject(A.adminSetStatus(id("a2"), "disabled"), /cannot disable yourself/, "admin cannot disable themselves");
-  await reject(A.adminSetRole(id("a1"), "client"), /Only a super admin can change the role of an admin or super admin/, "admin cannot demote a super admin");
+  await reject(A.adminSetRole(id("a1"), "client"), /Only a super admin can change the role of a super admin/, "admin cannot demote a super admin");
   await reject(A.adminSetRole(id("a2"), "client"), /own role/, "admin cannot demote themselves");
   await reject(A.adminSetRole(id("c3"), "admin"), /Only a super admin can make someone an admin or super admin/, "admin cannot promote a client to admin");
   await reject(A.adminSetRole(id("b1"), "super_admin"), /Only a super admin can make someone/, "admin cannot promote a rep to super admin");
@@ -203,6 +203,17 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
   assert.ok((await A.adminListUsers()).find((u) => u.id === id("a1")).status === "active" && (await A.adminListUsers()).find((u) => u.id === id("a1")).role === "super_admin"); ok("...and nothing changed on the super admin");
   await A.adminSetRole(id("b2"), "client"); assert.strictEqual((await A.adminListUsers()).find((u) => u.id === id("b2")).role, "client"); await A.adminSetRole(id("b2"), "rep"); assert.strictEqual((await A.adminListUsers()).find((u) => u.id === id("b2")).isRep, true); ok("admin changes a rep to a client and back (is_rep follows)");
   await A.adminReassign("pat.homes@example.com", id("b1")); await reject(A.adminReassign("pat.homes@example.com", id("a2")), /Pick a rep/, "a plain admin is not in the rep picker (not rep-capable)"); ok("admin reassigns a client to a rep");
+  // migration 11: an admin may also manage ANOTHER admin (Casey), but never a super admin, and never promote
+  await A.adminSetStatus(id("a3"), "disabled"); assert.strictEqual((await A.adminListUsers()).find((u) => u.id === id("a3")).status, "disabled"); await A.adminSetStatus(id("a3"), "active"); ok("admin disables and re-enables another admin (Casey)");
+  await reject(A.adminSetRole(id("a3"), "super_admin"), /Only a super admin can make someone an admin or super admin/, "admin cannot promote another admin to super admin");
+  await reject(A.adminSetRole(id("a3"), "admin"), /Only a super admin can make someone/, "...nor 'promote' an admin to admin");
+  await A.adminSetRole(id("a3"), "client"); const cas = (await A.adminListUsers()).find((u) => u.id === id("a3")); assert.ok(cas.role === "client" && cas.isRep === false); ok("admin demotes another admin to client (is_rep cleared)");
+  await reject(A.adminSetRole(id("a3"), "admin"), /Only a super admin can make someone/, "...and cannot promote Casey back");
+  await as("sample.admin@clatitle.com"); await A.adminSetRole(id("a3"), "admin"); await as("sample.robin.admin@clatitle.com"); ok("a super admin puts Casey back to admin");
+  await as("sample.casey.admin@clatitle.com"); await A.adminSetStatus(id("a2"), "disabled"); await reject(A.signIn("sample.robin.admin@clatitle.com", "x"), /Invalid/, "a disabled admin cannot sign in (Casey disabled Robin)");
+  await A.adminSetStatus(id("a2"), "active"); await reject(A.adminSetStatus(id("a3"), "disabled"), /cannot disable yourself/, "an admin cannot disable themselves"); ok("admin Casey disables and re-enables admin Robin, not herself");
+  await reject(A.adminSetStatus(id("a1"), "disabled"), /Only a super admin can disable or re-enable a super admin/, "Casey cannot disable a super admin"); await reject(A.adminSetIsRep(id("a2"), true), /Only a super admin can do that/, "...nor switch another admin's rep access");
+  await reject(A.adminInvite({ email: "casey.invites.admin@clatitle.com", role: "admin" }), /Only a super admin can invite/, "...nor invite an admin"); await as("sample.robin.admin@clatitle.com");
   // as a rep, an admin never gains admin power over others
   await as("sample.admin@clatitle.com");
   await A.adminInvite({ email: "new.admin@clatitle.com", role: "admin" }); await A.adminInvite({ email: "new.admin.rep@clatitle.com", role: "admin", isRep: true }); ok("super admin invites an admin, and an admin who also works as a rep");
@@ -222,7 +233,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
   await reject(A.adminSetRole(id("a2"), "client"), /own role/, "a super admin cannot demote themselves"); ok("a (promoted) super admin disables / demotes another super admin, never themselves");
   // the rule table the screens use
   await A._reset(); w.localStorage.clear();
-  await as("sample.admin@clatitle.com"); assert.ok((await A.adminListUsers()).filter((u) => u.role === "admin").length === 1); ok("sample data: exactly one Admin (Robin) next to the super admin");
+  await as("sample.admin@clatitle.com"); assert.ok((await A.adminListUsers()).filter((u) => u.role === "admin").length === 2); ok("sample data: two Admins (Robin, Casey) next to the super admin");
 
   // ---- admin.html itself (jsdom): what an Admin vs a Super admin sees and can click ----
   const pdir = __dirname;
@@ -238,21 +249,23 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
       beforeParse(win) { win.crypto.randomUUID = require("crypto").randomUUID; win.confirm = () => true; win.addEventListener("error", (e) => errs.push(e.message));
         for (const k in store) win.localStorage.setItem(k, store[k]); } });
     const d = dom.window.document;
-    for (let i = 0; i < (expectBlocked ? 15 : 100) && d.querySelectorAll("#users tr").length < 10; i++) await new Promise((r) => setTimeout(r, 20));
+    for (let i = 0; i < (expectBlocked ? 15 : 100) && d.querySelectorAll("#users tr").length < 11; i++) await new Promise((r) => setTimeout(r, 20));
     return { dom, d, errs, row: (uid) => [...d.querySelectorAll("#users tr")].find((tr) => tr.innerHTML.includes('data-av="{&quot;id&quot;:&quot;' + uid + '&quot;') || tr.innerHTML.includes(uid)) };
   };
   {
     const R = await renderAdmin("sample.robin.admin@clatitle.com"), d = R.d;
-    assert.strictEqual(R.errs.length, 0, R.errs.join()); assert.strictEqual(d.querySelectorAll("#users tr").length, 10); ok("admin.html renders for an Admin (10 users, no script errors)");
-    assert.match(d.getElementById("roleNote").textContent, /You are an Admin: you can manage reps and clients\. Only a super admin can invite, change or disable an admin or super admin/); ok("admin.html: an Admin sees what they may do");
+    assert.strictEqual(R.errs.length, 0, R.errs.join()); assert.strictEqual(d.querySelectorAll("#users tr").length, 11); ok("admin.html renders for an Admin (11 users, no script errors)");
+    assert.match(d.getElementById("roleNote").textContent, /You are an Admin: you can manage reps, clients and other admins\. Only a super admin can promote admins or touch a super admin/); ok("admin.html: an Admin sees what they may do");
     assert.deepStrictEqual([...d.querySelectorAll("#iRole option")].map((o) => o.value), ["rep", "client"]); assert.match(d.getElementById("iRoleNote").textContent, /Only a super admin can invite admins and super admins/); ok("admin.html: an Admin can only pick Rep or Client in the invite form");
     const rowA = R.row(id("a1")), rowJ = R.row(id("b1")), rowMe = R.row(id("a2")), rowC = R.row(id("c1"));
     assert.ok(!rowA.querySelector("select[data-role]") && /Super admin/.test(rowA.textContent)); ok("admin.html: an Admin cannot change a super admin's role (no dropdown)");
     const btnA = rowA.querySelector("button[data-st]"); assert.ok(btnA.disabled); assert.match(btnA.parentElement.getAttribute("data-tip"), /Only a super admin can change a super admin/); ok("admin.html: Disable is greyed out for a super admin, with a tooltip saying why");
     assert.ok(rowA.querySelector("input[data-also]").disabled && /Only a super admin can switch this/.test(rowA.querySelector("label.also").getAttribute("data-tip"))); ok("admin.html: the 'also works as a rep' switch is locked for an Admin, with a tooltip");
     assert.deepStrictEqual([...rowJ.querySelectorAll("select[data-role] option")].map((o) => o.value), ["rep", "client"]); assert.ok(!rowJ.querySelector("button[data-st]").disabled); assert.ok(!rowC.querySelector("button[data-st]").disabled); ok("admin.html: an Admin can change / disable a rep and a client (role list: rep, client only)");
+    const rowK = R.row(id("a3")); assert.deepStrictEqual([...rowK.querySelectorAll("select[data-role] option")].map((o) => o.value), ["admin", "rep", "client"]); assert.strictEqual(rowK.querySelector("select[data-role]").value, "admin");
+    assert.ok(!rowK.querySelector("button[data-st]").disabled && !rowK.querySelector("[data-tip] button[data-st]")); assert.ok(rowK.querySelector("input[data-also]").disabled && /Only a super admin can switch this/.test(rowK.querySelector("label.also").getAttribute("data-tip"))); ok("admin.html: an Admin can disable / demote ANOTHER admin (role list: admin, rep, client: no way up), but the rep switch stays locked");
     assert.ok(/Admin \(you\)/.test(rowMe.textContent) && !rowMe.querySelector("button[data-st]") && !rowMe.querySelector("select[data-role]")); assert.ok(rowMe.querySelector("input[data-also]").disabled); ok("admin.html: an Admin's own row has no role dropdown and no disable button");
-    assert.strictEqual(d.getElementById("uCount").textContent, "10 users · 2 reps · 1 super admin · 1 admin · 6 clients · 1 admin also works as rep"); ok("admin.html: the user count line names super admins and admins separately");
+    assert.strictEqual(d.getElementById("uCount").textContent, "11 users · 2 reps · 1 super admin · 2 admins · 6 clients · 1 admin also works as rep"); ok("admin.html: the user count line names super admins and admins separately");
     assert.match(d.querySelector("header .chip small").textContent, /^Admin$/); ok("admin.html: the header says Admin");
     R.dom.window.close();
     const S = await renderAdmin("sample.admin@clatitle.com"), sd = S.d;

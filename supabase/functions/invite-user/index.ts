@@ -31,9 +31,9 @@ Deno.serve(async (req) => {
   const url = Deno.env.get('SUPABASE_URL')!
   const asCaller = createClient(url, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: auth } } })
 
-  // 1. database rules decide (create_invitation, migration 10). This function only passes the request through:
+  // 1. database rules decide (create_invitation, migrations 10 and 11). This function only passes the request through:
   //      super admin       any role: super_admin, admin, rep, client
-  //      admin             rep and client only. super_admin / admin (and isRep) are refused with 42501 -> HTTP 403
+  //      admin             rep and client only (still: migration 11 did not change invites). super_admin / admin (and isRep) are refused with 42501 -> HTTP 403
   //      rep               clients only, assigned to themselves
   //    isRep: a super admin inviting an admin or super admin who ALSO works as a rep (needs an @clatitle.com email).
   //    asRep: an admin / super admin inviting from the rep dashboard (rep rules apply; it can only reduce privileges).

@@ -10,7 +10,7 @@
 
   CLA.createMockAdapter = function () {
     const load = () => {
-      try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.version === 3) return s; } catch (e) {}
+      try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.version === 4) return s; } catch (e) {}
       const s = CLA.MOCK_SEED(); localStorage.setItem(KEY, JSON.stringify(s)); return s;
     };
     const save = (s) => localStorage.setItem(KEY, JSON.stringify(s));
@@ -151,7 +151,7 @@
       async adminSetStatus(id, status) {
         const s = load(), u = needAdmin(s); if (id === u.id) err("You cannot disable yourself.");
         const t = s.users.find((x) => x.id === id) || err("No such user.");
-        if (!isSuper(u) && !(t.role === "rep" || t.role === "client")) err("Only a super admin can disable or re-enable an admin or super admin.");
+        if (!isSuper(u) && t.role === "super_admin") err("Only a super admin can disable or re-enable a super admin.");
         if (status === "disabled" && lastSuper(s, t)) err(LAST);
         const before = t.status; t.status = status;
         log(s, u.id, status === "disabled" ? "user_disabled" : "user_enabled", "profile", id, { before, after: status }); save(s);
@@ -160,7 +160,7 @@
         const s = load(), u = needAdmin(s); if (id === u.id) err("You cannot change your own role.");
         const t = s.users.find((x) => x.id === id) || err("No such user.");
         if (!isSuper(u)) {
-          if (!(t.role === "rep" || t.role === "client")) err("Only a super admin can change the role of an admin or super admin.");
+          if (t.role === "super_admin") err("Only a super admin can change the role of a super admin.");
           if (!(role === "rep" || role === "client")) err("Only a super admin can make someone an admin or super admin.");
         }
         if (role !== "super_admin" && lastSuper(s, t)) err(LAST);

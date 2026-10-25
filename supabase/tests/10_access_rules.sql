@@ -806,7 +806,7 @@ select tests.is('function privileges: new RPCs are not callable by anon, are by 
 
 
 -- =====================================================================
--- The "admin" role (migrations 9 + 10): full dashboard, but only over reps and clients
+-- The "admin" role (migrations 9 + 10): full dashboard, over reps and clients (migration 11 adds: and other admins, below)
 -- Cast: admin a2 Robin (seeded) | admin a3 Ada (signs up here) | super admins a1 Alex, d1 Pia, d2 Flo, d3 Otto
 --       rep b1 Jane | clients c1 Sam, c3 Pat | e1 a client with a CLA address (so a role change to rep is possible)
 -- =====================================================================
@@ -850,10 +850,10 @@ select tests.is('is_super_admin(): super admin yes / admin NO / rep no / client 
   tests.v(tests.id('b1'), 'select private.is_super_admin()::text') || '/' || tests.v(tests.id('c1'), 'select private.is_super_admin()::text'), 'true/false/false/false');
 select tests.is('anon cannot call is_super_admin / can_manage_user', tests.q(null, 'select private.is_super_admin()') || '/' || tests.q(null, 'select private.can_manage_user(gen_random_uuid())'), 'ERR:42501/ERR:42501');
 select tests.is('private.is_rep(): a plain admin is not a rep', tests.v(tests.id('a2'), 'select private.is_rep()::text'), 'false');
-select tests.is('can_manage_user: admin Robin may manage rep, client; not super admin, admin',
+select tests.is('can_manage_user: admin Robin may manage rep, client and another admin (Ada); not a super admin',
   tests.v(tests.id('a2'), 'select private.can_manage_user(' || tests.u('b1') || ')::text') || '/' || tests.v(tests.id('a2'), 'select private.can_manage_user(' || tests.u('c1') || ')::text') || '/' ||
   tests.v(tests.id('a2'), 'select private.can_manage_user(' || tests.u('a1') || ')::text') || '/' || tests.v(tests.id('a2'), 'select private.can_manage_user(' || tests.u('a3') || ')::text'),
-  'true/true/false/false');
+  'true/true/false/true');
 select tests.is('can_manage_user: super admin may manage everyone',
   tests.v(tests.id('a1'), 'select private.can_manage_user(' || tests.u('a2') || ')::text') || '/' || tests.v(tests.id('a1'), 'select private.can_manage_user(' || tests.u('d1') || ')::text'), 'true/true');
 
@@ -904,19 +904,17 @@ select tests.is('...Pat and Jane kept their roles', (select string_agg(role::tex
 
 -- ---------------- an admin can NOT touch a super admin or another admin ----------------
 select tests.is('admin cannot disable a super admin', tests.x(tests.id('a2'), 'select public.admin_set_status(' || tests.u('a1') || ', ''disabled'')'), 'ERR:42501');
-select tests.is('admin cannot disable another admin', tests.x(tests.id('a2'), 'select public.admin_set_status(' || tests.u('a3') || ', ''disabled'')'), 'ERR:42501');
 select tests.is('admin cannot disable themselves', tests.x(tests.id('a2'), 'select public.admin_set_status(' || tests.u('a2') || ', ''disabled'')'), 'ERR:42501');
 select tests.is('admin cannot demote a super admin', tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('d1') || ', ''client'')') || '/' || tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('d1') || ', ''admin'')'), 'ERR:42501/ERR:42501');
-select tests.is('admin cannot demote another admin', tests.x(tests.id('a3'), 'select public.admin_set_role(' || tests.u('a2') || ', ''client'')') || '/' || tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('a3') || ', ''rep'')'), 'ERR:42501/ERR:42501');
+select tests.is('admin cannot promote another admin to super admin, or "promote" an admin to admin', tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('a3') || ', ''super_admin'')') || '/' || tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('a3') || ', ''admin'')'), 'ERR:42501/ERR:42501');
 select tests.is('admin cannot demote themselves', tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('a2') || ', ''client'')'), 'ERR:42501');
 select tests.is('...nobody changed: roles and statuses of a1, a2, a3, d1',
   (select string_agg(role::text || '/' || status::text, ',' order by id) from public.profiles where id in (tests.id('a1'), tests.id('d1'), tests.id('a2'), tests.id('a3'))), 'super_admin/active,admin/active,admin/active,super_admin/active');
-select tests.is('admin cannot toggle is_rep on a super admin, another admin or themselves',
+select tests.is('admin cannot toggle is_rep on a super admin, another admin or themselves (super admin only: unchanged in migration 11)',
   tests.x(tests.id('a2'), 'select public.admin_set_is_rep(' || tests.u('a1') || ', false)') || '/' || tests.x(tests.id('a2'), 'select public.admin_set_is_rep(' || tests.u('a3') || ', true)') || '/' ||
   tests.x(tests.id('a2'), 'select public.admin_set_is_rep(' || tests.u('a2') || ', true)'), 'ERR:42501/ERR:42501/ERR:42501');
-select tests.is('admin cannot edit a super admin''s or another admin''s profile (the update matches no row)',
-  tests.x(tests.id('a2'), 'update public.profiles set first_name = ''Hacked'' where id = ' || tests.u('a1')) || '/' ||
-  tests.x(tests.id('a2'), 'update public.profiles set first_name = ''Hacked'' where id = ' || tests.u('a3')), 'ok:0/ok:0');
+select tests.is('admin cannot edit a super admin''s profile (the update matches no row)',
+  tests.x(tests.id('a2'), 'update public.profiles set first_name = ''Hacked'' where id = ' || tests.u('a1')), 'ok:0');
 select tests.is('...and nothing was written', (select count(*)::text from public.profiles where first_name = 'Hacked'), '0');
 select tests.is('admin cannot write role/status/is_rep through the API (columns not granted)',
   tests.x(tests.id('a2'), 'update public.profiles set role = ''super_admin'' where id = ' || tests.u('a2')) || '/' ||
@@ -933,13 +931,13 @@ select tests.is('...they are still there', (select count(*)::text from public.ph
 select tests.is('admin removes a client''s photo (row and storage object)',
   tests.x(tests.id('a2'), 'delete from public.photos where owner_id = ' || tests.u('c1')) || '/' ||
   tests.x(tests.id('a2'), 'delete from storage.objects where name = ''' || tests.id('c1') || '/avatar'''), 'ok:1/ok:1');
--- disabled admins/super admins cannot be re-enabled by an admin
+-- a disabled super admin cannot be re-enabled by an admin (a disabled admin can: migration 11)
 update public.profiles set status = 'disabled' where id in (tests.id('d3'), tests.id('a3'));   -- server side; other super admins are active
-select tests.is('admin cannot re-enable a disabled super admin or a disabled admin',
-  tests.x(tests.id('a2'), 'select public.admin_set_status(' || tests.u('d3') || ', ''active'')') || '/' || tests.x(tests.id('a2'), 'select public.admin_set_status(' || tests.u('a3') || ', ''active'')'), 'ERR:42501/ERR:42501');
 select tests.is('...they stay disabled; a disabled admin has no admin powers', (select string_agg(status::text, ',') from public.profiles where id in (tests.id('d3'), tests.id('a3'))) || '/' ||
   tests.q(tests.id('a3'), 'select * from public.profiles'), 'disabled,disabled/0');
-select tests.is('a super admin re-enables them', tests.x(tests.id('d1'), 'select public.admin_set_status(' || tests.u('d3') || ', ''active'')') || '/' || tests.x(tests.id('d1'), 'select public.admin_set_status(' || tests.u('a3') || ', ''active'')'), 'ok:1/ok:1');
+select tests.is('admin cannot re-enable a disabled super admin; can re-enable a disabled admin',
+  tests.x(tests.id('a2'), 'select public.admin_set_status(' || tests.u('d3') || ', ''active'')') || '/' || tests.x(tests.id('a2'), 'select public.admin_set_status(' || tests.u('a3') || ', ''active'')'), 'ERR:42501/ok:1');
+select tests.is('a super admin re-enables the super admin', tests.x(tests.id('d1'), 'select public.admin_set_status(' || tests.u('d3') || ', ''active'')'), 'ok:1');
 
 -- ---------------- a super admin can still do everything ----------------
 select tests.is('super admin invites an admin', tests.xv(tests.id('d1'), 'select public.create_invitation(''new.admin3@clatitle.com'', ''admin'')', $q$select role::text || '/' || is_rep::text from public.invitations where email = 'new.admin3@clatitle.com'$q$), 'ok:1/admin/false');
@@ -986,6 +984,82 @@ select tests.is('a quote saved by Robin carries himself as rep (like a rep)',
 select tests.is('Pat''s rep (rep_of) is Robin', (select (private.rep_of(tests.id('c3')) = tests.id('a2'))::text), 'true');
 update public.assignments set active = false where rep_id = tests.id('a2') and active;
 select tests.is('after his clients are moved, a super admin switches Robin back to admin only', tests.xv(tests.id('d1'), 'select public.admin_set_is_rep(' || tests.u('a2') || ', false)', $q$select is_rep::text from public.profiles where id = tests.id('a2')$q$), 'ok:1/false');
+
+-- =====================================================================
+-- Migration 11: an admin may now ALSO manage OTHER ADMINS (never a super admin; never promote; never invite)
+-- Cast: admins a2 Robin, a3 Ada | NEW admins a4 Bo, a5 Cy (invited by a super admin) | super admins a1, d1 | rep b1 | client c3
+-- =====================================================================
+insert into public.invitations (email, role, is_rep) values ('bo.admin@clatitle.com', 'admin', false), ('cy.admin@clatitle.com', 'admin', true);
+insert into auth.users (id, email) values (tests.id('a4'), 'bo.admin@clatitle.com'), (tests.id('a5'), 'cy.admin@clatitle.com');
+update public.profiles set first_name = 'Bo', last_name = 'Admin' where id = tests.id('a4');
+update public.profiles set first_name = 'Cy', last_name = 'Admin', phone = '301-555-0177' where id = tests.id('a5');
+insert into public.photos (owner_id, storage_path, mime_type, size_bytes) values (tests.id('a4'), tests.id('a4') || '/avatar', 'image/png', 1000);
+insert into storage.objects (bucket_id, name) values ('avatars', tests.id('a4') || '/avatar');
+select tests.is('new admins signed up: Bo (plain), Cy (also a rep)',
+  (select string_agg(role::text || '/' || is_rep::text, ',' order by id) from public.profiles where id in (tests.id('a4'), tests.id('a5'))), 'admin/false,admin/true');
+
+-- ----- what an admin CAN now do to another admin -----
+select tests.is('can_manage_user: an admin may manage another admin; still not a super admin',
+  tests.v(tests.id('a2'), 'select private.can_manage_user(' || tests.u('a4') || ')::text') || '/' || tests.v(tests.id('a2'), 'select private.can_manage_user(' || tests.u('a1') || ')::text'), 'true/false');
+select tests.is('admin disables another admin (Bo)', tests.xv(tests.id('a2'), 'select public.admin_set_status(' || tests.u('a4') || ', ''disabled'')', $q$select status::text from public.profiles where id = tests.id('a4')$q$), 'ok:1/disabled');
+select tests.is('...a disabled admin has no powers', tests.q(tests.id('a4'), 'select * from public.profiles') || '/' || tests.x(tests.id('a4'), 'select public.admin_set_status(' || tests.u('c3') || ', ''disabled'')'), '0/ERR:42501');
+select tests.is('admin re-enables the other admin (Bo)', tests.xv(tests.id('a3'), 'select public.admin_set_status(' || tests.u('a4') || ', ''active'')', $q$select status::text from public.profiles where id = tests.id('a4')$q$), 'ok:1/active');
+select tests.is('both disable / re-enable are in the audit log, by the acting admin',
+  (select count(*)::text from public.audit_log where target_id = tests.id('a4') and actor_id = tests.id('a2') and action = 'user_disabled')
+  || '/' || (select count(*)::text from public.audit_log where target_id = tests.id('a4') and actor_id = tests.id('a3') and action = 'user_enabled'), '1/1');
+select tests.is('admin edits another admin''s profile (name, phone)',
+  tests.x(tests.id('a2'), 'update public.profiles set first_name = ''Bobby'', phone = ''301-555-0188'' where id = ' || tests.u('a4')), 'ok:1');
+select tests.is('...and it was written', (select first_name || ',' || coalesce(phone, '-') from public.profiles where id = tests.id('a4')), 'Bobby,301-555-0188');
+update public.profiles set first_name = 'Bo' where id = tests.id('a4');
+select tests.is('admin removes another admin''s photo (row and storage object)',
+  tests.x(tests.id('a2'), 'delete from public.photos where owner_id = ' || tests.u('a4')) || '/' ||
+  tests.x(tests.id('a2'), 'delete from storage.objects where name = ''' || tests.id('a4') || '/avatar'''), 'ok:1/ok:1');
+select tests.is('admin demotes another admin to client (is_rep cleared by the trigger)',
+  tests.xv(tests.id('a2'), 'select public.admin_set_role(' || tests.u('a4') || ', ''client'')', $q$select role::text || '/' || is_rep::text from public.profiles where id = tests.id('a4')$q$), 'ok:1/client/false');
+select tests.is('...audited, with the acting admin', (select count(*)::text from public.audit_log where target_id = tests.id('a4') and action = 'role_changed' and actor_id = tests.id('a2')), '1');
+select tests.is('...and Bo, now a client, has lost the admin dashboard', tests.q(tests.id('a4'), 'select * from public.profiles') || '/' || tests.v(tests.id('a4'), 'select private.is_admin()::text'), '1/false');
+select tests.is('an admin demotes another admin (who also reps) to rep: stays a rep, CLA email ok',
+  tests.xv(tests.id('a3'), 'select public.admin_set_role(' || tests.u('a5') || ', ''rep'')', $q$select role::text || '/' || is_rep::text from public.profiles where id = tests.id('a5')$q$), 'ok:1/rep/true');
+select tests.is('...Cy is no longer an admin (no is_admin, still a rep)', tests.v(tests.id('a5'), 'select private.is_admin()::text || ''/'' || private.is_rep()::text'), 'false/true');
+select tests.is('a super admin can still promote them back (Bo, Cy to admin)',
+  tests.x(tests.id('d1'), 'select public.admin_set_role(' || tests.u('a4') || ', ''admin'')') || '/' || tests.x(tests.id('d1'), 'select public.admin_set_role(' || tests.u('a5') || ', ''admin'')'), 'ok:1/ok:1');
+
+-- ----- what an admin still can NOT do (every path) -----
+select tests.is('admin cannot promote another admin (or anybody) to admin or super admin',
+  tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('a4') || ', ''super_admin'')') || '/' || tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('a4') || ', ''admin'')') || '/' ||
+  tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('c3') || ', ''admin'')') || '/' || tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('b1') || ', ''super_admin'')'), 'ERR:42501/ERR:42501/ERR:42501/ERR:42501');
+select tests.is('admin cannot touch a super admin at all: status, role, profile, photo, is_rep',
+  tests.x(tests.id('a2'), 'select public.admin_set_status(' || tests.u('d1') || ', ''disabled'')') || '/' || tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('d1') || ', ''rep'')') || '/' ||
+  tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('d1') || ', ''super_admin'')') || '/' ||
+  tests.x(tests.id('a2'), 'update public.profiles set first_name = ''Hacked'' where id = ' || tests.u('d1')) || '/' ||
+  tests.x(tests.id('a2'), 'delete from public.photos where owner_id = ' || tests.u('a1')) || '/' ||
+  tests.x(tests.id('a2'), 'select public.admin_set_is_rep(' || tests.u('d1') || ', true)'), 'ERR:42501/ERR:42501/ERR:42501/ok:0/ok:0/ERR:42501');
+select tests.is('admin cannot toggle is_rep on another admin (super admin only)',
+  tests.x(tests.id('a2'), 'select public.admin_set_is_rep(' || tests.u('a4') || ', true)') || '/' || tests.x(tests.id('a2'), 'select public.admin_set_is_rep(' || tests.u('a5') || ', false)'), 'ERR:42501/ERR:42501');
+select tests.is('admin cannot invite an admin or super admin (migration 10 rule unchanged)',
+  tests.x(tests.id('a2'), 'select public.create_invitation(''m11.admin@clatitle.com'', ''admin'')') || '/' || tests.x(tests.id('a2'), 'select public.create_invitation(''m11.sa@clatitle.com'', ''super_admin'')'), 'ERR:42501/ERR:42501');
+select tests.is('admin cannot disable or demote themselves',
+  tests.x(tests.id('a4'), 'select public.admin_set_status(' || tests.u('a4') || ', ''disabled'')') || '/' || tests.x(tests.id('a4'), 'select public.admin_set_role(' || tests.u('a4') || ', ''client'')'), 'ERR:42501/ERR:42501');
+select tests.is('admin cannot write role / status / is_rep through the API on another admin (columns not granted)',
+  tests.x(tests.id('a2'), 'update public.profiles set role = ''client'' where id = ' || tests.u('a4')) || '/' || tests.x(tests.id('a2'), 'update public.profiles set status = ''disabled'' where id = ' || tests.u('a4')), 'ERR:42501/ERR:42501');
+select tests.is('...nothing changed: Robin, Ada, Bo, Cy are active admins; Alex and Pia super admins',
+  (select string_agg(role::text || '/' || status::text, ',' order by id) from public.profiles where id in (tests.id('a1'), tests.id('d1'), tests.id('a2'), tests.id('a3'), tests.id('a4'), tests.id('a5'))),
+  'super_admin/active,admin/active,admin/active,admin/active,admin/active,super_admin/active');
+select tests.is('a rep and a client still cannot manage anyone',
+  tests.x(tests.id('b1'), 'select public.admin_set_status(' || tests.u('a4') || ', ''disabled'')') || '/' || tests.x(tests.id('c3'), 'select public.admin_set_role(' || tests.u('a4') || ', ''client'')'), 'ERR:42501/ERR:42501');
+-- two admins acting on each other, and on the same person
+select tests.is('two admins can disable each other in turn; the second is refused because the first is now disabled',
+  tests.x(tests.id('a4'), 'select public.admin_set_status(' || tests.u('a5') || ', ''disabled'')') || '/' || tests.x(tests.id('a5'), 'select public.admin_set_status(' || tests.u('a4') || ', ''disabled'')'), 'ok:1/ERR:42501');
+select tests.is('...a super admin repairs it (re-enables Cy)', tests.x(tests.id('d1'), 'select public.admin_set_status(' || tests.u('a5') || ', ''active'')'), 'ok:1');
+-- MFA still gates it
+update public.app_settings set value = 'true' where key = 'require_admin_mfa';
+select tests.is('MFA on: an admin at aal1 cannot manage another admin, at aal2 can',
+  tests.x(tests.id('a2'), 'select public.admin_set_status(' || tests.u('a4') || ', ''disabled'')', 'aal1') || '/' || tests.x(tests.id('a2'), 'select public.admin_set_status(' || tests.u('a4') || ', ''disabled'')', 'aal2'), 'ERR:42501/ok:1');
+update public.app_settings set value = 'false' where key = 'require_admin_mfa';
+update public.profiles set status = 'active' where id in (tests.id('a4'), tests.id('a5'));
+-- put the cast back: Bo and Cy leave the picture (they are plain admins, no clients, nothing else uses them)
+select tests.is('policies still go through can_manage_user (nothing was left on the old rule)',
+  (select count(*)::text from pg_policies where policyname in ('profiles_update_admin', 'photos_delete', 'avatars_delete') and (qual || coalesce(with_check, '')) like '%can_manage_user%'), '3');
 
 -- ---------------- MFA switch covers the admin role as well ----------------
 update public.app_settings set value = 'true' where key = 'require_admin_mfa';

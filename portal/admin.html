@@ -50,13 +50,13 @@
   CLA.tabs($("tabs"), ["Users", "Quotes", "Assignments", "Audit log"], (i) => { panels.forEach((p, j) => ($(p).hidden = i !== j)); ({ 1: loadQuotes, 2: loadAsg, 3: loadAudit })[i] && ({ 1: loadQuotes, 2: loadAsg, 3: loadAudit })[i](); });
 
   // What this signed-in person may do (the database enforces the same rules; this only hides / greys out the rest):
-  //   super admin: everything. admin: manage reps and clients only (see CLA.canManage / README "Roles").
+  //   super admin: everything. admin: manage reps, clients and other admins (never a super admin, never promote; see CLA.canManage / README "Roles").
   const isSuper = CLA.isSuperAdmin(me);
   $("roleNote").innerHTML = isSuper ? "You are a <b>Super admin</b>: you can manage everyone, including admins and other super admins."
-    : "You are an <b>Admin</b>: you can manage reps and clients. Only a super admin can invite, change or disable an admin or super admin.";
+    : "You are an <b>Admin</b>: you can manage reps, clients and other admins. Only a super admin can promote admins or touch a super admin.";
   // invite form: an admin may only invite reps and clients
   $("iRole").innerHTML = '<option value="rep">Sales rep (CLA email required)</option><option value="client">Real estate agent / client</option>' +
-    (isSuper ? '<option value="admin">Admin (full dashboard; manages reps and clients only)</option><option value="super_admin">Super admin (everything, including admins)</option>' : "");
+    (isSuper ? '<option value="admin">Admin (full dashboard; manages reps, clients and other admins)</option><option value="super_admin">Super admin (everything, including admins)</option>' : "");
   $("iRoleNote").textContent = isSuper ? "" : "Only a super admin can invite admins and super admins.";
   const adminRole = (r) => r === "admin" || r === "super_admin";
   const cnt = (f) => users.filter(f).length;
@@ -77,7 +77,7 @@
       const alsoBox = adminRole(u.role) ? '<label class="chk also' + (alsoTip ? " tip" : "") + '"' + tip(alsoTip) + '><input type="checkbox" data-also="' + esc(u.id) + '"' + (u.isRep ? " checked" : "") + (canAlso ? "" : " disabled") + '> Also works as a rep</label>' : "";
       const roleSel = mine ? '<span class="badge admin">' + esc(CLA.roleLabel(u.role)) + " (you)</span>"
         : block ? '<span class="badge admin tip"' + tip(block) + ">" + esc(CLA.roleLabel(u.role)) + "</span>"
-        : '<select data-role="' + esc(u.id) + '" aria-label="Role" style="min-height:34px;padding:4px 30px 4px 10px;font-size:13px;width:auto">' + (isSuper ? ["super_admin", "admin", "rep", "client"] : ["rep", "client"]).map((r) => '<option value="' + r + '"' + (r === u.role ? " selected" : "") + ">" + CLA.roleLabel(r) + "</option>").join("") + "</select>";
+        : '<select data-role="' + esc(u.id) + '" aria-label="Role" style="min-height:34px;padding:4px 30px 4px 10px;font-size:13px;width:auto">' + (isSuper ? ["super_admin", "admin", "rep", "client"] : u.role === "admin" ? ["admin", "rep", "client"] : ["rep", "client"]).map((r) => '<option value="' + r + '"' + (r === u.role ? " selected" : "") + ">" + CLA.roleLabel(r) + "</option>").join("") + "</select>";
       const btn = '<button class="btn ' + (u.status === "active" ? "danger" : "o") + ' sm" data-st="' + esc(u.id) + '" data-to="' + (u.status === "active" ? "disabled" : "active") + '" type="button"' + (block ? ' disabled aria-disabled="true"' : "") + ">" + (u.status === "active" ? "Disable" : "Re-enable") + "</button>";
       const action = mine ? "" : block ? '<span class="tip"' + tip(block) + ">" + btn + "</span>" : btn;   // the tooltip sits on a wrapper: a disabled button gets no hover / focus events
       return "<tr><td><div class='who'>" + CLA.avImg(u, "sm") + "<div><b>" + esc(CLA.fullName(u)) + "</b><span>" + esc(u.email) + (u.companyName && u.role === "client" ? " · " + esc(u.companyName) : "") + "</span></div></div></td><td>" + (CLA.telLink(u.cellPhone) || '<span class="sum">—</span>') + "</td><td>" + roleSel + alsoBox + "</td><td>" + (u.role === "client" ? (rep ? esc(CLA.fullName(rep)) : '<span class="badge warn">Unassigned</span>') : "—") + "</td><td>" + st + '</td><td class="num">' + action + "</td></tr>";
