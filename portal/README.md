@@ -204,6 +204,18 @@ A short click-through for NEW people, in John's voice ("Here's where you'll...")
 
 Screenshots: `portal/tools/screenshots_guided_tour.py` (demo mode, desktop and mobile).
 
+### Calculator tour (the main `index.html`; no database change)
+
+The same engine also runs on the public calculator, for **anyone** (guest or signed in, no login needed): `Take the tour` in the calculator header, plus a small first-visit chip ("New here? Take a 1-minute tour") in the tab bar. Nothing opens by itself and no modal covers the calculator.
+
+- **Where it lives:** the steps are `CLA.tourSteps("calculator", { signedIn })` in `portal/js/tour.js`; targets are `data-tour="k-..."` attributes added to existing elements of `index.html` (no behaviour or number changes). `index.html` has a tiny inline loader that downloads `portal/js/tour.js` + `portal/tour.css` only when the tour starts, so the calculator works exactly as before without it (and without the portal config).
+- **Steps (13 for a guest, 14 with the portal's save button, 15 for staff with the feedback bubble):** welcome, Buyer Quote / Seller Net Sheet, Purchase / Cash / Refinance, ZIP (fills state and county), price and loan amount, title policy choices, CLA fees / endorsements / documents, the estimate total, the section breakdown (lender's and owner's title policies, settlement and CLA fees, recording fees and taxes), Copy quote / Print, the Seller Net Sheet, Save (auto-save when signed in, "Log in to save" for guests), the staff feedback bubble, "Take the tour any time", and the estimates-only disclaimer. Steps whose element is missing or hidden are skipped (the save and feedback steps only exist with the portal and a session) and the counter only counts what is shown.
+- **Tabs:** the Seller Net Sheet step opens that tab and puts the person's own tab back afterwards (also if they skip or press Esc). The tour never clicks Purchase / Cash / Refinance, because switching those rebuilds the documents and endorsements and would discard edits; it only points at them. No fee or number is changed.
+- **The chip:** shown only to someone who has not dismissed it. The x, starting the tour from the chip or from the header link all store `cla_calc_tour_chip = "1"` in `localStorage`, so it never comes back. If browser storage is blocked the chip is not shown at all. It does not print.
+- **Phones:** the box is a bottom sheet (also for the centred welcome note); on desktop a tall target (the breakdown) gets the box beside it instead of on top of it.
+- **Cache-bust:** `?v=20261025i` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
+- **Tests:** the "calculator tour" block in `portal/test-portal.js` (link, step counts, targets, skipping, tab restore, chip persistence, phone sheet, versions). Screenshots: `portal/tools/screenshots_calculator_tour.py`.
+
 ## What is mocked, what is real
 
 | Piece | State |

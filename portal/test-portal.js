@@ -618,5 +618,97 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     await reject(rf("you have sent a lot of feedback recently: please try again later", "54000").submitFeedback({ category: "bug", message: "x" }), /^You have sent a lot of feedback recently: please try again later\.$/, "supabase: the rate-limit message reads well");
     await reject(rf("only a super admin can decide feedback", "42501").adminSetFeedbackStatus("f1", "approved"), /super admin/i, "supabase: a refusal to decide is shown");
   }
+
+  // ---- the CALCULATOR tour (index.html, for anyone: guest or signed in; same engine as the portal tours) ----
+  {
+    const root = path.join(__dirname, "..");
+    const idx = fs.readFileSync(path.join(root, "index.html"), "utf8"), tj2 = fs.readFileSync(path.join(__dirname, "js", "tour.js"), "utf8");
+    const zjs2 = fs.readFileSync(path.join(root, "zip-county.js"), "utf8"), sjs2 = fs.readFileSync(path.join(root, "fee-snapshot.js"), "utf8");
+    const tick2 = (ms) => new Promise((r) => setTimeout(r, ms || 40));
+    // jsdom cannot lazy-load scripts: the snapshot data and tour.js are inlined (the real page downloads tour.js only when the tour starts)
+    const calcHtml = idx.replace(/<script src="https[^>]+><\/script>/, "").replace(/<link[^>]*fonts\.googleapis[^>]*>/, "")
+      .replace(/<script src="zip-county.js[^"]*"><\/script>/, "<script>" + zjs2 + "</script>").replace(/<script src="fee-snapshot.js[^"]*"><\/script>/, "<script>" + sjs2 + "</script>")
+      .replace(/<script src="portal\/js\/portal-hook.js[^"]*" defer><\/script>/, "").replace("<script>\n// Guided tour:", "<script>" + tj2 + "</script><script>\n// Guided tour:");
+    const mkCalc = async ({ store, width, noStorage, extra } = {}) => {
+      const errs = [];
+      const dom = new JSDOM(calcHtml, { url: "http://localhost/index.html", runScripts: "dangerously", pretendToBeVisual: true, virtualConsole: new VirtualConsole(),
+        beforeParse(win) { win.fetch = async () => ({ ok: false, status: 401, text: async () => "" }); win.addEventListener("error", (e) => errs.push(e.message));
+          for (const k in store || {}) win.localStorage.setItem(k, store[k]);
+          if (width) Object.defineProperty(win, "innerWidth", { value: width, configurable: true });
+          if (noStorage) Object.defineProperty(win, "localStorage", { get() { throw new Error("blocked"); } }); } });
+      const d = dom.window.document; await tick2(80);
+      if (extra) extra(d);
+      return { dom, win: dom.window, d, errs };
+    };
+    const nums = (d) => ["tB", "tS", "tA"].map((i) => d.getElementById(i).textContent).join("|");
+    const tcount = (d) => d.getElementById("claTourCount").textContent, ttitle = (d) => d.getElementById("claTourTitle").textContent;
+    const stepNext = async (C, n) => { for (let k = 0; k < n; k++) { C.d.getElementById("claTourNext").click(); await tick2(130); } };
+    const CHIP = "cla_calc_tour_chip";
+
+    // link present: a visible "Take the tour" button in the header, next to Reload (works with no login and no portal config)
+    const G = await mkCalc(); assert.strictEqual(G.errs.length, 0, G.errs.join());
+    const lk = G.d.getElementById("claCalcTourLink"); assert.ok(lk && lk.tagName === "BUTTON" && lk.textContent === "Take the tour" && lk.closest("header .hr") && !lk.hidden && lk.previousElementSibling.id === "btnReload"); ok("calculator tour: a 'Take the tour' button sits in the header (guest, no login needed)");
+
+    // every target exists in the page
+    const ST = G.win.CLA.tourSteps("calculator", {}), targets = ST.map((s) => s.target).filter(Boolean);
+    const tourAttrs = targets.filter((t) => /data-tour="k-/.test(t)); assert.strictEqual(tourAttrs.length, 12);
+    for (const t of tourAttrs) assert.strictEqual(G.d.querySelectorAll(t).length, 1, t + " must match exactly one element");
+    assert.ok([...G.d.querySelectorAll('[data-tour^="k-"]')].length === 12); ok("calculator tour: all 12 data-tour targets exist exactly once in index.html");
+
+    // steps: count, order, wording
+    const avail = (C, me) => C.win.CLA.tourAvailable(C.win.CLA.tourSteps("calculator", me || {}));
+    assert.strictEqual(ST.length, 15); assert.strictEqual(avail(G).length, 13); ok("calculator tour: 15 steps defined; 13 for a guest with no portal (the save and feedback steps need signed-in-only elements)");
+    const sv = G.d.createElement("button"); sv.id = "claSave_quote"; sv.textContent = "Log in to save"; G.d.querySelector("#mainQ .foot").appendChild(sv);
+    assert.strictEqual(avail(G).length, 14); const fbb = G.d.createElement("button"); fbb.id = "claFeedbackLink"; G.d.body.appendChild(fbb); assert.strictEqual(avail(G).length, 15); ok("calculator tour: 14 steps with the portal's save button (guest or client), 15 when the staff feedback bubble is there too");
+    assert.ok(/aren't saved/.test(G.win.CLA.tourSteps("calculator", { signedIn: false }).find((s) => s.target === "#claSave_quote").text) && /save on their own/.test(G.win.CLA.tourSteps("calculator", { signedIn: true }).find((s) => s.target === "#claSave_quote").text)); ok("calculator tour: the save step reads differently for a guest and for someone signed in");
+    assert.strictEqual(JSON.stringify(ST.map((s) => s.title)), JSON.stringify(["Welcome to the closing cost estimator", "Buyer quote or seller net sheet", "Purchase, cash or refinance", "Start with the ZIP", "Price and loan amount", "Title policy choices", "CLA fees, endorsements, documents", "Your estimate", "Where every dollar comes from", "Copy or print your quote", "Seller net sheet", "Saving a quote", "Tell me what to fix", "Take the tour any time", "Estimates only"])); ok("calculator tour: step order (welcome, tabs, ZIP, amounts, policy, fees, total, breakdown, copy/print, seller, save, feedback, replay, disclaimer)");
+    assert.ok(ST.every((s) => s.title && s.text.length < 330 && s.title.length < 45) && !/<|&lt;/.test(JSON.stringify(ST)) && /^Hi, I'm John\./.test(ST[0].text) && /estimates, not a Loan Estimate or Closing Disclosure/.test(ST[14].text) && /sign in/.test(ST[0].text)); ok("calculator tour: short plain copy in John's voice, welcome says no sign-in is needed, ends with the estimates-only disclaimer");
+    const alltext = JSON.stringify(ST); assert.ok(!/login required|must (sign|log) in/i.test(alltext)); assert.ok(!/https?:\/\//.test(tj2)); ok("calculator tour: nothing in it requires a login");
+
+    // run it: skipping a missing or hidden target, counts, and the box
+    const C0 = await mkCalc(); C0.d.querySelector('[data-tour="k-policy"]').remove(); C0.d.getElementById("claTourChipGo").click(); await tick2(60);
+    assert.strictEqual(tcount(C0.d), "Step 1 of 12"); assert.ok(C0.d.getElementById("claTour") && C0.d.querySelector(".claTourPop").getAttribute("role") === "dialog"); const titles0 = []; for (let k = 0; k < 12; k++) { titles0.push(ttitle(C0.d)); if (k < 11) await stepNext(C0, 1); }
+    assert.ok(!titles0.includes("Title policy choices") && titles0.includes("Where every dollar comes from") && titles0.length === 12); ok("calculator tour: a missing target is skipped, and the step counter only counts the steps shown (12 of 13)");
+    C0.d.getElementById("claTourNext").click(); await tick2(40); assert.ok(!C0.d.getElementById("claTour")); C0.win.close();
+    const C1 = await mkCalc(); C1.d.querySelector('[data-tour="k-tourlink"]').hidden = true; C1.d.getElementById("claTourChipGo").click(); await tick2(60);
+    assert.strictEqual(tcount(C1.d), "Step 1 of 12"); C1.d.getElementById("claTourSkip").click(); await tick2(40); assert.ok(!C1.d.getElementById("claTour")); ok("calculator tour: a hidden target is skipped too; Skip tour closes it"); C1.win.close();
+    const C2 = await mkCalc(); C2.d.getElementById("claCalcTourLink").click(); await tick2(60); assert.ok(C2.d.getElementById("claTour")); C2.d.dispatchEvent(new C2.win.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })); await tick2(100); assert.strictEqual(tcount(C2.d), "Step 2 of 13");
+    C2.d.dispatchEvent(new C2.win.KeyboardEvent("keydown", { key: "Escape", bubbles: true })); await tick2(40); assert.ok(!C2.d.getElementById("claTour")); assert.strictEqual(C2.d.activeElement.id, "claCalcTourLink"); ok("calculator tour: the header link starts it, the arrow keys move, Esc closes it and focus goes back to the link"); C2.win.close();
+
+    // tab restore: the Seller Net Sheet is opened for its step and the person's own tab is put back; Purchase / Cash / Refinance are never touched; no number changes
+    const T1 = await mkCalc(); const before = nums(T1.d), typeBefore = T1.d.querySelector("#tabs button.on").dataset.t, docsBefore = T1.d.getElementById("docs").innerHTML, endsBefore = T1.d.getElementById("ends").innerHTML;
+    T1.d.querySelector('#tabs button[data-t="cash"]').click(); const cashNums = nums(T1.d), cashDocs = T1.d.getElementById("docs").innerHTML; T1.d.querySelector('#tabs button[data-t="cash"]').parentElement.querySelector('[data-t="purchase"]').click();
+    T1.d.getElementById("claCalcTourLink").click(); await tick2(60); let seenSeller = false; const mode = () => T1.d.querySelector("#modes button.on").dataset.mode;
+    for (let k = 0; k < 13; k++) { if (ttitle(T1.d) === "Seller net sheet") { seenSeller = true; assert.strictEqual(mode(), "seller"); assert.ok(T1.d.getElementById("mainQ").hidden && !T1.d.getElementById("mainS").hidden); } if (k < 12) await stepNext(T1, 1); }
+    assert.ok(seenSeller); assert.strictEqual(mode(), "quote"); assert.strictEqual(ttitle(T1.d), "Estimates only"); T1.d.getElementById("claTourNext").click(); await tick2(60);
+    assert.ok(!T1.d.getElementById("claTour") && mode() === "quote" && !T1.d.getElementById("mainQ").hidden && T1.d.getElementById("mainS").hidden && !T1.d.getElementById("discQ").hidden); ok("calculator tour: Buyer Quote tab is restored after the Seller Net Sheet step (and the right disclaimer shows)");
+    assert.strictEqual(T1.d.querySelector("#tabs button.on").dataset.t, typeBefore); assert.strictEqual(nums(T1.d), before); assert.strictEqual(T1.d.getElementById("docs").innerHTML, docsBefore); assert.strictEqual(T1.d.getElementById("ends").innerHTML, endsBefore); assert.notStrictEqual(cashNums, before); ok("calculator tour: Purchase / Cash / Refinance, the documents, the endorsements and every number are exactly as before the tour: " + before);
+    // starting on the Seller Net Sheet: the tour shows the buyer steps, then puts the seller tab back (also when closed half way through)
+    const T2 = await mkCalc(); T2.d.querySelector('#modes button[data-mode="seller"]').click(); const sBefore = T2.d.getElementById("sNet").textContent; T2.d.getElementById("claCalcTourLink").click(); await tick2(60);
+    await stepNext(T2, 2); assert.strictEqual(ttitle(T2.d), "Purchase, cash or refinance"); assert.ok(!T2.d.getElementById("mainQ").hidden); await stepNext(T2, 1);
+    assert.strictEqual(ttitle(T2.d), "Start with the ZIP"); T2.d.getElementById("claTourSkip").click(); await tick2(60); assert.strictEqual(T2.d.querySelector("#modes button.on").dataset.mode, "seller"); assert.ok(T2.d.getElementById("mainQ").hidden && !T2.d.getElementById("mainS").hidden && T2.d.getElementById("sNet").textContent === sBefore); ok("calculator tour: started on the Seller Net Sheet, a closed tour leaves the person on the Seller Net Sheet with the same net");
+    const T3 = await mkCalc(); T3.d.querySelector('#modes button[data-mode="seller"]').click(); T3.d.getElementById("claCalcTourLink").click(); await tick2(60); await stepNext(T3, 11); assert.strictEqual(ttitle(T3.d), "Take the tour any time"); await stepNext(T3, 1); T3.d.getElementById("claTourNext").click(); await tick2(60);
+    assert.strictEqual(T3.d.querySelector("#modes button.on").dataset.mode, "seller"); ok("calculator tour: started on the Seller Net Sheet, finishing the tour puts that tab back"); [T1, T2, T3].forEach((x) => x.win.close());
+
+    // the first-visit chip: shown once, dismissed for good (localStorage)
+    const F1 = await mkCalc(); const chip = F1.d.getElementById("claTourChip"); assert.ok(chip && !chip.hidden && /New here\?/.test(chip.textContent) && /Take a 1-minute tour/.test(chip.textContent) && !F1.d.getElementById("claTour")); ok("calculator tour: a first-time visitor sees a small 'New here? Take a 1-minute tour' chip, and nothing opens by itself");
+    assert.ok(chip.closest(".modebar") && F1.d.getElementById("claTourChipX").getAttribute("aria-label")); F1.d.getElementById("claTourChipX").click(); assert.ok(chip.hidden); assert.strictEqual(F1.win.localStorage.getItem(CHIP), "1"); ok("calculator tour: the x dismisses the chip and remembers it in localStorage");
+    const F2 = await mkCalc({ store: { [CHIP]: "1" } }); assert.ok(F2.d.getElementById("claTourChip").hidden && !F2.d.getElementById("claTour")); ok("calculator tour: a returning visitor who dismissed it never sees the chip again (and the header link still works)");
+    const F3 = await mkCalc(); F3.d.getElementById("claTourChipGo").click(); await tick2(60); assert.ok(F3.d.getElementById("claTour") && F3.d.getElementById("claTourChip").hidden && F3.win.localStorage.getItem(CHIP) === "1"); ok("calculator tour: taking the tour from the chip hides the chip for good too");
+    const F4 = await mkCalc(); F4.d.getElementById("claCalcTourLink").click(); await tick2(60); assert.ok(F4.d.getElementById("claTour") && F4.win.localStorage.getItem(CHIP) === "1" && F4.d.getElementById("claTourChip").hidden); ok("calculator tour: starting it from the header link also retires the chip");
+    const F5 = await mkCalc({ noStorage: true }); assert.strictEqual(F5.errs.length, 0, F5.errs.join()); assert.ok(F5.d.getElementById("claTourChip").hidden); F5.d.getElementById("claCalcTourLink").click(); await tick2(60); assert.ok(F5.d.getElementById("claTour")); ok("calculator tour: with browser storage blocked the chip stays hidden (it could not remember 'no thanks'), no errors, and the tour still works");
+    [F1, F2, F3, F4, F5].forEach((x) => x.win.close());
+
+    // phones: the box is a bottom sheet
+    const M1 = await mkCalc({ width: 390 }); M1.d.getElementById("claCalcTourLink").click(); await tick2(60); assert.ok(M1.d.querySelector(".claTourPop").classList.contains("sheet")); await stepNext(M1, 3); assert.ok(M1.d.querySelector(".claTourPop").classList.contains("sheet") && !M1.d.querySelector(".claTourSpot").hidden);
+    ok("calculator tour: on a phone-width screen the box is a bottom sheet (with the spotlight on the target)"); M1.win.close();
+    const D1 = await mkCalc(); D1.d.getElementById("claCalcTourLink").click(); await tick2(60); assert.ok(!D1.d.querySelector(".claTourPop").classList.contains("sheet")); ok("calculator tour: on a desktop-width screen it is a floating box, not a sheet"); D1.win.close();
+
+    // cache-bust: every ?v= in index.html and TOUR_V agree
+    const vs = [...idx.matchAll(/\?v=(\d{8}[a-z])/g)].map((m) => m[1]), pu = fs.readFileSync(path.join(__dirname, "js", "portal-ui.js"), "utf8");
+    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261025i" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261025i");
+    // the new elements are inert in print and add no external requests
+    assert.ok(/@media print\{\s*@page\{margin:14mm\}\s*\.claChip\{display:none!important\}/.test(idx) && !/https?:\/\//.test(tj2)); ok("calculator tour: the chip is not printed; tour.js has no external libraries or CDN");
+  }
   console.log("\nALL PASS (" + pass + " checks)");
 })().catch((e) => { console.error("FAIL", e); process.exit(1); });

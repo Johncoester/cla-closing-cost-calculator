@@ -13,6 +13,13 @@
  * Seen: when the tour ends (Done, Skip or Esc) opts.onClose is called; the portal then calls A.markTourSeen() (profiles.tour_seen_at).
  *
  * Text is fixed in this file (never user content), but is still put on the page with textContent.
+ *
+ * CALCULATOR TOUR (kind "calculator"): the same engine also runs on the public calculator (index.html), for anyone, signed in or not.
+ * index.html loads this file and tour.css on demand (from the "Take the tour" link or the first-visit chip). Its steps are plain
+ * data-tour="k-..." attributes on existing elements, plus a few elements that only exist when signed in (#claSave_quote, #claFeedbackLink),
+ * which are simply skipped when absent. Steps that need the Seller Net Sheet (or the Buyer Quote) open it first (`show`) and put the person's
+ * own tab back afterwards (`leave`, and the cleanup when the tour ends). It never clicks Purchase / Cash / Refinance, because switching
+ * those rebuilds the documents and endorsements and would throw away edits. It never changes a number.
  */
 (function () {
   const CLA = (window.CLA = window.CLA || {});
@@ -54,18 +61,45 @@
       T('[data-tour="c-rep"]', "Talk to your rep", "This is your CLA rep. Call or text their cell with any question about a quote. If you haven't been matched yet, CLA will connect you by email."),
       T(null, "One last thing", "Quotes are estimates only, not a Loan Estimate or Closing Disclosure. For a binding quote, ask your CLA rep. You can replay this tour any time from \"Take the tour\" at the top."),
     ];
+    if (kind === "calculator") {
+      const signedIn = !!(me && me.signedIn);
+      const cur = document.querySelector('#modes button.on'), orig = (cur && cur.dataset && cur.dataset.mode) === "seller" ? "seller" : "quote";
+      const mode = (m) => ({ show: '#modes button[data-mode="' + m + '"]', leave: () => click('#modes button[data-mode="' + orig + '"]') });   // open a mode, then put the person's own back
+      const list = [
+        T(null, "Welcome to the closing cost estimator", "Hi, I'm John. Here's a quick look around the calculator. It takes about a minute, you can skip any time, and you don't need to sign in to use any of it."),
+        T('[data-tour="k-modes"]', "Buyer quote or seller net sheet", "Buyer Quote shows what a buyer pays at closing. Seller Net Sheet shows what a seller walks away with. The property details you've typed carry across when you switch."),
+        T('[data-tour="k-types"]', "Purchase, cash or refinance", "Purchase is a financed sale, Cash has no loan, and Refinance swaps the price for a payoff and a new loan amount. Pick the one that matches the deal.", mode("quote")),
+        T('[data-tour="k-zip"]', "Start with the ZIP", "Type the property's ZIP and I'll fill in the state and county, since county taxes depend on it. You can also pick them yourself just below. The address and city are optional and show on the quote.", mode("quote")),
+        T('[data-tour="k-amounts"]', "Price and loan amount", "Enter the sale price and the loan amount. On a refinance you'll see the payoff and the new loan amount instead. The estimate updates as you type.", mode("quote")),
+        T('[data-tour="k-policy"]', "Title policy choices", "Choose the owner's policy (Enhanced or Standard) and the basic or reissue rate. Just below, pick who pays for it and whether to show fees the Loan Estimate way or as the actual split.", mode("quote")),
+        T('[data-tour="k-fees"]', "CLA fees, endorsements, documents", "Our standard fees are listed here, locked, straight from the team fee sheet. Above them you can tick endorsements and set how many documents we record.", mode("quote")),
+        T('[data-tour="k-total"]', "Your estimate", "Here's the buyer's total (the borrower's on a refinance), with the seller's total and all parties underneath. It updates with every change you make.", mode("quote")),
+        T('[data-tour="k-ledger"]', "Where every dollar comes from", "Each section lists the lender's and owner's title policies, settlement and CLA fees, recording fees and transfer taxes, with a buyer column, a seller column and a total for each section.", mode("quote")),
+        T('[data-tour="k-actions"]', "Copy or print your quote", "Copy quote puts a plain-text version on your clipboard to paste into an email. Print / Save PDF makes a clean printable copy.", mode("quote")),
+        T('[data-tour="k-seller"]', "Seller net sheet", "Here the seller's costs come off the price: commissions, payoffs, property taxes, credits and CLA's fees. What's left is the net proceeds. I'll put you back where you were when we're done.", mode("seller")),
+        T('#claSave_quote', signedIn ? "Saved to your account" : "Saving a quote", signedIn
+          ? "Your quotes save on their own while you're signed in, and delete themselves 30 days after they were created. Save as new quote keeps a separate copy."
+          : "Guest quotes aren't saved. Log in if you'd like to keep them in your account and print them with your CLA rep's photo and details. Signing in is optional.", mode("quote")),
+        T('#claFeedbackLink', "Tell me what to fix", "This round bubble sends feedback straight to me. Tell me about a bug or an idea."),
+        T('[data-tour="k-tourlink"]', "Take the tour any time", "You can replay this tour from here whenever you like."),
+        T('[data-tour="k-disclaimer"]', "Estimates only", "These are estimates, not a Loan Estimate or Closing Disclosure, and actual charges may vary. For a binding quote, contact C.L.A. Title & Escrow."),
+      ];
+      list.restore = () => click('#modes button[data-mode="' + orig + '"]');   // safety net when the tour ends
+      return list;
+    }
     return [];
   };
 
   // ---------- helpers ----------
   const shown = (el) => { for (let n = el; n && n.nodeType === 1; n = n.parentElement) { if (n.hidden) return false; if (window.getComputedStyle(n).display === "none") return false; } return !!el; };
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-  const click = (sel) => { const e = sel && $(sel); if (e && shown(e)) e.click(); return !!e; };
+  const click = (sel) => { if (typeof sel === "function") { try { sel(); } catch (e) {} return true; } const e = sel && $(sel); if (e && shown(e)) e.click(); return !!e; };   // a selector to click, or a function to run
   const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
 
   // The steps that can be shown right now (a hidden or missing target is skipped, a centred note always shows)
   CLA.tourAvailable = function (steps) {
-    return steps.filter((s) => (s.show ? !!$(s.show) && shown($(s.show)) : !s.target || shown($(s.target))));
+    // a step with `show` needs that button, and its target must exist (it may be hidden until `show` opens it); otherwise the target must be visible now
+    return steps.filter((s) => (s.show ? !!$(s.show) && shown($(s.show)) && (!s.target || !!$(s.target)) : !s.target || shown($(s.target))));
   };
 
   // ---------- the engine ----------
@@ -92,7 +126,7 @@
     function place() {
       if (closed) return;
       const vw = window.innerWidth, vh = window.innerHeight;
-      if (!target) { spot.hidden = true; shade.classList.add("dim"); pop.classList.add("mid"); pop.style.cssText = ""; return; }
+      if (!target) { spot.hidden = true; shade.classList.add("dim"); pop.classList.add("mid"); pop.classList.toggle("sheet", mobile()); pop.style.cssText = ""; return; }   // a centred note (a bottom sheet on a phone)
       shade.classList.remove("dim"); pop.classList.remove("mid");
       const r = target.getBoundingClientRect(), pad = 6;
       const top = Math.max(r.top - pad, 4), left = Math.max(r.left - pad, 4), bottom = Math.min(r.bottom + pad, vh - 4), right = Math.min(r.right + pad, vw - 4);
@@ -100,8 +134,12 @@
       if (mobile()) { pop.classList.add("sheet"); pop.style.cssText = ""; return; }   // a sheet at the bottom of the screen
       pop.classList.remove("sheet");
       const pw = Math.min(pop.offsetWidth || 340, vw - 24), ph = pop.offsetHeight || 190, gap = 14;
-      let t = bottom + gap; if (t + ph > vh - 8) t = top - gap - ph; if (t < 8) t = Math.max(8, Math.min(vh - ph - 8, vh / 2 - ph / 2));   // below, else above, else centred
+      let t = bottom + gap; if (t + ph > vh - 8) t = top - gap - ph;   // below, else above
       let l = Math.min(Math.max(left + (right - left) / 2 - pw / 2, 12), vw - pw - 12);
+      if (t < 8) {   // a tall target (no room above or below): beside it when there is room, else centred
+        t = Math.max(8, Math.min(vh - ph - 8, (top + bottom) / 2 - ph / 2));
+        if (left >= pw + 24) l = left - pw - 12; else if (vw - right >= pw + 24) l = right + 12;
+      }
       pop.style.cssText = "top:" + t + "px;left:" + l + "px";
     }
     function reveal() {   // bring the target into view (instant: no animation to wait for or to bother anyone)
@@ -114,7 +152,7 @@
     }
     async function go(n) {
       const my = ++tok;
-      const old = steps[i]; if (old && old.leave && n !== i) click(old.leave);
+      const old = steps[i]; if (old && old.leave && n !== i && !(steps[n].show && steps[n].show === old.show)) click(old.leave);   // (the next step opening the same tab: stay there)
       i = n; const s = steps[i];
       if (s.show) { click(s.show); await wait(80); if (my !== tok) return; }
       target = s.target ? $(s.target) : null; if (target && !shown(target)) target = null;
@@ -156,8 +194,8 @@
     if (!css) { const l = document.createElement("link"); l.rel = "stylesheet"; l.id = "claTourCss"; l.href = (o.base || "") + "tour.css" + (o.ver ? "?v=" + o.ver : ""); document.head.appendChild(l); }
     const steps = CLA.tourSteps(o.kind, o.me);
     return CLA.runTour(steps, {
-      returnFocus: document.getElementById("claTourLink") || document.activeElement,
-      cleanup: o.kind === "admin" ? ['#tabs button[data-i="0"]'] : o.kind === "rep" ? ['#tabs button[data-i="0"]'] : [],
+      returnFocus: o.returnFocus || document.getElementById("claTourLink") || document.activeElement,
+      cleanup: o.kind === "admin" ? ['#tabs button[data-i="0"]'] : o.kind === "rep" ? ['#tabs button[data-i="0"]'] : o.kind === "calculator" ? [steps.restore || (() => {})] : [],
       onClose: async (reason) => {
         if (o.me && o.me.tourSeenAt === null && o.A && o.A.markTourSeen) {
           try { await o.A.markTourSeen(); o.me.tourSeenAt = new Date().toISOString(); } catch (e) {}   // not fatal: replay is always available
