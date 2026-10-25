@@ -138,16 +138,25 @@ never promote anyone to admin or super admin, and never invite an admin or super
   the SQL editor and the service role). It serialises concurrent attempts with an advisory lock. A super admin also cannot disable or demote themselves (the older rule).
 * **"Also works as a rep" for an admin** follows the same rule as for a super admin (CLA email only, `is_rep` flag, `private.is_rep()` is the one definition), but only a super admin may flip it.
   Consequence worth knowing: when an admin demotes another admin to **rep**, that person becomes a rep (reps always are, CLA email required); to **client** clears the flag.
+* **A rep's clients are never left without a rep (migration 12).** If a change would stop someone who works as a rep (role rep, or admin / super admin with the rep switch on) from being a rep while they still have
+  **active clients** (their role is changed to Client, or a super admin switches "also works as a rep" off), the database refuses it (55006) unless the call names the successor:
+  `admin_set_role(p_user, p_role, p_reassign_to)` / `admin_set_is_rep(p_user, p_is_rep, p_reassign_to)`. The successor must be an **active, rep-capable** user and not the same person (23514 otherwise).
+  Then **all** their active assignments move in the same transaction: old rows go inactive, new rows are created for the successor (each one audited as `assignment_changed`), and the `role_changed` /
+  `rep_flag_changed` audit row records `clients_moved` and `moved_to`. Nothing moves (and `p_reassign_to` is ignored) when there are no active clients, or the change keeps rep capability
+  (rep <-> admin / super admin keeps the flag). Who may call these is unchanged: an admin still cannot promote anybody or touch a super admin; the rep switch is still super-admin-only.
+  In admin.html, picking such a change opens **"Move N realtors to…"** (a list of the other eligible reps with their current client counts; Cancel / Escape changes nothing and the dropdown snaps back;
+  with no other eligible rep it says so and offers only Cancel). Adapters: `adminSetRole(id, role, reassignTo?)`, `adminSetIsRep(id, on, reassignTo?)`. The new parameter changes the function signatures, so
+  migration 12 **drops** the old two-argument versions (old callers, positional or by name, resolve to the new ones).
 * **UI.** The role dropdown (admin.html) shows all four roles to a super admin; an admin sees Rep / Client for reps and clients and Admin / Rep / Client for another admin (no way up).
   Super admin rows show a static badge, a greyed-out Disable button and a tooltip explaining why (hover or keyboard focus). The invite form offers Admin / Super admin only to a super admin.
   Route guards (`boot(["super_admin","admin"])`), the header links and `CLA.roleLabel()` ("Admin", "Admin + rep") know the new role.
   The database is the authority: the buttons are a courtesy, a forced call is still refused with a readable message.
 * **Why migrations 9 and 10 are two files.** Postgres will not let a new enum value be *used* in the transaction that adds it (`unsafe use of new value`), and Supabase runs each migration file as one transaction.
-  `20261025000009_admin_role_enum.sql` only adds the value; `20261025000010_admin_role.sql` uses it. They are live. **Migration 11 (`20261025000011_admin_manage_admins.sql`) is a plain forward-only file** (no enum change):
+  `20261025000009_admin_role_enum.sql` only adds the value; `20261025000010_admin_role.sql` uses it. They are live. **Migrations 11 (`20261025000011_admin_manage_admins.sql`) and 12 (`20261025000012_reassign_on_demote.sql`) are plain forward-only files** (no enum change). Apply 11, then 12, each as its own run. Migration 11:
   it replaces `private.can_manage_user`, `admin_set_role` and `admin_set_status` (same signatures, safe to run twice); the three policies that call `can_manage_user` follow automatically.
   Existing data is untouched: nobody changes role or status.
 * **Tests.** `bash supabase/tests/run-tests.sh` (throwaway local Postgres; includes upgrade stages: 1-5 then 6; 1-6 then 9+10, which proves 9+10 in a single transaction fail and in two succeed;
-  1-10 with data then 11, which proves the old rule before and the new rule after, idempotently), `node portal/test-portal.js` (mock adapter, supabase adapter against a fake client, jsdom render of admin.html as Admin vs Super admin), `node test.js`.
+  1-10 with data then 11, which proves the old rule before and the new rule after, idempotently; 1-11 with data then 12, which proves a demoted rep's clients can no longer be stranded), `node portal/test-portal.js` (mock adapter, supabase adapter against a fake client, jsdom render of admin.html as Admin vs Super admin), `node test.js`.
   Screenshots (demo mode): `portal/tools/screenshots_admin_role.py`.
 * **Not covered here:** the Edge Functions `invite-user` / `set-user-status` only forward to the DB RPCs (comments updated for migration 11; nothing to redeploy for behaviour). The `?v=` cache-bust in `index.html` should be bumped with the release.
 

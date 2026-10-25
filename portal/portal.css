@@ -140,3 +140,8 @@ tr.click{cursor:pointer}tr.click:hover td{background:#fafcf6}
  .hero{background:#fff;color:#000;border:2px solid #000}.big{color:#000}.hero small,.hero .sum{color:#444}
  main.pg{padding-top:12px}
 }
+
+/* "Move N realtors to..." picker (admin.html) */
+.ovl{position:fixed;inset:0;background:rgba(17,17,17,.5);display:flex;align-items:center;justify-content:center;z-index:60;padding:16px}
+.dlg{background:#fff;border-radius:16px;padding:24px;max-width:480px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,.3)}
+.dlg h2{margin:0 0 6px}.dlg select{width:100%}

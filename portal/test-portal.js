@@ -201,7 +201,24 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
   await reject(A.adminSetIsRep(id("a1"), false), /Only a super admin can do that/, "admin cannot switch rep access on a super admin");
   await reject(A.adminSetIsRep(id("a2"), true), /Only a super admin can do that/, "admin cannot switch their own rep access");
   assert.ok((await A.adminListUsers()).find((u) => u.id === id("a1")).status === "active" && (await A.adminListUsers()).find((u) => u.id === id("a1")).role === "super_admin"); ok("...and nothing changed on the super admin");
-  await A.adminSetRole(id("b2"), "client"); assert.strictEqual((await A.adminListUsers()).find((u) => u.id === id("b2")).role, "client"); await A.adminSetRole(id("b2"), "rep"); assert.strictEqual((await A.adminListUsers()).find((u) => u.id === id("b2")).isRep, true); ok("admin changes a rep to a client and back (is_rep follows)");
+  // migration 12: a rep with ACTIVE clients cannot be made a client without a successor; the clients move in the same step
+  const same = (a, b) => assert.strictEqual(JSON.stringify(a), JSON.stringify(b));   // arrays come from the sandboxed adapter: compare by value
+  const clientsOf = async (rid) => (await A.adminListAssignments()).filter((a) => a.active && a.repId === rid).map((a) => a.clientEmail).sort();
+  const marcusBefore = await clientsOf(id("b2")); assert.ok(marcusBefore.length >= 2);
+  await reject(A.adminSetRole(id("b2"), "client"), /This person has \d+ active client\(s\): choose another rep/, "admin cannot make a rep with clients a client without a successor");
+  for (const bad of [id("b2"), id("c1"), id("c4"), id("a2"), "nobody"]) await reject(A.adminSetRole(id("b2"), "client", bad), /different rep|must be an active rep/, "...invalid successor refused: " + (bad === id("b2") ? "same person" : bad === id("c1") ? "a client" : bad === id("c4") ? "a disabled client" : bad === id("a2") ? "a plain admin" : "unknown"));
+  same(await clientsOf(id("b2")), marcusBefore); assert.strictEqual((await A.adminListUsers()).find((u) => u.id === id("b2")).role, "rep"); ok("...and every refusal changed nothing (role and clients as before)");
+  const histBefore = (await A.adminListAssignments()).length, janeBefore = await clientsOf(id("b1"));
+  await A.adminSetRole(id("b2"), "client", id("b1"));
+  const m2 = (await A.adminListUsers()).find((u) => u.id === id("b2")); assert.ok(m2.role === "client" && m2.isRep === false); same(await clientsOf(id("b2")), []);
+  same(await clientsOf(id("b1")), [...janeBefore, ...marcusBefore].sort()); ok("admin makes Marcus a client with Jane as successor: all his active clients move to Jane");
+  const asgAll = await A.adminListAssignments(); assert.strictEqual(asgAll.length, histBefore + marcusBefore.length); assert.ok(asgAll.filter((a) => a.repId === id("b2")).every((a) => !a.active)); ok("...history kept: Marcus's old rows are inactive, new rows were added for Jane");
+  assert.ok((await A.adminAuditLog(100)).some((r) => r.action === "role_changed" && r.details.clients_moved === marcusBefore.length && r.details.moved_to === id("b1"))); ok("...audit records who took over and how many");
+  await A.adminSetRole(id("b2"), "rep"); assert.strictEqual((await A.adminListUsers()).find((u) => u.id === id("b2")).isRep, true); ok("admin changes a client back to a rep (is_rep follows)");
+  await A.adminSetRole(id("b2"), "client"); await A.adminSetRole(id("b2"), "rep"); ok("a rep with NO active clients is changed to client and back without any successor");
+  await reject(A.adminSetRole(id("a1"), "client", id("b1")), /Only a super admin can change the role of a super admin/, "admin cannot do it to a super admin even with a successor");
+  for (const row of [marcusBefore]) for (const e of row) await A.adminReassign(e, id("b2"));   // put Marcus's clients back for the rest of the tests
+  same(await clientsOf(id("b2")), marcusBefore);
   await A.adminReassign("pat.homes@example.com", id("b1")); await reject(A.adminReassign("pat.homes@example.com", id("a2")), /Pick a rep/, "a plain admin is not in the rep picker (not rep-capable)"); ok("admin reassigns a client to a rep");
   // migration 11: an admin may also manage ANOTHER admin (Casey), but never a super admin, and never promote
   await A.adminSetStatus(id("a3"), "disabled"); assert.strictEqual((await A.adminListUsers()).find((u) => u.id === id("a3")).status, "disabled"); await A.adminSetStatus(id("a3"), "active"); ok("admin disables and re-enables another admin (Casey)");
@@ -226,6 +243,12 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
   await reject(A.inviteClient("nina.newagent@example.com"), /another rep/, "...without taking over another rep's client");
   await reject(A.adminSetIsRep(id("a2"), false), /Only a super admin can do that/, "...and still cannot switch their own flag off");
   await as("sample.admin@clatitle.com"); await reject(A.adminSetIsRep(id("a2"), false), /Reassign this person's \d+ active client/, "switching off is refused while the admin has clients");
+  const robinClients = await clientsOf(id("a2")); assert.ok(robinClients.length >= 1);
+  await reject(A.adminSetIsRep(id("a2"), false, id("a2")), /different rep/, "...and the successor cannot be the same person"); await reject(A.adminSetIsRep(id("a2"), false, id("c1")), /must be an active rep/, "...nor a client");
+  await reject(A.adminSetRole(id("a2"), "client"), /choose another rep/, "an admin + rep with clients cannot be made a client without a successor either");
+  await A.adminSetRole(id("a2"), "rep"); await A.adminSetRole(id("a2"), "admin"); same(await clientsOf(id("a2")), robinClients); ok("...but rep / admin changes that keep rep capability need no successor and keep the clients");
+  await A.adminSetIsRep(id("a2"), false, id("b1")); const rb2 = (await A.adminListUsers()).find((u) => u.id === id("a2")); assert.ok(rb2.isRep === false && (await clientsOf(id("a2"))).length === 0); assert.ok((await clientsOf(id("b1"))).includes(robinClients[0])); ok("super admin switches rep access off with Jane as successor: Robin's clients move to Jane");
+  await A.adminSetIsRep(id("a2"), true);
   await A.adminSetStatus(id("a2"), "disabled"); await reject(A.signIn("sample.robin.admin@clatitle.com", "x"), /Invalid/, "a disabled admin cannot sign in"); await A.adminSetStatus(id("a2"), "active"); ok("super admin disables and re-enables an admin");
   // super admin keeps everything: demote a super admin to admin, never themselves
   await A.adminSetRole(id("a2"), "super_admin"); await as("sample.robin.admin@clatitle.com");
@@ -237,9 +260,9 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
 
   // ---- admin.html itself (jsdom): what an Admin vs a Super admin sees and can click ----
   const pdir = __dirname;
-  const renderAdmin = async (email, expectBlocked) => {
+  const renderAdmin = async (email, expectBlocked, prep) => {
     // first load seeds + signs in (the page redirects to login when signed out), so seed the session first in a throwaway window
-    const w0 = boot(), A0 = w0.CLA.createMockAdapter({}); await A0.signIn(email, "x");
+    const w0 = boot(), A0 = w0.CLA.createMockAdapter({}); if (prep) { await A0.signIn("sample.admin@clatitle.com", "x"); await prep(A0); } await A0.signIn(email, "x");
     const store = { cla_portal_mock_v1: w0.localStorage.getItem("cla_portal_mock_v1"), cla_portal_mock_session: w0.localStorage.getItem("cla_portal_mock_session") };
     const html = fs.readFileSync(path.join(pdir, "admin.html"), "utf8")
       .replace(/<link[^>]*fonts\.googleapis[^>]*>/, "").replace(/<script src="config\.js"><\/script>/, "<script>window.CLA_PORTAL_CONFIG={mode:'mock'}</script>")
@@ -267,7 +290,28 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     assert.ok(/Admin \(you\)/.test(rowMe.textContent) && !rowMe.querySelector("button[data-st]") && !rowMe.querySelector("select[data-role]")); assert.ok(rowMe.querySelector("input[data-also]").disabled); ok("admin.html: an Admin's own row has no role dropdown and no disable button");
     assert.strictEqual(d.getElementById("uCount").textContent, "11 users · 2 reps · 1 super admin · 2 admins · 6 clients · 1 admin also works as rep"); ok("admin.html: the user count line names super admins and admins separately");
     assert.match(d.querySelector("header .chip small").textContent, /^Admin$/); ok("admin.html: the header says Admin");
+    // "Move N realtors to...": changing a rep who has clients to Client opens the picker; cancel changes nothing; confirm moves the clients
+    const change2 = (dd, el, v) => { el.value = v; el.dispatchEvent(new dd.defaultView.Event("change", { bubbles: true })); };
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms || 40));
+    const change = (el, v) => { el.value = v; el.dispatchEvent(new d.defaultView.Event("change", { bubbles: true })); };
+    let selM = R.row(id("b2")).querySelector("select[data-role]"); change(selM, "client"); await tick();
+    let dlg = d.querySelector(".dlg"); assert.ok(dlg && /Move 3 realtors to…/.test(dlg.querySelector("h2").textContent)); assert.match(dlg.textContent, /make Marcus Rep a client, Marcus Rep must first hand over their 3 realtors \(Dee Disabled, Omar Broker, nina\.newagent@example\.com\)/);
+    assert.deepStrictEqual([...dlg.querySelectorAll("#dlgRep option")].map((o) => o.textContent.split(" · ")[0]), ["Alex Admin (admin + rep)", "Jane Rep"]); ok("picker: changing a rep with 2 realtors to Client asks 'Move 3 realtors to…' (2 with accounts + 1 pending invitation) and lists the OTHER eligible reps (never the person, never a client or a plain admin)");
+    dlg.querySelector("#dlgNo").click(); await tick(); assert.ok(!d.querySelector(".dlg")); assert.strictEqual(R.row(id("b2")).querySelector("select[data-role]").value, "rep"); ok("picker: Cancel changes nothing (the role dropdown snaps back to CLA rep)");
+    change(R.row(id("b2")).querySelector("select[data-role]"), "client"); await tick(); d.dispatchEvent(new d.defaultView.KeyboardEvent("keydown", { key: "Escape" })); await tick(); assert.ok(!d.querySelector(".dlg")); ok("picker: Escape cancels too");
+    change(R.row(id("b2")).querySelector("select[data-role]"), "client"); await tick(); d.querySelector("#dlgRep").value = id("b1"); d.querySelector("#dlgOk").click(); await tick(100);
+    assert.ok(!d.querySelector(".dlg")); const rowM2 = R.row(id("b2")); assert.strictEqual(rowM2.querySelector("select[data-role]").value, "client"); ok("picker: confirming makes Marcus a client");
+    assert.match([...d.querySelectorAll("#users tr")].find((tr) => tr.textContent.includes("Omar Broker")).textContent, /Marcus Rep|Jane Rep/); const om = [...d.querySelectorAll("#users tr")].find((tr) => tr.textContent.includes("Omar Broker")); assert.ok(/Jane Rep/.test(om.textContent) && !/Marcus Rep/.test(om.textContent)); ok("picker: his realtors now show Jane as their rep in the Users table");
+    // a rep with no active clients: no picker, the plain confirmation
+    d.defaultView.confirm = () => true; change(R.row(id("b2")).querySelector("select[data-role]"), "rep"); await tick(100); assert.ok(!d.querySelector(".dlg")); assert.strictEqual(R.row(id("b2")).querySelector("select[data-role]").value, "rep"); ok("picker: changing someone with no active clients (Marcus, now client -> rep) shows no picker, only the usual confirmation");
+    change(R.row(id("b2")).querySelector("select[data-role]"), "client"); await tick(100); assert.ok(!d.querySelector(".dlg")); assert.strictEqual(R.row(id("b2")).querySelector("select[data-role]").value, "client"); ok("...and rep -> client with no clients also needs no picker");
     R.dom.window.close();
+    // no other eligible rep at all: a clear message, no way to continue
+    const N = await renderAdmin("sample.robin.admin@clatitle.com", false, async (A0) => { await A0.adminSetIsRep(id("a1"), false, id("b1")); await A0.adminSetStatus(id("b1"), "disabled"); }), nd = N.d;
+    change2(nd, N.row(id("b2")).querySelector("select[data-role]"), "client"); await tick(); const nl = nd.querySelector(".dlg");
+    assert.ok(nl && nl.querySelector("#dlgNone") && /no other active rep/.test(nl.textContent) && !nl.querySelector("#dlgOk") && nl.querySelector("#dlgNo")); nl.querySelector("#dlgNo").click(); await tick(); assert.strictEqual(N.row(id("b2")).querySelector("select[data-role]").value, "rep");
+    ok("picker: with no other active rep (Jane disabled, Alex's rep switch off) it says so, offers only Cancel, and nothing changes");
+    N.dom.window.close();
     const S = await renderAdmin("sample.admin@clatitle.com"), sd = S.d;
     assert.strictEqual(S.errs.length, 0, S.errs.join()); assert.match(sd.getElementById("roleNote").textContent, /You are a Super admin: you can manage everyone/); ok("admin.html renders for a Super admin");
     assert.deepStrictEqual([...sd.querySelectorAll("#iRole option")].map((o) => o.value), ["rep", "client", "admin", "super_admin"]); ok("admin.html: a Super admin can invite Rep, Client, Admin, Super admin");
@@ -311,6 +355,9 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
   await S.adminInvite({ email: "a@b.com", role: "client", repId: "r", cellPhone: "(240) 555-0142" });
   assert.strictEqual(calls.find((c) => c[0] === "fn" && c[1] === "invite-user")[2].body.cellPhone, "+12405550142"); ok("supabase: admin invite sends the cell normalized to the Edge Function");
   await S.adminInvite({ email: "a@b.com", role: "client" }); assert.strictEqual(calls.filter((c) => c[0] === "fn").pop()[2].body.cellPhone, null); ok("supabase: invite without a cell sends null");
+  calls.length = 0; await S.adminSetRole("u1", "client", "r1"); await S.adminSetRole("u2", "rep"); await S.adminSetIsRep("u3", false, "r2"); await S.adminSetIsRep("u4", true);
+  const rc = calls.filter((c) => c[0] === "rpc").map((c) => c[2]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(rc)), [{ p_user: "u1", p_role: "client", p_reassign_to: "r1" }, { p_user: "u2", p_role: "rep" }, { p_user: "u3", p_is_rep: false, p_reassign_to: "r2" }, { p_user: "u4", p_is_rep: true }]); ok("supabase: role / rep-switch RPCs send p_reassign_to only when a successor is given (old call shape unchanged)");
   await S.inviteClient("c@d.com", { cellPhone: "240.555.0142" }); assert.strictEqual(calls.filter((c) => c[0] === "fn").pop()[2].body.cellPhone, "+12405550142"); ok("supabase: rep invite sends the cell");
   await reject(S.inviteClient("c@d.com", { cellPhone: "12" }), /valid 10-digit US cell/, "supabase: invalid invite cell refused before any call");
   calls.length = 0; await S.updateMyProfile({ cellPhone: "(240) 555-0142", firstName: "Sam" });

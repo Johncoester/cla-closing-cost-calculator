@@ -3,7 +3,7 @@
 # and the seed, then runs the access-rule tests. No network, no cloud, no data kept.
 #   bash supabase/tests/run-tests.sh
 # Needs Postgres server binaries (Debian/Ubuntu: apt install postgresql postgresql-17-cron).
-# Also checks the upgrade paths (migrations 1-5 + data, then 6; migrations 1-6 + data, then 9 and 10 = the admin role; migrations 1-10 + data, then 11 = admins manage admins).
+# Also checks the upgrade paths (migrations 1-5 + data, then 6; migrations 1-6 + data, then 9 and 10 = the admin role; migrations 1-10 + data, then 11 = admins manage admins; migrations 1-11 + data, then 12 = reassign on demote).
 # Without pg_cron the purge scheduling check is skipped with a notice.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"; ROOT="$(dirname "$HERE")"
@@ -37,7 +37,7 @@ runu() { "${P[@]}" -d cla_test "$@"; }
 runu -f "$HERE/00_supabase_shim.sql"
 M6="$(ls "$ROOT"/migrations/*admin_also_rep.sql)"
 for f in "$ROOT"/migrations/*.sql; do
-  case "$f" in *admin_also_rep.sql|*admin_role_enum.sql|*_admin_role.sql|*admin_manage_admins.sql) continue;; esac
+  case "$f" in *admin_also_rep.sql|*admin_role_enum.sql|*_admin_role.sql|*admin_manage_admins.sql|*reassign_on_demote.sql) continue;; esac
   runu --single-transaction -f "$f" >/dev/null 2>&1
 done
 runu -v migration6="$M6" -f "$HERE/20_upgrade_from_5.sql" 2>&1 | grep -E "PASS|FAIL|checks,|ERROR|WARNING" | sed 's/^psql:[^ ]* //'
@@ -50,7 +50,7 @@ echo "upgrade check: migrations 1-6 + data, then migrations 9 and 10 (admin role
 runu -f "$HERE/00_supabase_shim.sql"
 M9="$(ls "$ROOT"/migrations/*admin_role_enum.sql)"; M10="$(ls "$ROOT"/migrations/*_admin_role.sql)"
 for f in "$ROOT"/migrations/*.sql; do
-  case "$f" in *admin_role_enum.sql|*_admin_role.sql|*admin_manage_admins.sql) continue;; esac
+  case "$f" in *admin_role_enum.sql|*_admin_role.sql|*admin_manage_admins.sql|*reassign_on_demote.sql) continue;; esac
   runu --single-transaction -f "$f" >/dev/null 2>&1
 done
 # Why migrations 9 and 10 are two files: both in ONE transaction must fail (Postgres: an enum value added in a
@@ -72,8 +72,21 @@ echo "upgrade check: migrations 1-10 + data, then migration 11 (admins manage ad
 runu -f "$HERE/00_supabase_shim.sql"
 M11="$(ls "$ROOT"/migrations/*admin_manage_admins.sql)"
 for f in "$ROOT"/migrations/*.sql; do
-  case "$f" in *admin_manage_admins.sql) continue;; esac
+  case "$f" in *admin_manage_admins.sql|*reassign_on_demote.sql) continue;; esac
   runu --single-transaction -f "$f" >/dev/null 2>&1
 done
 runu -v migration11="$M11" -f "$HERE/40_upgrade_from_10.sql" 2>&1 | grep -E "PASS|FAIL|checks,|ERROR|WARNING" | sed 's/^psql:[^ ]* //'
+[ "${PIPESTATUS[0]}" -eq 0 ] || exit "${PIPESTATUS[0]}"
+
+# Upgrade check 4: the state after migration 11 (with data: reps with clients, admins, a super admin) gets migration 12
+# (a demoted rep's clients are moved to a successor, never left without a rep) on top (see 50_upgrade_from_11.sql).
+echo "upgrade check: migrations 1-11 + data, then migration 12 (reassign on demote)"
+"${P[@]}" -d postgres -c "drop database cla_test with (force)" -c "create database cla_test"
+runu -f "$HERE/00_supabase_shim.sql"
+M12="$(ls "$ROOT"/migrations/*reassign_on_demote.sql)"
+for f in "$ROOT"/migrations/*.sql; do
+  case "$f" in *reassign_on_demote.sql) continue;; esac
+  runu --single-transaction -f "$f" >/dev/null 2>&1
+done
+runu -v migration12="$M12" -f "$HERE/50_upgrade_from_11.sql" 2>&1 | grep -E "PASS|FAIL|checks,|ERROR|WARNING" | sed 's/^psql:[^ ]* //'
 exit ${PIPESTATUS[0]}

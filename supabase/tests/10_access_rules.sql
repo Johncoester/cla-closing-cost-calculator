@@ -800,9 +800,9 @@ select tests.is('after Alex''s clients are moved away she can switch rep access 
 select tests.is('...and Alex is an admin only again: private.is_rep() false', tests.v(tests.id('a1'), 'select private.is_rep()::text'), 'false');
 select tests.is('...her old quote keeps its rep_id (immutable history)', (select rep_id::text from public.quotes where id = '00000000-0000-4000-8000-00000000f00b'), tests.id('a1')::text);
 select tests.is('function privileges: new RPCs are not callable by anon, are by authenticated',
-  (select (not has_function_privilege('anon', 'public.admin_set_is_rep(uuid, boolean)', 'execute')
+  (select (not has_function_privilege('anon', 'public.admin_set_is_rep(uuid, boolean, uuid)', 'execute')
        and not has_function_privilege('anon', 'public.create_invitation(text, public.user_role, uuid, text, boolean, boolean)', 'execute')
-       and has_function_privilege('authenticated', 'public.admin_set_is_rep(uuid, boolean)', 'execute'))::text), 'true');
+       and has_function_privilege('authenticated', 'public.admin_set_is_rep(uuid, boolean, uuid)', 'execute'))::text), 'true');
 
 
 -- =====================================================================
@@ -1061,6 +1061,100 @@ update public.profiles set status = 'active' where id in (tests.id('a4'), tests.
 select tests.is('policies still go through can_manage_user (nothing was left on the old rule)',
   (select count(*)::text from pg_policies where policyname in ('profiles_update_admin', 'photos_delete', 'avatars_delete') and (qual || coalesce(with_check, '')) like '%can_manage_user%'), '3');
 
+-- =====================================================================
+-- Migration 12: a rep-capable person with ACTIVE clients cannot lose rep capability without handing the clients to a successor
+-- Cast: reps a6 Rae (3 active clients + 1 old inactive row), a7 Ren (the successor), a8 Sol (no clients), a9 Dee (rep, disabled)
+--       admins a2 Robin, a5 Cy (also a rep) | super admins a1 Alex (rep, has Quinn), d1 Pia | client c3 Pat
+-- =====================================================================
+insert into public.invitations (email, role, is_rep) values ('rae.rep@clatitle.com', 'rep', true), ('ren.rep@clatitle.com', 'rep', true), ('sol.rep@clatitle.com', 'rep', true), ('dee.rep@clatitle.com', 'rep', true);
+insert into auth.users (id, email) values (tests.id('a6'), 'rae.rep@clatitle.com'), (tests.id('a7'), 'ren.rep@clatitle.com'), (tests.id('a8'), 'sol.rep@clatitle.com'), (tests.id('a9'), 'dee.rep@clatitle.com');
+update public.profiles set first_name = 'Rae', last_name = 'Rep', phone = '301-555-0161' where id = tests.id('a6');
+update public.profiles set first_name = 'Ren', last_name = 'Rep', phone = '301-555-0162' where id = tests.id('a7');
+update public.profiles set first_name = 'Sol', last_name = 'Rep', phone = '301-555-0163' where id = tests.id('a8');
+update public.profiles set first_name = 'Dee', last_name = 'Rep', phone = '301-555-0164', status = 'disabled' where id = tests.id('a9');
+insert into public.assignments (client_email, rep_id, active) values
+  ('m12.one@example.com', tests.id('a6'), true), ('m12.two@example.com', tests.id('a6'), true), ('m12.three@example.com', tests.id('a6'), true), ('m12.old@example.com', tests.id('a6'), false);
+select tests.is('migration 12: one admin_set_role and one admin_set_is_rep (the old signatures are gone, no overloads)',
+  (select count(*)::text from pg_proc where pronamespace = 'public'::regnamespace and proname in ('admin_set_role', 'admin_set_is_rep')), '2');
+select tests.is('Rae has 3 active clients', private.active_client_count(tests.id('a6'))::text, '3');
+
+-- ----- refused without a successor (every role path that removes rep capability) -----
+select tests.is('admin demoting a rep with active clients to client: refused (55006) without p_reassign_to', tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('a6') || ', ''client'')'), 'ERR:55006');
+select tests.is('...also when p_reassign_to is passed as null explicitly', tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('a6') || ', ''client'', null)'), 'ERR:55006');
+select tests.is('...nothing changed: Rae is still a rep with her 3 active clients', (select role::text || '/' || is_rep::text from public.profiles where id = tests.id('a6')) || '/' || private.active_client_count(tests.id('a6')), 'rep/true/3');
+-- ----- invalid successors -----
+select tests.is('successor = the same person: refused',   tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('a6') || ', ''client'', ' || tests.u('a6') || ')'), 'ERR:23514');
+select tests.is('successor is a client: refused',         tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('a6') || ', ''client'', ' || tests.u('c3') || ')'), 'ERR:23514');
+select tests.is('successor is a disabled rep: refused',   tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('a6') || ', ''client'', ' || tests.u('a9') || ')'), 'ERR:23514');
+select tests.is('successor is an admin who is not a rep: refused', tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('a6') || ', ''client'', ' || tests.u('a3') || ')'), 'ERR:23514');
+select tests.is('successor does not exist: refused',      tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('a6') || ', ''client'', gen_random_uuid())'), 'ERR:23514');
+select tests.is('...still nothing changed after every refusal (atomic): role, clients, no stray rows',
+  (select role::text from public.profiles where id = tests.id('a6')) || '/' || private.active_client_count(tests.id('a6')) || '/' ||
+  (select count(*)::text from public.assignments where rep_id = tests.id('a6')), 'rep/3/4');
+-- ----- permissions still respected -----
+update public.profiles set is_rep = true where id = tests.id('a1');
+insert into public.assignments (client_email, rep_id) values ('m12.alex@example.com', tests.id('a1'));
+select tests.is('admin cannot do it to a super admin (Alex has a client): refused for permission, clients stay',
+  tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('a1') || ', ''client'', ' || tests.u('a6') || ')') || '/' || private.active_client_count(tests.id('a1')), 'ERR:42501/1');
+select tests.is('admin cannot promote the rep to admin while "handing over" clients either (promotion stays super-admin only)',
+  tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('a6') || ', ''admin'', ' || tests.u('a7') || ')') || '/' || private.active_client_count(tests.id('a6')), 'ERR:42501/3');
+select tests.is('a rep and a client cannot use it', tests.x(tests.id('a8'), 'select public.admin_set_role(' || tests.u('a6') || ', ''client'', ' || tests.u('a7') || ')') || '/' || tests.x(tests.id('c3'), 'select public.admin_set_role(' || tests.u('a6') || ', ''client'', ' || tests.u('a7') || ')'), 'ERR:42501/ERR:42501');
+select tests.is('nobody can use it on themselves', tests.x(tests.id('a6'), 'select public.admin_set_role(' || tests.u('a6') || ', ''client'', ' || tests.u('a7') || ')'), 'ERR:42501');
+-- ----- success: everything moves, with history and audit -----
+select tests.is('admin demotes Rae to client and hands her clients to Ren: ok', tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('a6') || ', ''client'', ' || tests.u('a7') || ')'), 'ok:1');
+select tests.is('...Rae is a client now, not a rep, with no active clients', (select role::text || '/' || is_rep::text from public.profiles where id = tests.id('a6')) || '/' || private.active_client_count(tests.id('a6')), 'client/false/0');
+select tests.is('...Ren has all 3 (and only one active rep per client)', private.active_client_count(tests.id('a7'))::text || '/' ||
+  (select count(distinct client_email)::text from public.assignments where active and client_email like 'm12.%'), '3/4');
+select tests.is('...history: Rae''s rows are all inactive (3 moved + the old one), Ren''s new rows were assigned_by the acting admin',
+  (select count(*)::text from public.assignments where rep_id = tests.id('a6') and not active) || '/' ||
+  (select count(*)::text from public.assignments where rep_id = tests.id('a7') and active and assigned_by = tests.id('a2')), '4/3');
+select tests.is('...audit: 3 assignment_changed rows for the new assignments + 3 for the deactivations',
+  (select count(*)::text from public.audit_log where action = 'assignment_changed' and details ->> 'client_email' like 'm12.%' and details ->> 'rep_id' = tests.id('a7')::text and (details ->> 'active')::boolean) || '/' ||
+  (select count(*)::text from public.audit_log where action = 'assignment_changed' and details ->> 'client_email' like 'm12.%' and details ->> 'rep_id' = tests.id('a6')::text and not (details ->> 'active')::boolean and details -> 'previous' ->> 'active' = 'true'), '3/3');
+select tests.is('...audit: role_changed records who took over and how many moved',
+  (select details ->> 'clients_moved' || '/' || (details ->> 'moved_to' = tests.id('a7')::text)::text from public.audit_log where action = 'role_changed' and target_id = tests.id('a6') order by at desc limit 1), '3/true');
+select tests.is('...Rae (now a client) is no longer anyone''s rep: she cannot be picked as a successor',
+  tests.x(tests.id('a2'), 'select public.admin_reassign_client(''m12.one@example.com'', ' || tests.u('a6') || ')'), 'ERR:23514');
+select tests.is('Ren sees her new clients (rep access follows the assignment)', tests.q(tests.id('a7'), 'select * from public.assignments where active'), '3');
+-- ----- unaffected: no clients, or capability kept -----
+select tests.is('a rep with NO active clients is demoted without any p_reassign_to (nothing to move)', tests.xv(tests.id('a2'), 'select public.admin_set_role(' || tests.u('a8') || ', ''client'')', $q$select role::text from public.profiles where id = tests.id('a8')$q$), 'ok:1/client');
+select tests.is('...a pointless p_reassign_to is ignored (even an invalid one): Sol back to rep, then to client again',
+  tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('a8') || ', ''rep'')') || '/' || tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('a8') || ', ''client'', ' || tests.u('c3') || ')'), 'ok:1/ok:1');
+select tests.is('a super admin makes Ren (3 clients) an admin: ok, no successor needed', tests.x(tests.id('d1'), 'select public.admin_set_role(' || tests.u('a7') || ', ''admin'')'), 'ok:1');
+select tests.is('...she keeps is_rep, so her clients stay with her', (select role::text || '/' || is_rep::text from public.profiles where id = tests.id('a7')) || '/' || private.active_client_count(tests.id('a7')), 'admin/true/3');
+select tests.is('...and back to rep: still 3 clients', tests.x(tests.id('d1'), 'select public.admin_set_role(' || tests.u('a7') || ', ''rep'')') || '/' || private.active_client_count(tests.id('a7')), 'ok:1/3');
+select tests.is('a client who is demoted... nothing to do: changing a client to rep is unaffected', tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('e1') || ', ''rep'')') || '/' || tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('e1') || ', ''client'')'), 'ok:1/ok:1');
+-- ----- the is_rep switch (super admin only) -----
+insert into public.assignments (client_email, rep_id) values ('m12.cy1@example.com', tests.id('a5')), ('m12.cy2@example.com', tests.id('a5'));
+select tests.is('Cy (admin + rep, 2 clients): switching rep access off without a successor is still refused (55006)', tests.x(tests.id('d1'), 'select public.admin_set_is_rep(' || tests.u('a5') || ', false)'), 'ERR:55006');
+select tests.is('...an admin still cannot switch it at all (super admin only), even with a successor', tests.x(tests.id('a2'), 'select public.admin_set_is_rep(' || tests.u('a5') || ', false, ' || tests.u('a7') || ')'), 'ERR:42501');
+select tests.is('...invalid successors are refused (self, client, disabled rep)',
+  tests.x(tests.id('d1'), 'select public.admin_set_is_rep(' || tests.u('a5') || ', false, ' || tests.u('a5') || ')') || '/' || tests.x(tests.id('d1'), 'select public.admin_set_is_rep(' || tests.u('a5') || ', false, ' || tests.u('c3') || ')') || '/' ||
+  tests.x(tests.id('d1'), 'select public.admin_set_is_rep(' || tests.u('a5') || ', false, ' || tests.u('a9') || ')'), 'ERR:23514/ERR:23514/ERR:23514');
+select tests.is('...nothing changed', (select is_rep::text from public.profiles where id = tests.id('a5')) || '/' || private.active_client_count(tests.id('a5')), 'true/2');
+select tests.is('a super admin switches it off with Ren as successor: ok', tests.x(tests.id('d1'), 'select public.admin_set_is_rep(' || tests.u('a5') || ', false, ' || tests.u('a7') || ')'), 'ok:1');
+select tests.is('...Cy is a plain admin with no clients, Ren has 5, history and audit kept',
+  (select is_rep::text from public.profiles where id = tests.id('a5')) || '/' || private.active_client_count(tests.id('a5')) || '/' || private.active_client_count(tests.id('a7')) || '/' ||
+  (select count(*)::text from public.assignments where rep_id = tests.id('a5') and not active) || '/' ||
+  (select details ->> 'clients_moved' from public.audit_log where action = 'rep_flag_changed' and target_id = tests.id('a5') order by at desc limit 1), 'false/0/5/2/2');
+-- ----- demoting an admin who also reps (the admin-manages-admin path of migration 11) -----
+update public.profiles set is_rep = true where id = tests.id('a5');
+insert into public.assignments (client_email, rep_id) values ('m12.cy3@example.com', tests.id('a5'));
+select tests.is('admin demotes another admin who also reps (1 client) to client: refused without a successor, ok with one',
+  tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('a5') || ', ''client'')') || '/' || tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('a5') || ', ''client'', ' || tests.u('a7') || ')'), 'ERR:55006/ok:1');
+select tests.is('...Cy is a client with no clients; Ren has 6', (select role::text || '/' || is_rep::text from public.profiles where id = tests.id('a5')) || '/' || private.active_client_count(tests.id('a5')) || '/' || private.active_client_count(tests.id('a7')), 'client/false/0/6');
+-- ----- MFA still gates the new parameter -----
+update public.app_settings set value = 'true' where key = 'require_admin_mfa';
+update public.profiles set role = 'rep' where id = tests.id('a8');
+insert into public.assignments (client_email, rep_id) values ('m12.mfa@example.com', tests.id('a8'));
+select tests.is('MFA on: at aal1 refused, at aal2 the move works',
+  tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('a8') || ', ''client'', ' || tests.u('a7') || ')', 'aal1') || '/' || tests.x(tests.id('a2'), 'select public.admin_set_role(' || tests.u('a8') || ', ''client'', ' || tests.u('a7') || ')', 'aal2'), 'ERR:42501/ok:1');
+update public.app_settings set value = 'false' where key = 'require_admin_mfa';
+select tests.is('function privileges: users can run the RPCs but not the helpers',
+  (has_function_privilege('authenticated', 'public.admin_set_role(uuid, public.user_role, uuid)', 'execute') and has_function_privilege('authenticated', 'public.admin_set_is_rep(uuid, boolean, uuid)', 'execute')
+   and not has_function_privilege('anon', 'public.admin_set_role(uuid, public.user_role, uuid)', 'execute')
+   and not has_function_privilege('authenticated', 'private.move_rep_clients(uuid, uuid)', 'execute') and not has_function_privilege('authenticated', 'private.active_client_count(uuid)', 'execute'))::text, 'true');
+
 -- ---------------- MFA switch covers the admin role as well ----------------
 update public.app_settings set value = 'true' where key = 'require_admin_mfa';
 select tests.is('MFA on: an admin at aal1 has no admin powers (sees only themselves, RPC refused)',
@@ -1106,10 +1200,10 @@ update public.profiles set status = 'active' where role = 'super_admin';
 
 -- ---------------- privileges ----------------
 select tests.is('function privileges: anon cannot run the admin RPCs, authenticated can',
-  (select (not has_function_privilege('anon', 'public.admin_set_role(uuid, public.user_role)', 'execute')
+  (select (not has_function_privilege('anon', 'public.admin_set_role(uuid, public.user_role, uuid)', 'execute')
        and not has_function_privilege('anon', 'public.admin_set_status(uuid, public.user_status)', 'execute')
-       and not has_function_privilege('anon', 'public.admin_set_is_rep(uuid, boolean)', 'execute')
-       and has_function_privilege('authenticated', 'public.admin_set_role(uuid, public.user_role)', 'execute')
+       and not has_function_privilege('anon', 'public.admin_set_is_rep(uuid, boolean, uuid)', 'execute')
+       and has_function_privilege('authenticated', 'public.admin_set_role(uuid, public.user_role, uuid)', 'execute')
        and has_function_privilege('authenticated', 'private.is_super_admin()', 'execute')
        and not has_function_privilege('anon', 'private.is_super_admin()', 'execute'))::text), 'true');
 select tests.is('every public table still has RLS enabled', (select count(*)::text from pg_tables where schemaname = 'public' and not rowsecurity), '0');

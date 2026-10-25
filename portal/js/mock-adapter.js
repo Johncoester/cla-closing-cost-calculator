@@ -25,6 +25,20 @@
     // the same checks the RPCs make (migration 10): an admin may only act on reps and clients; a super admin on anyone
     const needAdmin = (s) => { const u = need(s); if (!isAdminRole(u)) err("Admins only."); return u; };
     const needSuper = (s) => { const u = needAdmin(s); if (!isSuper(u)) err("Only a super admin can do that."); return u; };
+    const activeClients = (s, repId) => s.assignments.filter((a) => a.repId === repId && a.active);
+    // hand every ACTIVE client of `fromId` to `toId` (history kept: old rows inactive, new rows created), like private.move_rep_clients()
+    const moveClients = (s, actor, fromId, toId) => {
+      if (!toId || toId === fromId) err("Choose a different rep to take over these clients.");
+      const to = s.users.find((x) => x.id === toId);
+      if (!to || to.status !== "active" || !isRep(to)) err("The rep who takes over must be an active rep (or an active admin who also works as a rep).");
+      const rows = activeClients(s, fromId);
+      rows.forEach((a) => {
+        a.active = false; const p = s.users.find((x) => x.email === a.clientEmail);
+        s.assignments.push({ id: uid(), clientEmail: a.clientEmail, clientUserId: p ? p.id : null, repId: toId, assignedBy: actor.id, active: true, createdAt: new Date().toISOString() });
+        log(s, actor.id, "assignment_changed", "assignment", null, { client_email: a.clientEmail, rep_id: toId, active: true, previous: { rep_id: fromId, active: true } });
+      });
+      return rows.length;
+    };
     const lastSuper = (s, t) => t.role === "super_admin" && t.status === "active" && !s.users.some((x) => x.id !== t.id && x.role === "super_admin" && x.status === "active");
     const LAST = "There must always be at least one active super admin."; 
     const complete = (p) => !!(p.firstName && p.lastName && (!isRep(p) || p.phone));
@@ -138,15 +152,18 @@
       async adminListAssignments() { const s = load(); needAdmin(s); return clone(s.assignments); },
       async adminListQuotes() { const s = load(), u = needAdmin(s); return visibleQuotes(s, u).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((q) => Object.assign(qdto(q), { deleted: !!q.deletedAt })); },
       async adminInvite(o) { const s = load(), u = needAdmin(s); return invite(s, u, o); },
-      async adminSetIsRep(id, on) {
+      async adminSetIsRep(id, on, reassignTo) {
         const s = load(), u = needSuper(s);   // super admin only, for admins and super admins (an admin cannot switch anyone, not even themselves)
         const t = s.users.find((x) => x.id === id) || err("No such user.");
         if (!isAdminRole(t)) err("Only an admin or super admin can be switched: reps are always reps and clients never are.");
         if (on && !t.email.endsWith("@clatitle.com")) err("Reps must use an @clatitle.com email.");
         if (!!t.isRep === !!on) return;
-        const n = s.assignments.filter((a) => a.repId === id && a.active).length;
-        if (!on && n) err("Reassign this person's " + n + " active client(s) before switching rep access off.");
-        t.isRep = !!on; log(s, u.id, "rep_flag_changed", "profile", id, { before: !on, after: !!on }); save(s);
+        const n = activeClients(s, id).length; let moved = 0;
+        if (!on && n) {
+          if (!reassignTo) err("Reassign this person's " + n + " active client(s) before switching rep access off: choose another rep to take them over.");
+          moved = moveClients(s, u, id, reassignTo);   // same transaction as the switch (the mock saves once at the end; a refusal above leaves nothing changed)
+        }
+        t.isRep = !!on; log(s, u.id, "rep_flag_changed", "profile", id, Object.assign({ before: !on, after: !!on }, moved ? { clients_moved: moved, moved_to: reassignTo } : {})); save(s);
       },
       async adminSetStatus(id, status) {
         const s = load(), u = needAdmin(s); if (id === u.id) err("You cannot disable yourself.");
@@ -156,7 +173,7 @@
         const before = t.status; t.status = status;
         log(s, u.id, status === "disabled" ? "user_disabled" : "user_enabled", "profile", id, { before, after: status }); save(s);
       },
-      async adminSetRole(id, role) {
+      async adminSetRole(id, role, reassignTo) {
         const s = load(), u = needAdmin(s); if (id === u.id) err("You cannot change your own role.");
         const t = s.users.find((x) => x.id === id) || err("No such user.");
         if (!isSuper(u)) {
@@ -165,8 +182,14 @@
         }
         if (role !== "super_admin" && lastSuper(s, t)) err(LAST);
         if (role === "rep" && !t.email.endsWith("@clatitle.com")) err("Reps must use an @clatitle.com email.");
+        // clients: someone who stops being able to be a rep must hand their ACTIVE clients to a successor (same rule as admin_set_role, migration 12)
+        const capableAfter = role === "rep" || ((role === "admin" || role === "super_admin") && !!t.isRep), n = activeClients(s, id).length; let moved = 0;
+        if (n && !capableAfter) {
+          if (!reassignTo) err("This person has " + n + " active client(s): choose another rep to take them over before making this person a client.");
+          moved = moveClients(s, u, id, reassignTo);
+        }
         const before = t.role; t.role = role; if (role === "rep") t.isRep = true; else if (role === "client") t.isRep = false;   // same as the database trigger
-        log(s, u.id, "role_changed", "profile", id, { before, after: role }); save(s);
+        log(s, u.id, "role_changed", "profile", id, Object.assign({ before, after: role }, moved ? { clients_moved: moved, moved_to: reassignTo } : {})); save(s);
       },
       async adminReassign(email, repId) {
         const s = load(), u = needAdmin(s); const e = lc(email);

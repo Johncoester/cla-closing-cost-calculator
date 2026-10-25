@@ -55,10 +55,13 @@
  *                                            repId may be any rep OR an admin who also works as a rep
  *   adminSetStatus(userId, "active"|"disabled")   admin: reps and clients only. super admin: anyone but themselves.
  *                                            Never leaves zero ACTIVE super admins (rejected by the database)
- *   adminSetRole(userId, role)            admin: rep <-> client only, for reps and clients only. super admin: any role for anyone but themselves.
+ *   adminSetRole(userId, role, reassignTo?)  admin: rep / client for reps, clients and other admins. super admin: any role for anyone but themselves.
  *                                            (role "rep" sets isRep, "client" clears it; admin / super_admin keep whatever they had)
- *   adminSetIsRep(userId, on)             SUPER ADMIN ONLY. "Also works as a rep" switch for an admin or super admin target (reps always are, clients never);
- *                                            on needs an @clatitle.com email; off is refused while they still have active clients
+ *                                            reassignTo: REQUIRED when the change leaves someone with ACTIVE clients unable to be a rep (that is: to "client");
+ *                                            the user id of an active rep (or admin / super admin who also reps), not the same person. All their active clients
+ *                                            move to it in the same step (history kept). Ignored when nothing needs moving.
+ *   adminSetIsRep(userId, on, reassignTo?)  SUPER ADMIN ONLY. "Also works as a rep" switch for an admin or super admin target (reps always are, clients never);
+ *                                            on needs an @clatitle.com email; off needs reassignTo while they still have active clients (same rule as above)
  *   adminReassign(clientEmail, repId)
  *   adminAuditLog(limit)                  -> AuditRow[]
  *   adminLogQuoteView(quoteId)

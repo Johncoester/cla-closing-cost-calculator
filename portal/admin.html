@@ -87,12 +87,45 @@
     const opts = reps.map((r) => '<option value="' + esc(r.id) + '">' + esc(CLA.fullName(r)) + (adminRole(r.role) ? " (admin + rep)" : "") + "</option>").join("");
     $("aRep").innerHTML = opts; $("iRep").innerHTML = '<option value="">No rep yet</option>' + opts;
   }
+  // ---- "Move N realtors to ..." (migration 12): a person who works as a rep and has ACTIVE clients cannot stop being a rep
+  // (made a client, or "also works as a rep" switched off) without handing those clients to another rep. The database refuses it otherwise.
+  const activeClientsOf = (u) => asg.filter((x) => x.active && x.repId === u.id);
+  const clientName = (x) => { const c = x.clientUserId && uById(x.clientUserId); return c ? CLA.fullName(c) : x.clientEmail; };
+  // pick the rep who takes over. Resolves to a user id, or null on cancel. `what` = e.g. "make Marcus Rep a client".
+  function pickSuccessor(u, clients, what) {
+    return new Promise((resolve) => {
+      const reps = users.filter((x) => CLA.isRep(x) && x.status === "active" && x.id !== u.id);
+      const n = clients.length, noun = n + " realtor" + (n === 1 ? "" : "s"), names = clients.slice(0, 4).map(clientName).map(esc).join(", ") + (n > 4 ? " and " + (n - 4) + " more" : "");
+      const ovl = document.createElement("div"); ovl.className = "ovl";
+      ovl.innerHTML = '<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlgT"><h2 id="dlgT">Move ' + esc(noun) + ' to…</h2>' +
+        '<p class="sub">To ' + esc(what) + ", " + esc(CLA.fullName(u)) + " must first hand over " + (n === 1 ? "their realtor" : "their " + n + " realtors") + " (" + names + "). Nobody is left without a rep. History is kept.</p>" +
+        (reps.length ? '<label for="dlgRep">New rep</label><select id="dlgRep">' + reps.map((r) => '<option value="' + esc(r.id) + '">' + esc(CLA.fullName(r)) + (CLA.isAdmin(r) ? " (admin + rep)" : "") + " · " + activeClientsOf(r).length + " now</option>").join("") + "</select>"
+          : '<p class="msg err" style="display:block" role="alert" id="dlgNone">There is no other active rep to take over. Invite or enable a rep first, then try again.</p>') +
+        '<div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">' + (reps.length ? '<button class="btn" id="dlgOk" type="button">Move ' + esc(noun) + " and continue</button>" : "") + '<button class="btn o" id="dlgNo" type="button">Cancel</button></div></div>';
+      const done = (v) => { document.removeEventListener("keydown", key); ovl.remove(); resolve(v); };
+      const key = (e) => { if (e.key === "Escape") done(null); };
+      document.addEventListener("keydown", key);
+      ovl.onclick = (e) => { if (e.target === ovl) done(null); };
+      document.body.appendChild(ovl);
+      ovl.querySelector("#dlgNo").onclick = () => done(null);
+      if (reps.length) { ovl.querySelector("#dlgOk").onclick = () => done(ovl.querySelector("#dlgRep").value); ovl.querySelector("#dlgRep").focus(); } else ovl.querySelector("#dlgNo").focus();
+    });
+  }
   $("users").onchange = async (e) => {
     const c = e.target.closest("[data-also]");
-    if (c) { try { await A.adminSetIsRep(c.dataset.also, c.checked); CLA.toast(c.checked ? "Now also works as a rep" : "No longer works as a rep"); } catch (ex) { CLA.toast(ex.message); } await loadUsers(); return; }
+    if (c) {
+      const u = uById(c.dataset.also); let succ = null;
+      if (!c.checked && u && activeClientsOf(u).length) { succ = await pickSuccessor(u, activeClientsOf(u), "switch off rep access for " + CLA.fullName(u)); if (!succ) { await loadUsers(); return; } }
+      try { await A.adminSetIsRep(c.dataset.also, c.checked, succ); CLA.toast(succ ? "Realtors moved. No longer works as a rep" : c.checked ? "Now also works as a rep" : "No longer works as a rep"); } catch (ex) { CLA.toast(ex.message); } await loadUsers(); return; }
     const s = e.target.closest("[data-role]"); if (!s) return;
-    if (!confirm("Change this person's role to " + CLA.roleLabel(s.value) + "?")) { await loadUsers(); return; }
-    try { await A.adminSetRole(s.dataset.role, s.value); CLA.toast("Role changed"); } catch (ex) { CLA.toast(ex.message); } await loadUsers(); };
+    const u = uById(s.dataset.role), mine = u ? activeClientsOf(u) : [];
+    const capableAfter = s.value === "rep" || (CLA.isAdmin({ role: s.value }) && u && u.isRep);
+    let succ = null;
+    if (mine.length && !capableAfter) {
+      succ = await pickSuccessor(u, mine, "make " + CLA.fullName(u) + " " + (CLA.ROLE_NAMES[s.value] || s.value).toLowerCase().replace(/^client \/ agent$/, "a client"));
+      if (!succ) { await loadUsers(); return; }   // cancel: nothing changes, the dropdown snaps back
+    } else if (!confirm("Change this person's role to " + CLA.roleLabel(s.value) + "?")) { await loadUsers(); return; }
+    try { await A.adminSetRole(s.dataset.role, s.value, succ); CLA.toast(succ ? "Realtors moved. Role changed" : "Role changed"); } catch (ex) { CLA.toast(ex.message); } await loadUsers(); };
   $("users").onclick = async (e) => { const b = e.target.closest("[data-st]"); if (!b) return;
     try { await A.adminSetStatus(b.dataset.st, b.dataset.to); CLA.toast(b.dataset.to === "disabled" ? "User disabled" : "User re-enabled"); } catch (ex) { CLA.toast(ex.message); } await loadUsers(); };
 

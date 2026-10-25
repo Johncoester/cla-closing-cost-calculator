@@ -13,7 +13,7 @@
     });
     const must = ({ data, error }) => { if (error) throw new Error(friendly(error)); return data; };
     // the database's own refusals (migrations 6 and 10) are written for people: show them, capitalized
-    const ownRefusal = (m) => /^(only a super admin|only an admin|you cannot|there must always|reps can only)/i.test(m) ? m.charAt(0).toUpperCase() + m.slice(1) + (/[.!?]$/.test(m) ? "" : ".") : null;
+    const ownRefusal = (m) => /^(only a super admin|only an admin|you cannot|there must always|reps can only|this person has|reassign this person|choose a different rep|the rep who takes over)/i.test(m) ? m.charAt(0).toUpperCase() + m.slice(1) + (/[.!?]$/.test(m) ? "" : ".") : null;
     function friendly(e) {
       const m = e.message || String(e);
       if (/Invalid login credentials/i.test(m)) return "Invalid email or password.";
@@ -181,8 +181,9 @@
       async adminListQuotes() { return must(await sb.from("quotes").select("*").order("created_at", { ascending: false })).map(toQuote); },
       async adminInvite(o) { return fn("invite-user", { email: o.email, role: o.role, repId: o.repId || null, isRep: (o.role === "super_admin" || o.role === "admin") && !!o.isRep, cellPhone: await invitedCell(o.cellPhone), redirectTo: redirectBase() + "?invite=1" }); },
       async adminSetStatus(id, status) { return fn("set-user-status", { userId: id, status }); },
-      async adminSetRole(id, role) { must(await sb.rpc("admin_set_role", { p_user: id, p_role: role })); },
-      async adminSetIsRep(id, on) { must(await sb.rpc("admin_set_is_rep", { p_user: id, p_is_rep: !!on })); },   // super admins only; targets: admin or super admin ("Also works as a rep")
+      // reassignTo: when the change stops someone who has active clients from being a rep, the rep who takes those clients over (migration 12)
+      async adminSetRole(id, role, reassignTo) { must(await sb.rpc("admin_set_role", Object.assign({ p_user: id, p_role: role }, reassignTo ? { p_reassign_to: reassignTo } : {}))); },
+      async adminSetIsRep(id, on, reassignTo) { must(await sb.rpc("admin_set_is_rep", Object.assign({ p_user: id, p_is_rep: !!on }, reassignTo ? { p_reassign_to: reassignTo } : {}))); },   // super admins only; targets: admin or super admin ("Also works as a rep")
       async adminReassign(email, repId) { must(await sb.rpc("admin_reassign_client", { p_client_email: email, p_rep_id: repId })); },
       async adminAuditLog(limit) {
         return must(await sb.from("audit_log").select("*").order("at", { ascending: false }).limit(limit || 100))

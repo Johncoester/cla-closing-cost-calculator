@@ -58,6 +58,26 @@ with sync_playwright() as p:
     pg.click("#tabs button:nth-child(3)"); pg.wait_for_selector("#asgRows tr"); shot(pg, "05-as-admin-assignments")
     ctx.close()
 
+    # ---- migration 12: "Move N realtors to..." when a rep who has clients is made a client ----
+    ctx, pg = newpage(); login(pg, "sample.robin.admin@clatitle.com"); pg.wait_for_selector("#users tr"); pg.wait_for_timeout(300)
+    marcus = lambda: pg.locator("#users tr", has_text="sample.rep.marcus@clatitle.com")
+    marcus().locator("select[data-role]").select_option("client"); pg.wait_for_selector(".dlg"); pg.wait_for_timeout(300)
+    shot(pg, "06-picker-move-realtors-to", False)
+    pg.click("#dlgNo"); pg.wait_for_timeout(300); print("cancel -> Marcus role is still:", marcus().locator("select[data-role]").input_value())
+    shot(pg, "07-picker-cancelled-nothing-changed", False)
+    marcus().locator("select[data-role]").select_option("client"); pg.wait_for_selector(".dlg"); pg.select_option("#dlgRep", label=pg.eval_on_selector_all("#dlgRep option", "o => o.map(x => x.textContent)")[-1]); pg.click("#dlgOk"); pg.wait_for_timeout(700)
+    shot(pg, "08-picker-confirmed-marcus-is-a-client", False)
+    pg.click("#tabs button:nth-child(3)"); pg.wait_for_selector("#asgRows tr"); shot(pg, "09-assignments-after-move-history-kept")
+    ctx.close()
+    # no other eligible rep: say so
+    ctx, pg = newpage(); login(pg, "sample.admin@clatitle.com"); pg.wait_for_selector("#users tr")
+    pg.evaluate("""async () => { const A = await CLA.getAdapter(); const j = (await A.adminListUsers()).find(u => u.email.includes('rep.jane')); const a = (await A.adminListUsers()).find(u => u.email === 'sample.admin@clatitle.com');
+      await A.adminSetIsRep(a.id, false, j.id); await A.adminSetStatus(j.id, 'disabled'); await A.signOut(); }""")
+    pg.goto(B + "login.html"); pg.wait_for_selector("#email"); pg.fill("#email", "sample.robin.admin@clatitle.com"); pg.fill("#pw", "x"); pg.click("#go"); pg.wait_for_selector("#users tr"); pg.wait_for_timeout(300)
+    pg.locator("#users tr", has_text="sample.rep.marcus@clatitle.com").locator("select[data-role]").select_option("client"); pg.wait_for_selector(".dlg"); pg.wait_for_timeout(300)
+    shot(pg, "08b-picker-no-other-eligible-rep", False)
+    ctx.close()
+
     # ---- signed in as the SUPER ADMIN (Alex) ----
     ctx, pg = newpage(); login(pg, "sample.admin@clatitle.com"); pg.wait_for_selector("#users tr"); pg.wait_for_timeout(300)
     shot(pg, "10-as-super-admin-users")
