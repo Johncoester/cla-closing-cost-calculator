@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Forgot password — C.L.A. Quote Portal</title>
+<meta name="theme-color" content="#000000"><meta name="robots" content="noindex">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="portal.css">
+<script src="config.js"></script>
+<script src="js/mock-data.js"></script><script src="js/mock-adapter.js"></script><script src="js/supabase-adapter.js"></script><script src="js/auth-adapter.js"></script><script src="js/portal-ui.js"></script>
+</head><body>
+<main class="pg narrow">
+<div class="card">
+ <h1 class="pt">Reset your password</h1>
+ <p class="sub">Enter your email and we will send a link to choose a new password.</p>
+ <div id="err" class="msg err" role="alert"></div><div id="ok" class="msg ok" role="status"></div>
+ <form id="f" novalidate>
+  <div class="fgrp"><label for="email">Email</label><input type="email" id="email" autocomplete="username" inputmode="email" required></div>
+  <button class="btn" id="go" type="submit" style="width:100%">Send reset link</button>
+ </form>
+ <div class="linkrow"><a href="login.html">Back to sign in</a><span class="sum" id="demoNote" hidden>Demo: <a href="set-password.html">open the set-password screen</a></span></div>
+</div>
+</main>
+<script>
+(async () => {
+  const { $ } = CLA; const { A } = await CLA.boot(false);
+  if (A.mode === "mock") $("demoNote").hidden = false;
+  $("f").onsubmit = async (e) => {
+    e.preventDefault(); $("err").textContent = ""; $("ok").textContent = ""; const email = $("email").value.trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { $("err").textContent = "Enter a valid email address."; return; }
+    $("go").disabled = true;
+    try { await A.requestPasswordReset(email);
+      // Same message whether or not the address has an account, so this screen cannot be used to find out who does.
+      $("ok").textContent = "If that email has a CLA portal account, a reset link is on its way. The link expires, and you can request another in a minute.";
+    } catch (ex) { $("err").textContent = ex.message; }
+    setTimeout(() => ($("go").disabled = false), 4000);
+  };
+})();
+</script></body></html>

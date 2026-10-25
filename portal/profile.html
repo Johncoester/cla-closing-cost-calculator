@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Profile — C.L.A. Quote Portal</title>
+<meta name="theme-color" content="#000000"><meta name="robots" content="noindex">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="portal.css">
+<script src="config.js"></script>
+<script src="js/mock-data.js"></script><script src="js/mock-adapter.js"></script><script src="js/supabase-adapter.js"></script><script src="js/auth-adapter.js"></script><script src="js/portal-ui.js"></script>
+</head><body>
+<main class="pg mid">
+<h1 class="pt">My profile</h1>
+<p class="sub">Your photo and details appear on the quotes you share. Only you, CLA admins, and your assigned CLA rep or client can see your photo.</p>
+<div id="welcome" class="msg info" hidden>Welcome! Add your name and a headshot to finish setting up.</div>
+<div class="stack">
+<section class="card">
+ <h2>Photo</h2>
+ <div id="pErr" class="msg err" role="alert"></div><div id="pOk" class="msg ok" role="status"></div>
+ <div class="dropzone">
+  <img class="av xl" id="avatar" alt="Your photo">
+  <div style="flex:1;min-width:220px">
+   <p class="sum" style="margin:0 0 10px">JPEG or PNG, up to 2 MB. A square headshot works best; we crop to the center and shrink it to 512 px.</p>
+   <input class="vh" type="file" id="file" accept="image/jpeg,image/png">
+   <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <label class="btn o" for="file" id="pick" tabindex="0">Choose photo…</label>
+    <button class="btn" type="button" id="upload" hidden>Upload this photo</button>
+    <button class="btn danger" type="button" id="remove" hidden>Remove photo</button>
+   </div>
+   <p class="hint" id="fileInfo"></p>
+  </div>
+ </div>
+</section>
+<section class="card">
+ <h2>Details</h2>
+ <div id="err" class="msg err" role="alert"></div><div id="ok" class="msg ok" role="status"></div>
+ <form id="f" novalidate>
+  <div class="row"><div><label for="firstName">First name</label><input type="text" id="firstName" autocomplete="given-name" maxlength="80"></div>
+   <div><label for="lastName">Last name</label><input type="text" id="lastName" autocomplete="family-name" maxlength="80"></div></div>
+  <div class="row"><div><label for="email">Email (sign-in)</label><input type="email" id="email" readonly aria-describedby="emailHint"><p class="hint" id="emailHint">To change your email, ask a CLA admin.</p></div>
+   <div><label for="phone" id="phoneLbl">Phone</label><input type="tel" id="phone" autocomplete="tel" maxlength="40"></div></div>
+  <div class="row"><div><label for="cellPhone">Cell phone (optional)</label><input type="tel" id="cellPhone" autocomplete="tel-national" inputmode="tel" maxlength="14" placeholder="(240) 555-0142" aria-describedby="cellHint cellErr">
+    <p class="fielderr" id="cellErr" role="alert"></p><p class="hint" id="cellHint"></p></div><div></div></div>
+  <div id="co">
+   <h3>Company</h3>
+   <div class="row"><div><label for="companyName">Company / brokerage / lender</label><input type="text" id="companyName" autocomplete="organization" maxlength="160"></div>
+    <div><label for="companyPhone">Company phone</label><input type="tel" id="companyPhone" maxlength="40"></div></div>
+   <div class="row"><div><label for="companyAddress">Company address</label><input type="text" id="companyAddress" autocomplete="street-address" maxlength="300"></div>
+    <div><label for="companyWebsite">Website</label><input type="url" id="companyWebsite" placeholder="https://" maxlength="200"></div></div>
+   <div class="row"><div><label for="licenseOrNmls">License / NMLS number (optional)</label><input type="text" id="licenseOrNmls" maxlength="40"></div><div></div></div>
+  </div>
+  <button class="btn" id="save" type="submit">Save profile</button>
+ </form>
+</section>
+</div>
+</main>
+<script>
+(async () => {
+  const { $ } = CLA; let { A, me } = await CLA.boot(null);
+  if (CLA.q("welcome")) $("welcome").hidden = false;
+  const isClient = me.role === "client";
+  $("co").hidden = !isClient; $("phoneLbl").textContent = me.role === "rep" ? "Phone (required for reps)" : "Phone";
+  $("cellHint").textContent = me.role === "rep" ? "US numbers only. Shown to the clients and agents assigned to you, and to CLA admins." : me.role === "client" ? "US numbers only. Shown to your CLA rep and CLA admins." : "US numbers only. Shown to CLA admins.";
+  CLA.bindPhoneInput($("cellPhone"), $("cellErr"));
+  let staged = null;
+  const fields = ["firstName", "lastName", "phone", "cellPhone", "companyName", "companyPhone", "companyAddress", "companyWebsite", "licenseOrNmls"];
+  const fill = () => { fields.forEach((k) => ($(k).value = me[k] || "")); $("cellPhone").value = CLA.displayPhone(me.cellPhone); $("email").value = me.email; };
+  async function paintAvatar() { $("avatar").src = (await A.getAvatarUrl(me)) || CLA.silhouette("#e4e9da", "#9aa38a"); $("remove").hidden = !me.avatarPath; }
+  fill(); await paintAvatar();
+
+  // client-side photo check runs the moment a file is chosen (the database and bucket re-check on the server)
+  $("file").onchange = async () => {
+    $("pErr").textContent = ""; $("pOk").textContent = ""; staged = null; $("upload").hidden = true; $("fileInfo").textContent = "";
+    const f = $("file").files[0]; if (!f) return;
+    const bad = await CLA.validatePhoto(f);
+    if (bad) { $("pErr").textContent = bad; $("file").value = ""; return; }
+    staged = f; $("avatar").src = URL.createObjectURL(f); $("upload").hidden = false;
+    $("fileInfo").textContent = f.name + " · " + (f.size / 1024).toFixed(0) + " KB · looks good. Press Upload to save it.";
+  };
+  $("pick").onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("file").click(); } };
+  $("upload").onclick = async () => {
+    if (!staged) return; $("upload").disabled = true; $("pErr").textContent = "";
+    try { me = await A.uploadAvatar(staged); staged = null; $("file").value = ""; $("upload").hidden = true; $("fileInfo").textContent = ""; $("pOk").textContent = "Photo saved."; await paintAvatar(); }
+    catch (ex) { $("pErr").textContent = ex.message; } $("upload").disabled = false;
+  };
+  $("remove").onclick = async () => { if (!confirm("Remove your photo?")) return; try { me = await A.removeAvatar(); $("pOk").textContent = "Photo removed."; await paintAvatar(); } catch (ex) { $("pErr").textContent = ex.message; } };
+
+  $("f").onsubmit = async (e) => {
+    e.preventDefault(); $("err").textContent = ""; $("ok").textContent = "";
+    const v = {}; fields.forEach((k) => (v[k] = $(k).value.trim()));
+    if (!v.firstName || !v.lastName) { $("err").textContent = "First and last name are required."; return; }
+    if (me.role === "rep" && !v.phone) { $("err").textContent = "Reps need a phone number."; return; }
+    if (!$("cellPhone").check()) { $("err").textContent = CLA.PHONE_MSG; $("cellPhone").focus(); return; }
+    if (v.companyWebsite && !/^https?:\/\//i.test(v.companyWebsite)) { $("err").textContent = "Website should start with https://"; return; }
+    $("save").disabled = true;
+    try { me = await A.updateMyProfile(v); $("cellPhone").value = CLA.displayPhone(me.cellPhone); $("ok").textContent = "Saved."; document.querySelector(".chip span") && (document.querySelector(".chip span").firstChild.textContent = CLA.fullName(me)); }
+    catch (ex) { $("err").textContent = ex.message; } $("save").disabled = false;
+  };
+})();
+</script></body></html>

@@ -4,8 +4,8 @@
 <meta name="theme-color" content="#000000">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="zip-county.js?v=20261024d"></script>
-<script src="fee-snapshot.js?v=20261024d"></script>
+<script src="zip-county.js?v=20261025a"></script>
+<script src="fee-snapshot.js?v=20261025a"></script>
 <style>
 :root{--g:#8dc63f;--gd:#6fa52a;--gdd:#4d7a17;--ink:#111;--mut:#5b6272;--line:#e3e8da;--bg:#f4f7ef;--field:#d5dbca}
 *{box-sizing:border-box}
@@ -573,5 +573,19 @@ function setMode(m){if(m===mode)return;copyProps(mode==="seller"?"s_":"",m==="se
  document.querySelectorAll("#modes button").forEach(b=>{b.classList.toggle("on",b.dataset.mode===m);b.setAttribute("aria-pressed",b.dataset.mode===m)});
  s?runS():run()}
 $("modes").onclick=e=>{const b=e.target.closest("button");if(b&&b.dataset.mode)setMode(b.dataset.mode)};
+// Optional portal hook (portal/js/portal-hook.js): read-only snapshot of the current quote. Does nothing unless the portal is configured.
+window.CLA_QUOTE_API={mode:()=>mode,
+ snapshot(){const cp=o=>JSON.parse(JSON.stringify(o));
+  if(mode==="seller"){if(!sLast)runS();const{i,r}=sLast,T=r.totals,addr=fullAddr(i);
+   const sec=(n,rows)=>(rows||[]).map(x=>({sec:n,item:x.item,amt:x.amt}));
+   return{quoteType:"seller_net",state:i.state,county:i.county,propertyAddress:addr||"",price:i.price||null,label:"Seller net, "+(addr||"no address"),feeVersion:src+" "+new Date().toISOString().slice(0,10),inputs:cp(i),
+    results:{headline:{label:"Net seller proceeds",value:r.net},totals:{price:r.price,costs:r.totalCosts,payoffs:r.payoffTotal,net:r.net},
+     lines:[].concat(sec("Commissions",r.commissions),sec("Government tax & recording fees",r.gov),sec("Title & settlement fees",r.title),sec("Mortgage payoffs",r.payoffs),sec("Prorations & credits",r.prorations),sec("Other costs",r.other)),
+     warnings:cp(r.warnings||[]),text:sQuote()}}}
+  if(!last)run();const{i,res}=last,addr=[$("addr").value.trim(),$("city").value.trim(),[i.state,$("zip").value.trim()].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+  return{quoteType:"buyer",state:i.state,county:i.county,propertyAddress:addr,price:i.price||null,label:(type==="refi"?"Refinance":"Buyer quote")+", "+(addr||"no address"),feeVersion:src+" "+new Date().toISOString().slice(0,10),inputs:cp(i),
+   results:{headline:{label:(type==="refi"?"Borrower":"Buyer")+" total",value:res.buyer},totals:{buyer:res.buyer,seller:res.seller,total:res.total},
+    lines:res.lines.map(l=>({sec:l.sec,item:l.item,b:l.b||0,s:l.s||0})),warnings:cp(res.warnings||[]),text:quote()}}}};
 load(SNAP,"Built-in snapshot","snapshot");$("status").textContent="Loading fees from the team sheet…";loadLive();}
-</script></body></html>
+</script>
+<script src="portal/js/portal-hook.js?v=20261025a" defer></script></body></html>

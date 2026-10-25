@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>My quotes — C.L.A. Quote Portal</title>
+<meta name="theme-color" content="#000000"><meta name="robots" content="noindex">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="portal.css">
+<script src="config.js"></script>
+<script src="js/mock-data.js"></script><script src="js/mock-adapter.js"></script><script src="js/supabase-adapter.js"></script><script src="js/auth-adapter.js"></script><script src="js/portal-ui.js"></script>
+</head><body>
+<main class="pg">
+<div class="grid2" style="grid-template-columns:minmax(0,1fr) auto;margin-bottom:20px;align-items:center">
+ <div><h1 class="pt" id="hi">My quotes</h1><p class="sub" style="margin:0">Quotes save to your account automatically while you are signed in, and delete themselves 30 days after they were created.</p></div>
+ <a class="btn" href="../index.html">New quote</a>
+</div>
+<div class="grid2" style="margin-bottom:24px">
+ <section class="card"><h3 style="margin-top:0">My profile</h3><div class="pcard" id="me"></div></section>
+ <section class="card"><h3 style="margin-top:0">My CLA rep</h3><div class="pcard" id="rep"></div></section>
+</div>
+<div id="incomplete" class="msg info" hidden>Finish your profile (name and company) so your quotes carry your details. <a href="profile.html">Open profile</a></div>
+<section class="card flush">
+ <div class="sh"><h2>Saved quotes</h2></div>
+ <div class="tablewrap"><table><thead><tr><th>Quote</th><th>Type</th><th class="num">Price</th><th>Saved</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>
+</section>
+</main>
+<script>
+(async () => {
+  const { $, esc } = CLA; const { A, me } = await CLA.boot(["client"]);
+  $("hi").textContent = "Hi " + (me.firstName || "there");
+  $("incomplete").hidden = me.isComplete && !!me.companyName;
+  $("me").innerHTML = CLA.avatarImg(await A.getAvatarUrl(me), me, "lg") + "<div><h2>" + esc(CLA.fullName(me)) + "</h2><p>" + esc(me.companyName || "No company yet") + "</p><p>" + esc(me.email) + (me.phone ? " · " + esc(me.phone) : "") + '</p><p>' + (me.cellPhone ? "Cell " + CLA.telLink(me.cellPhone) : '<a href="profile.html">Add your cell number</a>') + '</p><p><a href="profile.html">Edit profile and photo</a></p></div>';
+  const rep = await A.getMyRep();
+  $("rep").innerHTML = rep ? CLA.avatarImg(await A.getAvatarUrl(rep), rep, "lg") + "<div><h2>" + esc(CLA.fullName(rep)) + "</h2><p>C.L.A. Title &amp; Escrow</p><p>" + (rep.cellPhone ? "Cell " + CLA.telLink(rep.cellPhone) + (rep.phone ? " · Office " + esc(rep.phone) : "") : esc(rep.phone || "")) + "</p><p><a href='mailto:" + esc(rep.email) + "'>" + esc(rep.email) + "</a></p></div>"
+    : "<div><p>You have not been matched to a CLA rep yet. Your quotes still save, and CLA will connect you by email.</p></div>";
+  async function load() {
+    const qs = await A.listMyQuotes();
+    $("rows").innerHTML = qs.length ? qs.map((q) => "<tr><td><b>" + esc(q.label || q.propertyAddress || "Quote") + "</b><br>" + CLA.expiryHtml(q) + '</td><td><span class="badge ' + (q.quoteType === "buyer" ? "" : "warn") + '">' + (q.quoteType === "buyer" ? "Buyer quote" : "Seller net") + '</span></td><td class="num">' + CLA.money0(q.price) + "</td><td>" + CLA.date(q.createdAt) + '</td><td class="num"><div class="act"><a class="btn o sm" href="quote.html?id=' + encodeURIComponent(q.id) + '">View / print</a><button class="btn danger sm" data-del="' + esc(q.id) + '" type="button">Delete</button></div></td></tr>').join("")
+      : '<tr><td colspan="5" class="empty">No saved quotes yet. <a href="../index.html">Run a quote</a> while signed in and it will appear here.</td></tr>';
+  }
+  $("rows").onclick = async (e) => { const b = e.target.closest("[data-del]"); if (!b) return;
+    if (!confirm("Delete this quote? You will not be able to get it back.")) return;
+    try { await A.deleteQuote(b.dataset.del); CLA.toast("Quote deleted"); await load(); } catch (ex) { CLA.toast(ex.message); } };
+  await load();
+})();
+</script></body></html>

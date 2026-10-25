@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quote saved — C.L.A. Quote Portal</title>
+<meta name="theme-color" content="#000000"><meta name="robots" content="noindex">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="portal.css">
+<script src="config.js"></script>
+<script src="js/mock-data.js"></script><script src="js/mock-adapter.js"></script><script src="js/supabase-adapter.js"></script><script src="js/auth-adapter.js"></script><script src="js/portal-ui.js"></script>
+</head><body>
+<main class="pg mid">
+<div id="err" class="msg err" role="alert"></div>
+<section class="card" id="card" hidden>
+ <div class="pcard" style="align-items:flex-start">
+  <div class="logo" style="width:52px;height:52px;font-size:17px;background:var(--g);color:#000;display:grid;place-items:center;border-radius:14px;font-weight:800;flex:none">✓</div>
+  <div style="min-width:0"><h1 class="pt" style="margin:0 0 6px">Quote saved to your account</h1>
+   <p id="what" style="margin:0 0 4px;font-weight:600"></p>
+   <p class="sum" id="when" style="margin:0 0 4px"></p>
+   <p class="sum" id="rep" style="margin:0"></p></div>
+ </div>
+ <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:22px">
+  <a class="btn" id="view" href="#">View / print with photos</a>
+  <a class="btn o" id="dash" href="#">My quotes</a>
+  <a class="btn o" href="../index.html">Back to the calculator</a>
+ </div>
+</section>
+</main>
+<script>
+(async () => {
+  const { $, esc } = CLA; const { A, me } = await CLA.boot(null);
+  const raw = sessionStorage.getItem("cla_pending_quote");
+  $("dash").href = CLA.homeFor(me.role);
+  if (!raw) { location.replace(CLA.homeFor(me.role)); return; }
+  try {
+    const snap = JSON.parse(raw); const q = await A.saveQuote(snap); sessionStorage.removeItem("cla_pending_quote");
+    $("what").textContent = q.label || q.propertyAddress || "Quote";
+    $("when").textContent = "Saved " + CLA.date(q.createdAt) + ". It deletes itself on " + CLA.date(q.expiresAt) + " (30 days after it was created).";
+    if (me.role === "client") { const rep = await A.getMyRep(); $("rep").textContent = rep ? "Your CLA rep, " + CLA.fullName(rep) + ", can see this quote." : "You have not been matched to a CLA rep yet."; }
+    $("view").href = "quote.html?id=" + encodeURIComponent(q.id); $("card").hidden = false;
+  } catch (ex) { $("err").textContent = "Could not save the quote: " + ex.message + " Your quote is still in the calculator."; }
+})();
+</script></body></html>
