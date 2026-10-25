@@ -45,7 +45,7 @@
   // Staff = admin, super admin or rep BY ROLE (an active account). Clients / realtors and guests are never staff. Same rule as private.is_staff().
   CLA.isStaff = (p) => !!p && (p.role === "super_admin" || p.role === "admin" || p.role === "rep") && (!p.status || p.status === "active");
   // ---- staff feedback: a "Feedback" button in the header. Staff only: others never even download the widget. ----
-  CLA.FEEDBACK_V = "20261025f";   // cache-bust for feedback-widget.js / .css; bump with the ?v= in index.html
+  CLA.FEEDBACK_V = "20261025g";   // cache-bust for feedback-widget.js / .css; bump with the ?v= in index.html
   CLA.startFeedback = async function (A, me, opts) {
     try {
       if (!A || !CLA.isStaff(me) || typeof A.submitFeedback !== "function") return null;
