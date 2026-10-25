@@ -9,13 +9,13 @@
 </head><body>
 <main class="pg">
 <div class="grid2" style="grid-template-columns:minmax(0,1fr) auto;margin-bottom:20px;align-items:center">
- <div class="pcard" id="hello"></div>
- <a class="btn o" href="../index.html">Open the calculator</a>
+ <div class="pcard" id="hello" data-tour="r-welcome"></div>
+ <a class="btn o" data-tour="r-calc" href="../index.html">Open the calculator</a>
 </div>
 <div class="seg" id="tabs" role="tablist"></div>
 
 <div id="pClients" class="stack">
- <section class="card flush">
+ <section class="card flush" data-tour="r-clients">
   <div class="sh"><h2>My clients and agents</h2><div class="grow"><span class="sum" id="cCount"></span></div></div>
   <div class="tablewrap"><table><thead><tr><th>Client</th><th>Email</th><th>Cell</th><th class="num">Saved quotes</th><th>Last quote</th><th>Status</th></tr></thead><tbody id="clients"></tbody></table></div>
  </section>
@@ -23,7 +23,7 @@
   <div class="sh"><h2 id="dTitle"></h2><div class="grow"><button class="btn sec sm" id="dClose" type="button">Close</button></div></div>
   <div class="tablewrap"><table><thead><tr><th>Quote</th><th>Type</th><th class="num">Price</th><th>Saved</th><th></th></tr></thead><tbody id="dRows"></tbody></table></div>
  </section>
- <section class="card">
+ <section class="card" data-tour="r-invite">
   <h2>Invite a client or agent</h2>
   <p class="sub">They get an email to set a password. They are matched to you by email, so quotes they save show up here.</p>
   <div id="iErr" class="msg err" role="alert"></div><div id="iOk" class="msg ok" role="status"></div>
@@ -35,7 +35,7 @@
  </section>
 </div>
 
-<div id="pQuotes" hidden>
+<div id="pQuotes" data-tour="r-quotes" hidden>
  <section class="card flush">
   <div class="sh"><h2>All saved quotes</h2><div class="grow"><span class="sum">Your clients' quotes and your own. Quotes delete themselves 30 days after they were created.</span></div></div>
   <div class="tablewrap"><table><thead><tr><th>Client</th><th>Quote</th><th>Type</th><th class="num">Price</th><th>Saved</th><th></th></tr></thead><tbody id="qRows"></tbody></table></div>
@@ -86,5 +86,6 @@
     catch (ex) { $("iErr").textContent = ex.message; }
   };
   await loadClients();
+  CLA.initTour(A, me);   // first-time guided tour (or ?tour=1 replay); see js/tour.js
 })();
 </script></body></html>

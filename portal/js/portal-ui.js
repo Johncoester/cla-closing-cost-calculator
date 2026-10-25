@@ -54,6 +54,33 @@
       return await CLA.mountFeedback({ A, me, base, ver: CLA.FEEDBACK_V });
     } catch (e) { return null; }   // feedback is optional; never break a page over it
   };
+  // ---- guided tour (js/tour.js + tour.css; loaded only when someone is about to see it) ----
+  // Each tour lives on the person's own dashboard: admin.html (admin / super admin), rep.html (rep), client.html (client / realtor).
+  CLA.TOUR_V = "20261025g";   // cache-bust for tour.js / tour.css; bump with the ?v= in index.html
+  CLA.tourKind = (me) => { const f = location.pathname.split("/").pop(); return !me ? null : f === "admin.html" && CLA.isAdmin(me) ? "admin" : f === "rep.html" && CLA.isRep(me) ? "rep" : f === "client.html" && me.role === "client" ? "client" : null; };
+  CLA.loadTour = () => CLA.startTour ? Promise.resolve() : new Promise((res, rej) => { const s = document.createElement("script"); s.src = "js/tour.js?v=" + CLA.TOUR_V; s.onload = res; s.onerror = () => rej(new Error("load")); document.head.appendChild(s); });
+  // Called by each dashboard once it has drawn itself. Starts the tour on its own ONLY for a person who has never seen it (profiles.tour_seen_at is NULL,
+  // and the profile is complete); "?tour=1" (from the "Take the tour" link on another page) replays it. Never throws: the tour is optional.
+  CLA.initTour = async function (A, me) {
+    try {
+      const kind = CLA.tourKind(me); if (!kind) return null;
+      const replay = CLA.q("tour") === "1";
+      const guard = "cla_tour_auto_" + me.id;   // once per browser tab session, even if saving "seen" failed
+      const auto = me.tourSeenAt === null && me.isComplete && !sessionStorage.getItem(guard);   // undefined = column not there yet (migration 14 not applied): never auto-start
+      if (!replay && !auto) return null;
+      if (replay && history.replaceState) { const u = new URLSearchParams(location.search); u.delete("tour"); history.replaceState(null, "", location.pathname + (u.toString() ? "?" + u : "") + location.hash); }
+      if (auto) sessionStorage.setItem(guard, "1");
+      await CLA.loadTour(); return CLA.startTour({ A, me, kind, base: "", ver: CLA.TOUR_V, auto });
+    } catch (e) { return null; }
+  };
+  // "Take the tour" link: replay here if this page has a tour, otherwise go to your dashboard, which starts it
+  CLA.takeTour = async function (A, me) {
+    try {
+      const kind = CLA.tourKind(me);
+      if (!kind) { location.href = CLA.homeFor(me.role) + "?tour=1"; return null; }
+      await CLA.loadTour(); return CLA.startTour({ A, me, kind, base: "", ver: CLA.TOUR_V });
+    } catch (e) { return null; }
+  };
   // where "my quotes / my clients" live: reps and admin+rep accounts use the rep dashboard
   CLA.quotesHome = (p) => (CLA.isRep(p) ? "rep.html" : CLA.homeFor(p && p.role));
   CLA.q = (name) => new URLSearchParams(location.search).get(name);
@@ -77,14 +104,16 @@
     let right = '<a class="navlink" href="../index.html">Calculator (guest)</a>';
     if (profile) {
       const url = await A.getAvatarUrl(profile);
-      right = '<a class="navlink" href="../index.html">Calculator</a><a class="navlink" href="' + CLA.homeFor(profile.role) + '">' + (CLA.isAdmin(profile) && profile.isRep ? "Admin dashboard" : "Dashboard") + "</a>" +
+      right = '<a class="navlink" href="../index.html">Calculator</a><a class="navlink"' + (CLA.isAdmin(profile) && profile.isRep ? ' data-tour="h-admin"' : "") + ' href="' + CLA.homeFor(profile.role) + '">' + (CLA.isAdmin(profile) && profile.isRep ? "Admin dashboard" : "Dashboard") + "</a>" +
         (CLA.isAdmin(profile) && profile.isRep ? '<a class="navlink" id="repLink" href="rep.html">Rep dashboard</a>' : "") +
-        '<a class="chip" href="profile.html">' + CLA.avatarImg(url, profile, "sm") + '<span>' + CLA.esc(CLA.fullName(profile)) + '<small>' + CLA.roleLabel(profile.role, profile) + "</small></span></a>" +
+        '<button class="claTourLink" id="claTourLink" type="button">Take the tour</button>' +
+        '<a class="chip" data-tour="h-profile" href="profile.html">' + CLA.avatarImg(url, profile, "sm") + '<span>' + CLA.esc(CLA.fullName(profile)) + '<small>' + CLA.roleLabel(profile.role, profile) + "</small></span></a>" +
         '<button class="btn sec" id="signOut" type="button">Sign out</button>';
     }
     document.body.insertAdjacentHTML("afterbegin",
       '<header class="top"><div class="wrap hwrap"><a class="logo" href="' + (profile ? CLA.homeFor(profile.role) : "login.html") + '" aria-label="CLA home">CLA</a>' +
       '<h1 class="ht">C.L.A. Title &amp; Escrow <span>—</span> Quote Portal</h1><div class="hr">' + right + "</div></div></header>" + demo);
+    const tl = $("claTourLink"); if (tl) tl.onclick = () => CLA.takeTour(A, profile);
     const so = $("signOut"); if (so) so.onclick = async () => { await A.signOut(); location.href = "login.html"; };
     const dr = $("demoReset"); if (dr) dr.onclick = async (e) => { e.preventDefault(); await A._reset(); location.href = "login.html"; };
   };

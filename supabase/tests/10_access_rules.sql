@@ -1355,6 +1355,42 @@ select tests.is('private.is_staff(): rep, admin, super admin yes; client, disabl
   tests.v(tests.id('b1'), 'select private.is_staff()::text') || '/' || tests.v(tests.id('a2'), 'select private.is_staff()::text') || '/' || tests.v(tests.id('d1'), 'select private.is_staff()::text') || '/' ||
   tests.v(tests.id('c1'), 'select private.is_staff()::text') || '/' || tests.v(tests.id('a9'), 'select private.is_staff()::text'), 'true/true/true/false/false');
 
+-- ---------------- guided tour "seen" flag (migration 14) ----------------
+-- People created after the migration start with NULL (the portal then auto-starts the tour); mark_tour_seen() sets it for the CALLER only.
+select tests.is('tour: the column is a nullable timestamptz; new profiles start with NULL (the tour will auto-start)',
+  (select data_type || '/' || is_nullable from information_schema.columns where table_schema = 'public' and table_name = 'profiles' and column_name = 'tour_seen_at') || '/' ||
+  (select count(*)::text from public.profiles where tour_seen_at is not null), 'timestamp with time zone/YES/0');
+create temp table tour_before as select id, is_complete from public.profiles;
+select tests.is('tour: a rep marks it seen (one row changed: their own)',
+  tests.xv(tests.id('b1'), 'select public.mark_tour_seen()', $q$select count(*)::text from public.profiles where tour_seen_at is not null$q$), 'ok:1/1');
+select tests.is('tour: ...and it is the caller row', (select id::text from public.profiles where tour_seen_at is not null), tests.id('b1')::text);
+update public.profiles set tour_seen_at = '2026-01-02 03:04:05+00' where id = tests.id('b1');
+select tests.is('tour: a second call (a replay and skip) keeps the FIRST date',
+  tests.v(tests.id('b1'), 'select public.mark_tour_seen()::text') || '/' || (select to_char(tour_seen_at at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS') from public.profiles where id = tests.id('b1')), '/2026-01-02 03:04:05');
+select tests.is('tour: a client can mark it seen too; a super admin and an admin as well (each only themselves)',
+  tests.v(tests.id('c1'), 'select public.mark_tour_seen()::text') || '/' || tests.v(tests.id('a2'), 'select public.mark_tour_seen()::text') || '/' || tests.v(tests.id('d1'), 'select public.mark_tour_seen()::text'), '//');
+select tests.is('tour: exactly those four are marked (nobody else was touched)',
+  (select string_agg(id::text, ',' order by id) from public.profiles where tour_seen_at is not null),
+  (select string_agg(i::text, ',' order by i) from (values (tests.id('b1')), (tests.id('c1')), (tests.id('a2')), (tests.id('d1'))) v(i)));
+select tests.is('tour: a disabled user and a session with no user are refused',
+  tests.v(tests.id('a9'), 'select public.mark_tour_seen()::text') || '/' || tests.v(null, 'select public.mark_tour_seen()::text'), 'ERR:42501/ERR:42501');
+select tests.is('tour: the disabled user stays unmarked', (select (tour_seen_at is null)::text from public.profiles where id = tests.id('a9')), 'true');
+select tests.is('tour: the API cannot write tour_seen_at directly: not for yourself, not as an admin for someone else, not as a super admin',
+  tests.v(tests.id('b1'), $$update public.profiles set tour_seen_at = null where id = '$$ || tests.id('b1') || $$'$$) || '/' ||
+  tests.v(tests.id('a2'), $$update public.profiles set tour_seen_at = now() where id = '$$ || tests.id('b2') || $$'$$) || '/' ||
+  tests.v(tests.id('a1'), $$update public.profiles set tour_seen_at = now() where id = '$$ || tests.id('b2') || $$'$$), 'ERR:42501/ERR:42501/ERR:42501');
+select tests.is('tour: ...and the grant list says so (select yes, update no) while the profile columns people DO edit are unchanged',
+  (has_column_privilege('authenticated', 'public.profiles', 'tour_seen_at', 'select') and not has_column_privilege('authenticated', 'public.profiles', 'tour_seen_at', 'update')
+   and has_column_privilege('authenticated', 'public.profiles', 'first_name', 'update') and has_column_privilege('authenticated', 'public.profiles', 'cell_phone', 'update')
+   and not has_column_privilege('authenticated', 'public.profiles', 'role', 'update') and not has_column_privilege('anon', 'public.profiles', 'tour_seen_at', 'select'))::text, 'true');
+select tests.is('tour: a person reads their own flag; is_complete is unaffected by it',
+  tests.v(tests.id('c1'), $$select (tour_seen_at is not null)::text from public.profiles where id = '$$ || tests.id('c1') || $$'$$) || '/' ||
+  (select count(*)::text from public.profiles p join tour_before b using (id) where p.is_complete is distinct from b.is_complete), 'true/0');
+select tests.is('tour: privileges: anon cannot run mark_tour_seen, authenticated can; one function, no overloads',
+  (not has_function_privilege('anon', 'public.mark_tour_seen()', 'execute') and has_function_privilege('authenticated', 'public.mark_tour_seen()', 'execute'))::text || '/' ||
+  (select count(*)::text from pg_proc where pronamespace = 'public'::regnamespace and proname = 'mark_tour_seen'), 'true/1');
+drop table tour_before;
+
 -- ---------------- privileges ----------------
 select tests.is('function privileges: anon cannot run the admin RPCs, authenticated can',
   (select (not has_function_privilege('anon', 'public.admin_set_role(uuid, public.user_role, uuid)', 'execute')

@@ -117,7 +117,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
 
   // admin
   await as("sample.admin@clatitle.com");
-  assert.strictEqual((await A.adminListUsers()).length, 11); ok("admin lists all users (incl. the sample Admin)");
+  assert.strictEqual((await A.adminListUsers()).length, 13); ok("admin lists all users (incl. the sample Admin)");
   const aq = await A.adminListQuotes(); assert.ok(aq.length >= 7); ok("admin sees all live quotes");
   await reject(A.adminSetRole(id("a1"), "client"), /own role/, "admin cannot change own role");
   await reject(A.adminInvite({ email: "r@gmail.com", role: "rep" }), /clatitle/, "rep invite needs CLA email");
@@ -185,7 +185,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
 
   await as("sample.robin.admin@clatitle.com");
   const robin = await A.getMyProfile(); assert.ok(robin.role === "admin" && robin.isRep === false && robin.isComplete === true); ok("demo Admin Robin: role admin, not a rep");
-  assert.strictEqual((await A.adminListUsers()).length, 11); assert.ok((await A.adminListQuotes()).length >= 9); assert.ok((await A.adminAuditLog(10)).length > 0); assert.ok((await A.adminListAssignments()).length >= 7); ok("admin sees all users, quotes, assignments and the audit log");
+  assert.strictEqual((await A.adminListUsers()).length, 13); assert.ok((await A.adminListQuotes()).length >= 9); assert.ok((await A.adminAuditLog(10)).length > 0); assert.ok((await A.adminListAssignments()).length >= 7); ok("admin sees all users, quotes, assignments and the audit log");
   await A.adminInvite({ email: "robin.rep@clatitle.com", role: "rep" }); await A.adminInvite({ email: "robin.client@example.com", role: "client", repId: id("b1") }); ok("admin invites a rep and a client (assigned to Jane)");
   await reject(A.adminInvite({ email: "no.sa@clatitle.com", role: "super_admin" }), /Only a super admin can invite an admin or super admin/, "admin cannot invite a super admin");
   await reject(A.adminInvite({ email: "no.admin@clatitle.com", role: "admin" }), /Only a super admin can invite an admin or super admin/, "admin cannot invite an admin");
@@ -262,24 +262,25 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
   const pdir = __dirname;
   // jsdom cannot lazy-load scripts, so the staff feedback widget is inlined right after portal-ui.js (the real pages load it on demand)
   const WIDGET = "<script>" + fs.readFileSync(path.join(__dirname, "js", "feedback-widget.js"), "utf8") + "</script>";
+  const TOURJS = "<script>" + fs.readFileSync(path.join(__dirname, "js", "tour.js"), "utf8") + "</script>";
   const renderAdmin = async (email, expectBlocked, prep) => {
     // first load seeds + signs in (the page redirects to login when signed out), so seed the session first in a throwaway window
     const w0 = boot(), A0 = w0.CLA.createMockAdapter({}); if (prep) { await A0.signIn("sample.admin@clatitle.com", "x"); await prep(A0); } await A0.signIn(email, "x");
     const store = { cla_portal_mock_v1: w0.localStorage.getItem("cla_portal_mock_v1"), cla_portal_mock_session: w0.localStorage.getItem("cla_portal_mock_session") };
     const html = fs.readFileSync(path.join(pdir, "admin.html"), "utf8")
       .replace(/<link[^>]*fonts\.googleapis[^>]*>/, "").replace(/<script src="config\.js"><\/script>/, "<script>window.CLA_PORTAL_CONFIG={mode:'mock'}</script>")
-      .replace(/<script src="(js\/[\w-]+\.js)"><\/script>/g, (m, f) => "<script>" + fs.readFileSync(path.join(pdir, f), "utf8") + "</script>" + (f === "js/portal-ui.js" ? WIDGET : ""));
+      .replace(/<script src="(js\/[\w-]+\.js)"><\/script>/g, (m, f) => "<script>" + fs.readFileSync(path.join(pdir, f), "utf8") + "</script>" + (f === "js/portal-ui.js" ? WIDGET + TOURJS : ""));
     const errs = [];
     const dom = new JSDOM(html, { url: "http://localhost/portal/admin.html", runScripts: "dangerously", pretendToBeVisual: true, virtualConsole: new VirtualConsole(),
       beforeParse(win) { win.crypto.randomUUID = require("crypto").randomUUID; win.confirm = () => true; win.addEventListener("error", (e) => errs.push(e.message));
         for (const k in store) win.localStorage.setItem(k, store[k]); } });
     const d = dom.window.document;
-    for (let i = 0; i < (expectBlocked ? 15 : 100) && d.querySelectorAll("#users tr").length < 11; i++) await new Promise((r) => setTimeout(r, 20));
+    for (let i = 0; i < (expectBlocked ? 15 : 100) && d.querySelectorAll("#users tr").length < 13; i++) await new Promise((r) => setTimeout(r, 20));
     return { dom, d, errs, row: (uid) => [...d.querySelectorAll("#users tr")].find((tr) => tr.innerHTML.includes('data-av="{&quot;id&quot;:&quot;' + uid + '&quot;') || tr.innerHTML.includes(uid)) };
   };
   {
     const R = await renderAdmin("sample.robin.admin@clatitle.com"), d = R.d;
-    assert.strictEqual(R.errs.length, 0, R.errs.join()); assert.strictEqual(d.querySelectorAll("#users tr").length, 11); ok("admin.html renders for an Admin (11 users, no script errors)");
+    assert.strictEqual(R.errs.length, 0, R.errs.join()); assert.strictEqual(d.querySelectorAll("#users tr").length, 13); ok("admin.html renders for an Admin (13 users, no script errors)");
     assert.match(d.getElementById("roleNote").textContent, /You are an Admin: you can manage reps, clients and other admins\. Only a super admin can promote admins or touch a super admin/); ok("admin.html: an Admin sees what they may do");
     assert.deepStrictEqual([...d.querySelectorAll("#iRole option")].map((o) => o.value), ["rep", "client"]); assert.match(d.getElementById("iRoleNote").textContent, /Only a super admin can invite admins and super admins/); ok("admin.html: an Admin can only pick Rep or Client in the invite form");
     const rowA = R.row(id("a1")), rowJ = R.row(id("b1")), rowMe = R.row(id("a2")), rowC = R.row(id("c1"));
@@ -290,7 +291,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     const rowK = R.row(id("a3")); assert.deepStrictEqual([...rowK.querySelectorAll("select[data-role] option")].map((o) => o.value), ["admin", "rep", "client"]); assert.strictEqual(rowK.querySelector("select[data-role]").value, "admin");
     assert.ok(!rowK.querySelector("button[data-st]").disabled && !rowK.querySelector("[data-tip] button[data-st]")); assert.ok(rowK.querySelector("input[data-also]").disabled && /Only a super admin can switch this/.test(rowK.querySelector("label.also").getAttribute("data-tip"))); ok("admin.html: an Admin can disable / demote ANOTHER admin (role list: admin, rep, client: no way up), but the rep switch stays locked");
     assert.ok(/Admin \(you\)/.test(rowMe.textContent) && !rowMe.querySelector("button[data-st]") && !rowMe.querySelector("select[data-role]")); assert.ok(rowMe.querySelector("input[data-also]").disabled); ok("admin.html: an Admin's own row has no role dropdown and no disable button");
-    assert.strictEqual(d.getElementById("uCount").textContent, "11 users · 2 reps · 1 super admin · 2 admins · 6 clients · 1 admin also works as rep"); ok("admin.html: the user count line names super admins and admins separately");
+    assert.strictEqual(d.getElementById("uCount").textContent, "13 users · 3 reps · 1 super admin · 2 admins · 7 clients · 1 admin also works as rep"); ok("admin.html: the user count line names super admins and admins separately");
     assert.match(d.querySelector("header .chip small").textContent, /^Admin$/); ok("admin.html: the header says Admin");
     // "Move N realtors to...": changing a rep who has clients to Client opens the picker; cancel changes nothing; confirm moves the clients
     const change2 = (dd, el, v) => { el.value = v; el.dispatchEvent(new dd.defaultView.Event("change", { bubbles: true })); };
@@ -298,7 +299,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     const change = (el, v) => { el.value = v; el.dispatchEvent(new d.defaultView.Event("change", { bubbles: true })); };
     let selM = R.row(id("b2")).querySelector("select[data-role]"); change(selM, "client"); await tick();
     let dlg = d.querySelector(".dlg"); assert.ok(dlg && /Move 3 realtors to…/.test(dlg.querySelector("h2").textContent)); assert.match(dlg.textContent, /make Marcus Rep a client, Marcus Rep must first hand over their 3 realtors \(Dee Disabled, Omar Broker, nina\.newagent@example\.com\)/);
-    assert.deepStrictEqual([...dlg.querySelectorAll("#dlgRep option")].map((o) => o.textContent.split(" · ")[0]), ["Alex Admin (admin + rep)", "Jane Rep"]); ok("picker: changing a rep with 2 realtors to Client asks 'Move 3 realtors to…' (2 with accounts + 1 pending invitation) and lists the OTHER eligible reps (never the person, never a client or a plain admin)");
+    assert.deepStrictEqual([...dlg.querySelectorAll("#dlgRep option")].map((o) => o.textContent.split(" · ")[0]), ["Alex Admin (admin + rep)", "Jane Rep", "Riley Rookie"]); ok("picker: changing a rep with 2 realtors to Client asks 'Move 3 realtors to…' (2 with accounts + 1 pending invitation) and lists the OTHER eligible reps (never the person, never a client or a plain admin)");
     dlg.querySelector("#dlgNo").click(); await tick(); assert.ok(!d.querySelector(".dlg")); assert.strictEqual(R.row(id("b2")).querySelector("select[data-role]").value, "rep"); ok("picker: Cancel changes nothing (the role dropdown snaps back to CLA rep)");
     change(R.row(id("b2")).querySelector("select[data-role]"), "client"); await tick(); d.dispatchEvent(new d.defaultView.KeyboardEvent("keydown", { key: "Escape" })); await tick(); assert.ok(!d.querySelector(".dlg")); ok("picker: Escape cancels too");
     change(R.row(id("b2")).querySelector("select[data-role]"), "client"); await tick(); d.querySelector("#dlgRep").value = id("b1"); d.querySelector("#dlgOk").click(); await tick(100);
@@ -309,10 +310,10 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     change(R.row(id("b2")).querySelector("select[data-role]"), "client"); await tick(100); assert.ok(!d.querySelector(".dlg")); assert.strictEqual(R.row(id("b2")).querySelector("select[data-role]").value, "client"); ok("...and rep -> client with no clients also needs no picker");
     R.dom.window.close();
     // no other eligible rep at all: a clear message, no way to continue
-    const N = await renderAdmin("sample.robin.admin@clatitle.com", false, async (A0) => { await A0.adminSetIsRep(id("a1"), false, id("b1")); await A0.adminSetStatus(id("b1"), "disabled"); }), nd = N.d;
+    const N = await renderAdmin("sample.robin.admin@clatitle.com", false, async (A0) => { await A0.adminSetIsRep(id("a1"), false, id("b1")); await A0.adminSetStatus(id("b1"), "disabled"); await A0.adminSetStatus(id("b3"), "disabled"); }), nd = N.d;
     change2(nd, N.row(id("b2")).querySelector("select[data-role]"), "client"); await tick(); const nl = nd.querySelector(".dlg");
     assert.ok(nl && nl.querySelector("#dlgNone") && /no other active rep/.test(nl.textContent) && !nl.querySelector("#dlgOk") && nl.querySelector("#dlgNo")); nl.querySelector("#dlgNo").click(); await tick(); assert.strictEqual(N.row(id("b2")).querySelector("select[data-role]").value, "rep");
-    ok("picker: with no other active rep (Jane disabled, Alex's rep switch off) it says so, offers only Cancel, and nothing changes");
+    ok("picker: with no other active rep (Jane and Riley disabled, Alex's rep switch off) it says so, offers only Cancel, and nothing changes");
     N.dom.window.close();
     const S = await renderAdmin("sample.admin@clatitle.com"), sd = S.d;
     assert.strictEqual(S.errs.length, 0, S.errs.join()); assert.match(sd.getElementById("roleNote").textContent, /You are a Super admin: you can manage everyone/); ok("admin.html renders for a Super admin");
@@ -381,12 +382,13 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
   {
     const GREET = "Hey! I am John Coester here to help you. Give me some feedback.";
     const tick = (ms) => new Promise((r) => setTimeout(r, ms || 30));
-    const renderPage = async (file, email, waitFor, prep) => {
+    const renderPage = async (file, email, waitFor, prep, mod, qs) => {
       const w0 = boot(), A0 = w0.CLA.createMockAdapter({}); if (prep) { await A0.signIn("sample.admin@clatitle.com", "x"); await prep(A0); } if (email) await A0.signIn(email, "x");
       const store = { cla_portal_mock_v1: w0.localStorage.getItem("cla_portal_mock_v1"), cla_portal_mock_session: w0.localStorage.getItem("cla_portal_mock_session") };
+      if (mod) { const st = JSON.parse(store.cla_portal_mock_v1); mod(st); store.cla_portal_mock_v1 = JSON.stringify(st); }
       const html = fs.readFileSync(path.join(pdir, file), "utf8").replace(/<link[^>]*fonts\.googleapis[^>]*>/, "").replace(/<script src="config\.js"><\/script>/, "<script>window.CLA_PORTAL_CONFIG={mode:'mock'}</script>")
-        .replace(/<script src="(js\/[\w-]+\.js)"><\/script>/g, (m, f) => "<script>" + fs.readFileSync(path.join(pdir, f), "utf8") + "</script>" + (f === "js/portal-ui.js" ? WIDGET : ""));
-      const errs = [], dom = new JSDOM(html, { url: "http://localhost/portal/" + file + "?secret=1#frag", runScripts: "dangerously", pretendToBeVisual: true, virtualConsole: new VirtualConsole(),
+        .replace(/<script src="(js\/[\w-]+\.js)"><\/script>/g, (m, f) => "<script>" + fs.readFileSync(path.join(pdir, f), "utf8") + "</script>" + (f === "js/portal-ui.js" ? WIDGET + TOURJS : ""));
+      const errs = [], dom = new JSDOM(html, { url: "http://localhost/portal/" + file + (qs || "?secret=1") + "#frag", runScripts: "dangerously", pretendToBeVisual: true, virtualConsole: new VirtualConsole(),
         beforeParse(win) { win.crypto.randomUUID = require("crypto").randomUUID; win.confirm = () => true; win.addEventListener("error", (e) => errs.push(e.message)); for (const k in store) win.localStorage.setItem(k, store[k]); } });
       for (let i = 0; i < 60 && !dom.window.document.querySelector(waitFor); i++) await tick(20);
       await tick(60); return { dom, d: dom.window.document, win: dom.window, errs };
@@ -438,6 +440,93 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     RS.d.querySelector('#fbRows input[data-note="fb1"]').value = "Thanks, fixed"; btn.click(); await tick(80);
     const st = JSON.parse(RS.win.localStorage.getItem("cla_portal_mock_v1")).feedback.find((f) => f.id === "fb1"); assert.deepStrictEqual([st.status, st.decidedNote], ["approved", "Thanks, fixed"]); assert.match(RS.d.querySelector('#fbRows input[data-note="fb1"]').closest("tr").textContent, /Approved/); ok("feedback panel: a super admin approves with a note");
     assert.strictEqual(RS.errs.length, 0, RS.errs.join()); RS.dom.window.close();
+
+    // ================= guided tour (migration 14) =================
+    const seenOf = (R, uid) => JSON.parse(R.win.localStorage.getItem("cla_portal_mock_v1")).users.find((u) => u.id === uid).tourSeenAt;
+    const boxTitle = (d) => d.getElementById("claTourTitle").textContent, boxCount = (d) => d.getElementById("claTourCount").textContent;
+    const nextN = async (R, n) => { for (let k = 0; k < n; k++) { R.d.getElementById("claTourNext").click(); await tick(130); } };
+    const newUser = (uid) => (st) => { st.users.find((u) => u.id === uid).tourSeenAt = null; };
+    // -- adapter: markTourSeen, the seeded flags
+    await as("sample.admin@clatitle.com"); const everyone = await A.adminListUsers();
+    assert.ok(everyone.filter((u) => u.tourSeenAt === null).map((u) => u.firstName).sort().join() === "Nia,Riley" && everyone.filter((u) => u.tourSeenAt).length === 11); ok("tour (adapter): the sample people have seen the tour; only Nia (client) and Riley (rep) are new");
+    await as("sample.new.client@example.com"); assert.strictEqual((await A.getMyProfile()).tourSeenAt, null); await A.markTourSeen(); const t1 = (await A.getMyProfile()).tourSeenAt; assert.ok(t1);
+    await new Promise((r) => setTimeout(r, 15)); await A.markTourSeen(); assert.strictEqual((await A.getMyProfile()).tourSeenAt, t1); ok("tour (adapter): markTourSeen sets it for the caller only, and the first time wins");
+    assert.strictEqual((await A.adminListUsers().catch(() => [])).length, 0); w.localStorage.removeItem("cla_portal_mock_session"); await reject(A.markTourSeen(), /sign in/i, "tour (adapter): a guest cannot mark the tour seen");
+    await as("sample.rep.jane@clatitle.com"); await A.markTourSeen(); await as("sample.new.rep@clatitle.com"); assert.strictEqual((await A.getMyProfile()).tourSeenAt, null); ok("tour (adapter): one person marking it does not touch anybody else");
+    // -- every role's tour: step counts, order, wording
+    const wt = boot(); wt.eval(fs.readFileSync(path.join(__dirname, "js", "tour.js"), "utf8")); const R_steps = (kind, me) => wt.CLA.tourSteps(kind, me);
+    const meOf = (role) => ({ role, isRep: false });
+    const counts = { super: R_steps("admin", meOf("super_admin")).length, admin: R_steps("admin", meOf("admin")).length, rep: R_steps("rep", meOf("rep")).length, repAdmin: R_steps("rep", { role: "admin", isRep: true }).length, client: R_steps("client", meOf("client")).length };
+    assert.deepStrictEqual(counts, { super: 7, admin: 6, rep: 6, repAdmin: 7, client: 7 }); ok("tour: 4-7 steps per role (super admin 7, admin 6, rep 6, admin who reps 7, client 7)");
+    const all = [].concat(R_steps("admin", meOf("super_admin")), R_steps("rep", { role: "admin", isRep: true }), R_steps("client", meOf("client")));
+    assert.ok(all.every((s) => s.title && s.text.length < 330 && s.title.length < 45)); assert.ok(!/<|&lt;/.test(JSON.stringify(all))); ok("tour: every step has a short title and short plain text");
+    assert.ok(/Only a super admin can approve or dismiss/.test(R_steps("admin", meOf("admin")).pop().text) && /approve or dismiss each item/.test(R_steps("admin", meOf("super_admin")).pop().text) && /Only a super admin can invite admins/.test(R_steps("admin", meOf("admin")).find((s) => s.target === '[data-tour="a-invite"]').text) && /admins or super admins/.test(R_steps("admin", meOf("super_admin")).find((s) => s.target === '[data-tour="a-invite"]').text)); ok("tour: admins read feedback and cannot invite admins; super admins approve / dismiss and can invite anyone (wording)");
+    const cs = R_steps("client", meOf("client")).map((s) => s.text).join(" "); assert.ok(/30 days/.test(cs) && /sign in/i.test(cs) && /placeholder/.test(cs) && /optional/.test(cs) && /estimates only/i.test(cs) && /rep/.test(cs)); ok("tour: the client tour covers sign-in, auto-save, 30 days, the photo placeholder, the rep and the estimates-only note");
+    const rs = R_steps("rep", { role: "rep" }).map((s) => s.title + " " + s.text).join(" "); assert.ok(/Invite|invite/.test(rs) && /cell/.test(rs) && /30 days/.test(rs)); ok("tour: the rep tour covers clients, invites, quotes, the cell phone");
+    // -- auto-start for a NEW client; Skip / Esc / Done mark it seen; a second visit does not start it
+    const C1 = await renderPage("client.html", "sample.new.client@example.com", "#claTour"), cd = C1.d;
+    assert.strictEqual(C1.errs.length, 0, C1.errs.join()); assert.ok(cd.getElementById("claTour")); assert.strictEqual(boxCount(cd), "Step 1 of 7"); assert.strictEqual(boxTitle(cd), "Welcome to your quotes"); ok("tour: starts by itself for a brand-new client (Step 1 of 7)");
+    const pop = cd.querySelector(".claTourPop"); assert.strictEqual(pop.getAttribute("role"), "dialog"); assert.strictEqual(pop.getAttribute("aria-modal"), "true"); assert.strictEqual(cd.getElementById(pop.getAttribute("aria-labelledby")).textContent, "Welcome to your quotes"); assert.ok(cd.getElementById(pop.getAttribute("aria-describedby")).textContent.length > 20); assert.strictEqual(cd.activeElement, pop); ok("tour: the box is a labelled, described, modal dialog and takes focus");
+    assert.ok(cd.getElementById("claTourBack").hidden && cd.getElementById("claTourNext").textContent === "Next" && cd.getElementById("claTourSkip")); ok("tour: Back is hidden on step 1; Next and Skip are there");
+    cd.dispatchEvent(new C1.win.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })); await tick(100); assert.strictEqual(boxCount(cd), "Step 2 of 7"); assert.ok(!cd.getElementById("claTourBack").hidden); assert.ok(!cd.querySelector(".claTourSpot").hidden);
+    cd.dispatchEvent(new C1.win.KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true })); await tick(100); assert.strictEqual(boxCount(cd), "Step 1 of 7"); ok("tour: the arrow keys go forward and back");
+    // Tab stays inside the box
+    cd.getElementById("claTourNext").focus(); cd.dispatchEvent(new C1.win.KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true })); assert.strictEqual(cd.activeElement.id, "claTourSkip"); ok("tour: Tab wraps inside the box (focus trap)");
+    await nextN(C1, 6); assert.strictEqual(boxCount(cd), "Step 7 of 7"); assert.strictEqual(cd.getElementById("claTourNext").textContent, "Done"); assert.ok(cd.querySelector(".claTourSpot").hidden && /estimates only/i.test(cd.getElementById("claTourText").textContent)); ok("tour: the last step is a centred note (estimates only) and the button says Done");
+    assert.strictEqual(seenOf(C1, id("c7")), null); cd.getElementById("claTourNext").click(); await tick(60); assert.ok(!cd.getElementById("claTour")); assert.ok(seenOf(C1, id("c7"))); ok("tour: Done closes it and marks it seen (profiles.tour_seen_at)");
+    C1.dom.window.close();
+    const C2 = await renderPage("client.html", "sample.new.client@example.com", "header", null, (st) => { st.users.find((u) => u.id === id("c7")).tourSeenAt = "2026-10-20T10:00:00Z"; }); assert.ok(!C2.d.getElementById("claTour")); ok("tour: does not start for someone who has seen it"); C2.dom.window.close();
+    const C3 = await renderPage("client.html", "sample.new.client@example.com", "#claTour"); C3.d.dispatchEvent(new C3.win.KeyboardEvent("keydown", { key: "Escape", bubbles: true })); await tick(60); assert.ok(!C3.d.getElementById("claTour") && seenOf(C3, id("c7"))); ok("tour: Esc closes it and marks it seen");
+    C3.dom.window.close();
+    const C4 = await renderPage("client.html", "sample.new.client@example.com", "#claTour"); C4.d.getElementById("claTourSkip").click(); await tick(60); assert.ok(!C4.d.getElementById("claTour") && seenOf(C4, id("c7"))); ok("tour: Skip tour closes it and marks it seen"); C4.dom.window.close();
+    // replay for someone who has seen it: the header link; the seen date does not move
+    const C5 = await renderPage("client.html", "sam.agent@example.com", "#claTourLink"); assert.ok(!C5.d.getElementById("claTour")); const before = seenOf(C5, id("c1"));
+    C5.d.getElementById("claTourLink").click(); await tick(100); assert.ok(C5.d.getElementById("claTour") && boxCount(C5.d) === "Step 1 of 7"); C5.d.getElementById("claTourSkip").click(); await tick(50); assert.strictEqual(seenOf(C5, id("c1")), before); assert.strictEqual(C5.d.activeElement.id, "claTourLink"); ok("tour: 'Take the tour' replays it for someone who has seen it; the seen date is unchanged; focus returns to the link"); C5.dom.window.close();
+    // ?tour=1 (what the link does from another page) replays and cleans the address
+    const C6 = await renderPage("client.html", "sam.agent@example.com", "#claTour", null, null, "?tour=1&x=2"); assert.ok(C6.d.getElementById("claTour")); assert.strictEqual(C6.win.location.search, "?x=2"); ok("tour: ?tour=1 replays it and is removed from the address"); C6.dom.window.close();
+    // not complete yet (no last name), or the column does not exist (database without migration 14): no auto-start
+    const C7 = await renderPage("client.html", "sample.new.client@example.com", "header", null, (st) => { st.users.find((u) => u.id === id("c7")).lastName = ""; }); assert.ok(!C7.d.getElementById("claTour")); ok("tour: does not auto-start before the profile is complete"); C7.dom.window.close();
+    const C8 = await renderPage("client.html", "sample.new.client@example.com", "header", null, (st) => { delete st.users.find((u) => u.id === id("c7")).tourSeenAt; }); assert.ok(!C8.d.getElementById("claTour")); assert.ok(C8.d.getElementById("claTourLink")); ok("tour: an unknown flag (migration 14 not applied) never auto-starts, the link still works"); C8.dom.window.close();
+    // saving 'seen' fails: nothing breaks, and it does not start twice in the same tab
+    const C9 = await renderPage("client.html", "sample.new.client@example.com", "#claTour"); const CA = C9.win.CLA; assert.ok(CA.startTour);
+    // missing / hidden targets are skipped and counted out
+    C9.d.getElementById("claTourSkip").click(); await tick(40);
+    C9.d.querySelector('[data-tour="c-rep"]').remove(); C9.d.querySelector('[data-tour="c-quotes"]').hidden = true;
+    const run = CA.runTour(CA.tourSteps("client", { role: "client" })); await tick(30); assert.strictEqual(boxCount(C9.d), "Step 1 of 5"); const seen = []; for (let k = 0; k < 5; k++) { seen.push(boxTitle(C9.d)); C9.d.getElementById("claTourNext").click(); await tick(30); } assert.ok(!seen.includes("Your saved quotes") && !seen.includes("Talk to your rep") && seen[4] === "One last thing"); ok("tour: a missing or hidden target is skipped, and the step counter only counts the steps shown");
+    assert.strictEqual(CA.runTour([{ target: '[data-tour="nope"]', title: "x", text: "y" }]), null); ok("tour: a tour whose targets all vanished does not start");
+    C9.dom.window.close();
+    const CB = await renderPage("client.html", "sample.new.client@example.com", "#claTour"); CB.d.getElementById("claTourSkip").click(); await tick(60); assert.strictEqual(await CB.win.CLA.initTour({ markTourSeen: async () => { throw new Error("x"); } }, { id: id("c7"), role: "client", tourSeenAt: null, isComplete: true }), null); ok("tour: once per tab even if marking fails (session guard), and no error"); CB.dom.window.close();
+    // narrow screens: a sheet at the bottom
+    const CM = await renderPage("client.html", "sam.agent@example.com", "#claTourLink"); Object.defineProperty(CM.win, "innerWidth", { value: 390, configurable: true });
+    CM.win.CLA.runTour(CM.win.CLA.tourSteps("client", { role: "client" })); await tick(30); assert.ok(CM.d.querySelector(".claTourPop").classList.contains("sheet")); ok("tour: on a phone-width screen the box becomes a bottom sheet"); CM.dom.window.close();
+    // REP: new rep sees the rep tour, the Quotes tab is opened for its step and closed again
+    const P1 = await renderPage("rep.html", "sample.new.rep@clatitle.com", "#claTour"); const pd = P1.d; assert.strictEqual(P1.errs.length, 0, P1.errs.join()); assert.strictEqual(boxCount(pd), "Step 1 of 6"); assert.strictEqual(boxTitle(pd), "Welcome to your dashboard"); ok("tour: starts by itself for a brand-new rep (Step 1 of 6)");
+    await nextN(P1, 3); assert.strictEqual(boxTitle(pd), "All quotes in one place"); assert.ok(!pd.getElementById("pQuotes").hidden && pd.getElementById("pClients").hidden); await nextN(P1, 1); assert.ok(pd.getElementById("pQuotes").hidden && !pd.getElementById("pClients").hidden); ok("tour: the Quotes tab opens for its step and the Clients tab comes back when you move on");
+    pd.dispatchEvent(new P1.win.KeyboardEvent("keydown", { key: "Escape", bubbles: true })); await tick(40); assert.ok(seenOf(P1, id("b3"))); P1.dom.window.close();
+    const P2 = await renderPage("rep.html", "sample.rep.jane@clatitle.com", "#claTourLink"); assert.ok(!P2.d.getElementById("claTour")); ok("tour: not for a rep who has seen it"); P2.dom.window.close();
+    const P3 = await renderPage("rep.html", "sample.admin@clatitle.com", "#claTourLink", null, null, "?tour=1"); await tick(100); assert.strictEqual(boxCount(P3.d), "Step 1 of 7"); await nextN(P3, 6); assert.strictEqual(boxTitle(P3.d), "You are also an admin"); ok("tour: an admin who also reps gets the rep tour (7 steps) with a step about the two dashboards"); P3.dom.window.close();
+    // ADMIN pages
+    const SA = await renderPage("admin.html", "sample.admin@clatitle.com", "#claTour", null, newUser(id("a1"))), sd = SA.d; assert.strictEqual(SA.errs.length, 0, SA.errs.join()); assert.strictEqual(boxCount(sd), "Step 1 of 7"); assert.strictEqual(boxTitle(sd), "Welcome to the admin dashboard"); ok("tour: starts by itself for a new super admin (Step 1 of 7)");
+    await nextN(SA, 2); assert.strictEqual(boxTitle(sd), "Change a role"); await nextN(SA, 1); assert.strictEqual(boxTitle(sd), "Also works as a rep"); assert.ok(sd.querySelector('[data-tour="u-also"]')); await nextN(SA, 1);
+    assert.strictEqual(boxTitle(sd), "Invite someone"); assert.ok(!sd.getElementById("invCard").hidden); await nextN(SA, 1); assert.ok(sd.getElementById("invCard").hidden); assert.strictEqual(boxTitle(sd), "Assignments"); assert.ok(!sd.getElementById("pAssign").hidden && sd.getElementById("pUsers").hidden);
+    await nextN(SA, 1); assert.strictEqual(boxTitle(sd), "Staff feedback"); assert.ok(!sd.getElementById("pFeedback").hidden && sd.getElementById("pAssign").hidden); assert.match(sd.getElementById("claTourText").textContent, /approve or dismiss/);
+    sd.getElementById("claTourNext").click(); await tick(60); assert.ok(!sd.getElementById("claTour") && !sd.getElementById("pUsers").hidden && sd.getElementById("pFeedback").hidden && seenOf(SA, id("a1"))); ok("tour: super admin steps (roles, also-a-rep, invite form, assignments, feedback) open and close what they show; Done puts the Users tab back"); SA.dom.window.close();
+    const AD = await renderPage("admin.html", "sample.robin.admin@clatitle.com", "#claTour", null, newUser(id("a2"))); assert.strictEqual(boxCount(AD.d), "Step 1 of 6"); const adTitles = []; for (let k = 0; k < 6; k++) { adTitles.push(boxTitle(AD.d)); await nextN(AD, 1); } assert.ok(!adTitles.includes("Also works as a rep") && adTitles.includes("Invite someone")); ok("tour: a new Admin gets 6 steps (no 'also works as a rep' switch: it is for super admins)"); AD.dom.window.close();
+    // header link placement: Feedback, then Take the tour, then the profile chip (no collision); none for guests
+    const H = await renderPage("rep.html", "sample.rep.jane@clatitle.com", "#claFeedbackLink"); const kids = [...H.d.querySelector("header .hr").children].map((c) => c.id || c.className.split(" ")[0]);
+    assert.ok(kids.indexOf("claFeedbackLink") > -1 && kids.indexOf("claTourLink") > kids.indexOf("claFeedbackLink") && kids.indexOf("chip") > kids.indexOf("claTourLink")); ok("tour: the 'Take the tour' link sits next to the Feedback button (Feedback, Take the tour, profile) without colliding"); H.dom.window.close();
+    const G2 = await renderPage("login.html", null, "header"); assert.ok(!G2.d.getElementById("claTourLink")); ok("tour: no 'Take the tour' link for guests"); G2.dom.window.close();
+    const PR = await renderPage("profile.html", "sample.new.client@example.com", "#claTourLink"); assert.ok(PR.d.getElementById("claTourLink") && !PR.d.getElementById("claTour") && PR.win.CLA.tourKind(await (async () => { const a = await PR.win.CLA.getAdapter(); return a.getMyProfile(); })()) === null); ok("tour: other pages (profile) have the link but never auto-start; the link sends you to your dashboard"); PR.dom.window.close();
+    // files: no external libraries / CDN; motion respects prefers-reduced-motion
+    const tj = fs.readFileSync(path.join(__dirname, "js", "tour.js"), "utf8"), tc = fs.readFileSync(path.join(__dirname, "tour.css"), "utf8");
+    assert.ok(!/https?:\/\/|import\s|require\(/.test(tj) && !/https?:\/\/|@import/.test(tc)); assert.ok(/prefers-reduced-motion:no-preference/.test(tc) && !/(^|\})\s*\.[^{]*\{[^}]*transition/.test(tc.replace(/@media[^{]*\{(?:[^{}]*\{[^}]*\})+\s*\}/g, ""))); ok("tour: no external libraries or CDN; animation only when the person has not asked for reduced motion");
+    // supabase adapter mapping
+    const tcalls = [];
+    const mk = (row) => CLA.createSupabaseAdapter({ url: "u", anonKey: "k" }, { createClient: () => ({ auth: { getSession: async () => ({ data: { session: { user: { id: id("c7"), email: "e" } } } }) },
+      from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: row, error: null }) }) }) }), rpc: async (n, a) => { tcalls.push(["rpc", n, a]); return { data: null, error: null }; } }) });
+    const base = { id: id("c7"), role: "client", status: "active", email: "e", first_name: "N", last_name: "N", is_complete: true };
+    assert.strictEqual((await mk({ ...base, tour_seen_at: null }).getMyProfile()).tourSeenAt, null); assert.strictEqual((await mk({ ...base, tour_seen_at: "2026-10-25T10:00:00Z" }).getMyProfile()).tourSeenAt, "2026-10-25T10:00:00Z"); assert.strictEqual((await mk({ ...base }).getMyProfile()).tourSeenAt, undefined); ok("supabase: tour_seen_at maps to tourSeenAt (null = new, a date = seen, missing column = unknown)");
+    tcalls.length = 0; await mk(base).markTourSeen(); const mc = tcalls.find((c) => c[0] === "rpc"); assert.ok(mc && mc[1] === "mark_tour_seen" && (!mc[2] || Object.keys(mc[2]).length === 0)); ok("supabase: markTourSeen calls the mark_tour_seen RPC with no arguments (no table write)");
   }
 
   // ---- Supabase adapter against a fake client ----

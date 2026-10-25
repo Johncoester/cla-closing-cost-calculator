@@ -10,7 +10,7 @@
 
   CLA.createMockAdapter = function () {
     const load = () => {
-      try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.version === 5) return s; } catch (e) {}
+      try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.version === 6) return s; } catch (e) {}
       const s = CLA.MOCK_SEED(); localStorage.setItem(KEY, JSON.stringify(s)); return s;
     };
     const save = (s) => localStorage.setItem(KEY, JSON.stringify(s));
@@ -201,6 +201,8 @@
         log(s, u.id, "assignment_changed", "assignment", null, { client_email: e, rep_id: rep.id }); save(s);
       },
       // ---- staff feedback (migration 13). Same rules as submit_feedback / admin_set_feedback_status / the RLS on public.feedback. ----
+      // guided tour (migration 14): the current user only; the first time wins
+      async markTourSeen() { const s = load(), u = need(s); if (!u.tourSeenAt) { u.tourSeenAt = new Date().toISOString(); save(s); } },
       async submitFeedback(o) {
         const s = load(), u = need(s); if (!isStaff(u)) err("Not allowed.");
         const category = String((o && o.category) || "").trim().toLowerCase(), message = String((o && o.message) || "").trim();

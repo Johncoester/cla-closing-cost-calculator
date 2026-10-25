@@ -9,7 +9,7 @@
   const P = (k, role, email, f, l, phone, co, extra) =>
     Object.assign({ id: id(k), role, status: "active", email, firstName: f, lastName: l, phone, cellPhone: CELL[k] || null, companyName: co,
       companyPhone: null, companyAddress: null, companyWebsite: null, licenseOrNmls: null, avatarPath: null,
-      isRep: role === "rep", termsAcceptedAt: "2026-10-01T12:00:00Z", createdAt: "2026-10-01T12:00:00Z" }, extra || {});
+      isRep: role === "rep", termsAcceptedAt: "2026-10-01T12:00:00Z", createdAt: "2026-10-01T12:00:00Z", tourSeenAt: "2026-10-01T12:30:00Z" }, extra || {});   // the sample people have seen the tour (like existing users when migration 14 runs)
 
   CLA.MOCK_SEED = function () {
     const now = Date.now(), day = 86400000, iso = (d) => new Date(now - d * day).toISOString();
@@ -28,6 +28,9 @@
       P("c4", "client", "dee.disabled@example.com", "Dee", "Disabled", "703-555-0161", "Old Dominion Realty", { status: "disabled" }),
       P("c5", "client", "omar.broker@example.com", "Omar", "Broker", "703-555-0171", "Potomac Brokers", { companyAddress: "9 Main St, Alexandria, VA" }),
       P("c6", "client", "quinn.buyer@example.com", "Quinn", "Buyer", "202-555-0181", "Bright Realty", { companyPhone: "202-555-0180", companyAddress: "1 Dupont Cir, Washington, DC" }),
+      // brand-new people (migration 14): they have NOT seen the guided tour, so it starts by itself the first time they open their dashboard
+      P("c7", "client", "sample.new.client@example.com", "Nia", "Newcomer", "301-555-0191", "Fresh Start Realty", { tourSeenAt: null, createdAt: new Date(now - 3600000).toISOString() }),
+      P("b3", "rep", "sample.new.rep@clatitle.com", "Riley", "Rookie", "301-555-0192", "C.L.A. Title & Escrow", { tourSeenAt: null, createdAt: new Date(now - 3600000).toISOString() }),
     ];
     const A = (n, email, rep, uid) => ({ id: "as" + n, clientEmail: email, clientUserId: uid ? id(uid) : null, repId: id(rep), active: true, createdAt: iso(20) });
     const assignments = [
@@ -88,6 +91,6 @@
       { id: "fb2", createdAt: iso(2), userId: id("a2"), roleAtSubmit: "admin", category: "idea", message: "Could the Users table have a search box? With more reps it gets long.", pagePath: "/portal/admin.html", status: "notified", notifiedAt: iso(2), decidedAt: null, decidedNote: null },
       { id: "fb3", createdAt: iso(1), userId: id("b2"), roleAtSubmit: "rep", category: "question", message: "Where do I change my cell number so it shows on the quotes?", pagePath: "/portal/rep.html", status: "approved", notifiedAt: iso(1), decidedAt: iso(1), decidedNote: "Profile page, top right. Added a tip to the dashboard." },
     ];
-    return { version: 5, users, assignments, quotes, audit, photos, invitations, feedback };
+    return { version: 6, users, assignments, quotes, audit, photos, invitations, feedback };
   };
 })();

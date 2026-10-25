@@ -9,10 +9,10 @@
 </head><body>
 <main class="pg">
 <div style="display:flex;gap:16px;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;margin-bottom:20px">
- <div><h1 class="pt">Admin</h1><p class="sub" style="margin:0">All reps, clients and saved quotes. Everything you do here is written to the audit log.</p><p class="sum" id="roleNote" style="margin:6px 0 0"></p></div>
- <button class="btn" id="showInv" type="button">Invite user</button>
+ <div data-tour="a-welcome"><h1 class="pt">Admin</h1><p class="sub" style="margin:0">All reps, clients and saved quotes. Everything you do here is written to the audit log.</p><p class="sum" id="roleNote" style="margin:6px 0 0"></p></div>
+ <button class="btn" id="showInv" data-tour="a-invite-btn" type="button">Invite user</button>
 </div>
-<section class="card" id="invCard" hidden style="margin-bottom:24px">
+<section class="card" id="invCard" data-tour="a-invite" hidden style="margin-bottom:24px">
  <h2>Invite a user</h2>
  <div id="iErr" class="msg err" role="alert"></div><div id="iOk" class="msg ok" role="status"></div>
  <form id="inv" novalidate>
@@ -26,11 +26,11 @@
 </section>
 <div class="seg" id="tabs" role="tablist"></div>
 
-<section class="card flush" id="pUsers"><div class="sh"><h2>Users</h2><div class="grow"><span class="sum" id="uCount"></span></div></div>
+<section class="card flush" id="pUsers" data-tour="a-users"><div class="sh"><h2>Users</h2><div class="grow"><span class="sum" id="uCount"></span></div></div>
  <div class="tablewrap"><table><thead><tr><th>Person</th><th>Cell</th><th>Role</th><th>Rep</th><th>Status</th><th></th></tr></thead><tbody id="users"></tbody></table></div></section>
 <section class="card flush" id="pQuotes" hidden><div class="sh"><h2>All saved quotes</h2><div class="grow"><input type="text" id="qFilter" placeholder="Search client, rep, address" style="min-height:36px;width:260px" aria-label="Filter quotes"></div></div>
  <div class="tablewrap"><table><thead><tr><th>Client / owner</th><th>Rep</th><th>Quote</th><th class="num">Price</th><th>Saved</th><th></th></tr></thead><tbody id="quotes"></tbody></table></div></section>
-<div id="pAssign" class="stack" hidden>
+<div id="pAssign" class="stack" data-tour="a-assign" hidden>
  <section class="card"><h2>Assign a client to a rep</h2><p class="sub">Matches by email, so it works before the client has an account. Reassigning keeps history.</p>
   <div id="aErr" class="msg err" role="alert"></div><div id="aOk" class="msg ok" role="status"></div>
   <form id="asg" class="row" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;align-items:end;margin-bottom:0" novalidate>
@@ -40,7 +40,7 @@
 </div>
 <section class="card flush" id="pAudit" hidden><div class="sh"><h2>Audit log</h2><div class="grow"><span class="sum">Read only, newest first</span></div></div>
  <div class="tablewrap"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Details</th></tr></thead><tbody id="auditRows"></tbody></table></div></section>
-<section class="card flush" id="pFeedback" hidden><div class="sh"><h2>Staff feedback</h2><div class="grow" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;align-items:center">
+<section class="card flush" id="pFeedback" data-tour="a-feedback" hidden><div class="sh"><h2>Staff feedback</h2><div class="grow" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;align-items:center">
   <label class="vh" for="fStatus">Status</label><select id="fStatus" style="min-height:36px;width:auto"><option value="">All statuses</option><option value="new">New</option><option value="notified">Notified</option><option value="approved">Approved</option><option value="dismissed">Dismissed</option></select>
   <label class="vh" for="fCat">Category</label><select id="fCat" style="min-height:36px;width:auto"><option value="">All categories</option><option value="bug">Bug</option><option value="idea">Idea</option><option value="question">Question</option><option value="other">Other</option></select>
   <input type="text" id="fFilter" placeholder="Search message, person, page" style="min-height:36px;width:220px" aria-label="Search feedback"></div></div>
@@ -80,10 +80,10 @@
       // "Also works as a rep": only for admin / super admin rows; only a super admin may switch it (CLA email needed to switch on)
       const cla = u.email.endsWith("@clatitle.com"), canAlso = isSuper && (cla || u.isRep);
       const alsoTip = !isSuper ? "Only a super admin can switch this." : !cla && !u.isRep ? "Needs an @clatitle.com email." : "";
-      const alsoBox = adminRole(u.role) ? '<label class="chk also' + (alsoTip ? " tip" : "") + '"' + tip(alsoTip) + '><input type="checkbox" data-also="' + esc(u.id) + '"' + (u.isRep ? " checked" : "") + (canAlso ? "" : " disabled") + '> Also works as a rep</label>' : "";
+      const alsoBox = adminRole(u.role) ? '<label class="chk also' + (alsoTip ? " tip" : "") + '"' + (canAlso ? ' data-tour="u-also"' : "") + tip(alsoTip) + '><input type="checkbox" data-also="' + esc(u.id) + '"' + (u.isRep ? " checked" : "") + (canAlso ? "" : " disabled") + '> Also works as a rep</label>' : "";
       const roleSel = mine ? '<span class="badge admin">' + esc(CLA.roleLabel(u.role)) + " (you)</span>"
         : block ? '<span class="badge admin tip"' + tip(block) + ">" + esc(CLA.roleLabel(u.role)) + "</span>"
-        : '<select data-role="' + esc(u.id) + '" aria-label="Role" style="min-height:34px;padding:4px 30px 4px 10px;font-size:13px;width:auto">' + (isSuper ? ["super_admin", "admin", "rep", "client"] : u.role === "admin" ? ["admin", "rep", "client"] : ["rep", "client"]).map((r) => '<option value="' + r + '"' + (r === u.role ? " selected" : "") + ">" + CLA.roleLabel(r) + "</option>").join("") + "</select>";
+        : '<select data-tour="u-role" data-role="' + esc(u.id) + '" aria-label="Role" style="min-height:34px;padding:4px 30px 4px 10px;font-size:13px;width:auto">' + (isSuper ? ["super_admin", "admin", "rep", "client"] : u.role === "admin" ? ["admin", "rep", "client"] : ["rep", "client"]).map((r) => '<option value="' + r + '"' + (r === u.role ? " selected" : "") + ">" + CLA.roleLabel(r) + "</option>").join("") + "</select>";
       const btn = '<button class="btn ' + (u.status === "active" ? "danger" : "o") + ' sm" data-st="' + esc(u.id) + '" data-to="' + (u.status === "active" ? "disabled" : "active") + '" type="button"' + (block ? ' disabled aria-disabled="true"' : "") + ">" + (u.status === "active" ? "Disable" : "Re-enable") + "</button>";
       const action = mine ? "" : block ? '<span class="tip"' + tip(block) + ">" + btn + "</span>" : btn;   // the tooltip sits on a wrapper: a disabled button gets no hover / focus events
       return "<tr><td><div class='who'>" + CLA.avImg(u, "sm") + "<div><b>" + esc(CLA.fullName(u)) + "</b><span>" + esc(u.email) + (u.companyName && u.role === "client" ? " · " + esc(u.companyName) : "") + "</span></div></div></td><td>" + (CLA.telLink(u.cellPhone) || '<span class="sum">—</span>') + "</td><td>" + roleSel + alsoBox + "</td><td>" + (u.role === "client" ? (rep ? esc(CLA.fullName(rep)) : '<span class="badge warn">Unassigned</span>') : "—") + "</td><td>" + st + '</td><td class="num">' + action + "</td></tr>";
@@ -195,5 +195,6 @@
       $("iOk").textContent = "Invitation recorded for " + email + ". " + ((r && r.mockNote) || "They will get an email shortly."); $("iEmail").value = ""; $("iCell").value = ""; $("iAlso").checked = false; }
     catch (ex) { $("iErr").textContent = ex.message; } };
   await loadUsers();
+  CLA.initTour(A, me);   // first-time guided tour (or ?tour=1 replay); see js/tour.js
 })();
 </script></body></html>

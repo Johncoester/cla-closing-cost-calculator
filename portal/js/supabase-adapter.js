@@ -33,7 +33,8 @@
       phone: r.phone, cellPhone: r.cell_phone || null, companyName: r.company_name, companyPhone: r.company_phone, companyAddress: r.company_address,
       companyWebsite: r.company_website, licenseOrNmls: r.license_or_nmls_number, avatarPath: r.avatar_path,
       isRep: r.role === "rep" || ((r.role === "super_admin" || r.role === "admin") && !!r.is_rep),   // "works as a rep": real reps, or an admin / super admin with profiles.is_rep
-      termsAcceptedAt: iso(r.terms_accepted_at), isComplete: !!r.is_complete, createdAt: r.created_at });
+      termsAcceptedAt: iso(r.terms_accepted_at), isComplete: !!r.is_complete, createdAt: r.created_at,
+      tourSeenAt: r.tour_seen_at === undefined ? undefined : r.tour_seen_at });   // undefined = the column is not there yet (migration 14 not applied): the tour never auto-starts
     const toQuote = (r) => r && ({
       id: r.id, ownerId: r.owner_id, repId: r.rep_id, quoteType: r.quote_type, label: r.label, state: r.state, county: r.county,
       propertyAddress: r.property_address, price: r.price == null ? null : +r.price, inputs: r.inputs, results: r.results,
@@ -186,6 +187,8 @@
       // reassignTo: when the change stops someone who has active clients from being a rep, the rep who takes those clients over (migration 12)
       async adminSetRole(id, role, reassignTo) { must(await sb.rpc("admin_set_role", Object.assign({ p_user: id, p_role: role }, reassignTo ? { p_reassign_to: reassignTo } : {}))); },
       // ---- staff feedback (migration 13): writes only through the RPCs; reads through RLS (own rows; admin and super admin all) ----
+      // ---- guided tour (migration 14): the only write is the RPC (the API cannot update tour_seen_at directly) ----
+      async markTourSeen() { must(await sb.rpc("mark_tour_seen")); },
       async submitFeedback(o) { const id = must(await sb.rpc("submit_feedback", { p_category: o.category, p_message: o.message, p_page: o.page || null })); return { id }; },
       async listMyFeedback() { const me = await this.getMyProfile(); return must(await sb.from("feedback").select(FB_COLS).eq("user_id", me.id).order("created_at", { ascending: false }).limit(20)).map(toFeedback); },
       async adminListFeedback() { return must(await sb.from("feedback").select(FB_COLS).order("created_at", { ascending: false }).limit(500)).map(toFeedback); },

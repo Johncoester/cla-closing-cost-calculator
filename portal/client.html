@@ -9,15 +9,15 @@
 </head><body>
 <main class="pg">
 <div class="grid2" style="grid-template-columns:minmax(0,1fr) auto;margin-bottom:20px;align-items:center">
- <div><h1 class="pt" id="hi">My quotes</h1><p class="sub" style="margin:0">Quotes save to your account automatically while you are signed in, and delete themselves 30 days after they were created.</p></div>
- <a class="btn" href="../index.html">New quote</a>
+ <div data-tour="c-welcome"><h1 class="pt" id="hi">My quotes</h1><p class="sub" style="margin:0" data-tour="c-autosave">Quotes save to your account automatically while you are signed in, and delete themselves 30 days after they were created.</p></div>
+ <a class="btn" data-tour="c-new" href="../index.html">New quote</a>
 </div>
 <div class="grid2" style="margin-bottom:24px">
- <section class="card"><h3 style="margin-top:0">My profile</h3><div class="pcard" id="me"></div></section>
- <section class="card"><h3 style="margin-top:0">My CLA rep</h3><div class="pcard" id="rep"></div></section>
+ <section class="card" data-tour="c-profile"><h3 style="margin-top:0">My profile</h3><div class="pcard" id="me"></div></section>
+ <section class="card" data-tour="c-rep"><h3 style="margin-top:0">My CLA rep</h3><div class="pcard" id="rep"></div></section>
 </div>
 <div id="incomplete" class="msg info" hidden>Finish your profile (name and company) so your quotes carry your details. <a href="profile.html">Open profile</a></div>
-<section class="card flush">
+<section class="card flush" data-tour="c-quotes">
  <div class="sh"><h2>Saved quotes</h2></div>
  <div class="tablewrap"><table><thead><tr><th>Quote</th><th>Type</th><th class="num">Price</th><th>Saved</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>
 </section>
@@ -40,5 +40,6 @@
     if (!confirm("Delete this quote? You will not be able to get it back.")) return;
     try { await A.deleteQuote(b.dataset.del); CLA.toast("Quote deleted"); await load(); } catch (ex) { CLA.toast(ex.message); } };
   await load();
+  CLA.initTour(A, me);   // first-time guided tour (or ?tour=1 replay); see js/tour.js
 })();
 </script></body></html>

@@ -187,6 +187,23 @@ update public.feedback set status = 'dismissed', decided_at = now(), decided_not
 
 Screenshots: `portal/tools/screenshots_staff_feedback.py` (demo mode).
 
+## Guided tour (migration 14)
+
+A short click-through for NEW people, in John's voice ("Here's where you'll..."), 6-7 steps per role. It starts by itself the first time someone opens their dashboard after finishing their profile, and anyone can replay it from **Take the tour** in the header (it sits next to the Feedback button for staff: Feedback, Take the tour, profile, Sign out).
+
+- **Who sees what:** super admin / admin (users and roles, who can invite whom, the invite form, "also works as a rep" for super admins, assignments, the Feedback tab: admins read, super admins approve / dismiss; the reassign-clients note is part of the roles step), rep (dashboard, clients, invite a client, quotes, profile and cell phone, the calculator; an admin who also reps gets a step about the two dashboards), client / realtor (new quote and sign-in, auto-save and the 30 day clean-up, saved quotes, the profile with its photo placeholder, "talk to my rep", the estimates-only note).
+- **Where it lives:** `portal/js/tour.js` + `portal/tour.css`, plain JavaScript, no libraries and no CDN. It is loaded only when someone is about to see it (`CLA.initTour` / `CLA.takeTour` in `portal-ui.js`). Targets are `data-tour="..."` attributes on existing elements. The step text is in `CLA.tourSteps()` in `tour.js`.
+- **One page per tour (the simple, robust choice):** each tour stays on the person's own dashboard (`admin.html`, `rep.html`, `client.html`), so no step navigates and there is no progress to carry between pages. Steps that need a tab or the invite form open it first and put it back when you move on; Done / Skip / Esc restore the first tab. The "Take the tour" link on any other page (profile, quote pages) goes to your dashboard with `?tour=1`, which starts the tour and then removes `?tour=1` from the address.
+- **A missing or hidden target is skipped** (for example the "also works as a rep" switch for an Admin), and "Step n of N" counts only the steps shown.
+- **Controls and accessibility:** Back / Next / Skip tour; Right and Left arrows move, Esc skips; Tab stays inside the box; the box is a labelled dialog (`aria-modal`, title and text are announced) that takes focus on every step, and focus returns to the "Take the tour" link at the end. The spotlight and box reposition on resize and scroll; the target is scrolled into view; on screens up to 640 px wide the box is a sheet at the bottom. Nothing animates when the person asks for reduced motion (`prefers-reduced-motion`).
+- **Seen, kept on the server:** `profiles.tour_seen_at` (nullable). NULL = not yet. Done, Skip and Esc all call `markTourSeen()` -> the RPC `public.mark_tour_seen()`, which sets it for the current user only (first time wins; a replay never moves the date). The API cannot write the column directly (it is not in the profile update grants), and it plays no part in `is_complete`.
+- **Existing people are not forced through it:** migration 14 sets `tour_seen_at = now()` for every profile that exists when it first runs (John, Matt, the admins, everyone). Only profiles created afterwards start with NULL. The backfill runs only in the run that adds the column, so running the file again never hides the tour from a new person.
+- **Safe to deploy first:** if the site is deployed before the migration, the profile has no `tour_seen_at`; the portal reads that as "unknown" and never starts the tour by itself (the link still works). The tour also never starts twice in one browser tab, even if saving "seen" fails.
+- **Demo mode:** the sample people have seen it; **Nia Newcomer** (client, `sample.new.client@example.com`) and **Riley Rookie** (rep, `sample.new.rep@clatitle.com`) have not, so signing in as them starts it. (Reset sample data to see it again.) Any other role: use "Take the tour".
+- **Apply live (when approved):** run `20261025000014_tour_seen.sql` once in the Supabase SQL editor (no Edge Function change), then deploy the site. Either order is safe; migration first is cleanest.
+
+Screenshots: `portal/tools/screenshots_guided_tour.py` (demo mode, desktop and mobile).
+
 ## What is mocked, what is real
 
 | Piece | State |

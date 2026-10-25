@@ -64,6 +64,9 @@
  *                                            on needs an @clatitle.com email; off needs reassignTo while they still have active clients (same rule as above)
  *   adminReassign(clientEmail, repId)
  *   adminAuditLog(limit)                  -> AuditRow[]
+ *  Guided tour (migration 14).  Profile.tourSeenAt: ISO time the person finished or skipped the first-time tour, null = not yet (the portal starts it once),
+ *   undefined = not known (database without migration 14: never auto-start).
+ *   markTourSeen()                        the CURRENT user only; the first time wins (a replay never moves the date). Throws if signed out / disabled.
  *  Staff feedback (migration 13). STAFF = admin, super_admin or rep (by role, active). Clients and guests: every call below refuses (or returns nothing).
  *   submitFeedback({category, message, page})   -> {id}      category: bug|idea|question|other; message 1-2000 chars (trimmed); page = PATH ONLY
  *                                                 (query / hash are cut off). At most 10 per hour and 40 per day per person (throws a readable message).

@@ -33,7 +33,8 @@
   if (A.mode === "mock") {
     $("demoCard").hidden = false;
     const people = [["sample.admin@clatitle.com", "Alex Admin", "Super admin, also a rep (2 clients)"], ["sample.rep.jane@clatitle.com", "Jane Rep", "CLA rep, 2 clients"],
-      ["sample.rep.marcus@clatitle.com", "Marcus Rep", "CLA rep"], ["sam.agent@example.com", "Sam Agent", "Client / agent, rep Jane"], ["lee.lender@example.com", "Lee Lender", "Client, no photo yet"]];
+      ["sample.rep.marcus@clatitle.com", "Marcus Rep", "CLA rep"], ["sam.agent@example.com", "Sam Agent", "Client / agent, rep Jane"], ["lee.lender@example.com", "Lee Lender", "Client, no photo yet"],
+      ["sample.new.client@example.com", "Nia Newcomer", "New client: the guided tour starts by itself"], ["sample.new.rep@clatitle.com", "Riley Rookie", "New rep: the guided tour starts by itself"]];
     $("demos").innerHTML = people.map((p) => '<button type="button" data-e="' + esc(p[0]) + '"><span><b>' + esc(p[1]) + '</b><small>' + esc(p[2]) + " · " + esc(p[0]) + "</small></span></button>").join("");
     $("demos").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; $("email").value = b.dataset.e; $("pw").value = "demo-password"; $("pw").focus(); };
   }

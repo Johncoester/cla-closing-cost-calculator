@@ -1,0 +1,25 @@
+/* Guided tour (portal/js/tour.js): a spotlight on the target and a small box with Back / Next / Skip.
+   Same look as the portal: lime (#8dc63f) accents. No animation unless the person has not asked for reduced motion. */
+.claTour,.claTour *{box-sizing:border-box}
+.claTour{position:fixed;inset:0;z-index:2147483200;font:14px/1.45 Inter,-apple-system,"Segoe UI",system-ui,Roboto,Helvetica,Arial,sans-serif;color:#111}
+.claTourShade{position:absolute;inset:0;background:transparent}              /* catches clicks, so nothing underneath is pressed by accident */
+.claTourShade.dim{background:rgba(17,17,17,.6)}                                 /* a centred note (no target): dim the whole page */
+.claTourSpot{position:fixed;border-radius:12px;box-shadow:0 0 0 9999px rgba(17,17,17,.6),0 0 0 3px #8dc63f;pointer-events:none}
+.claTourSpot[hidden]{display:none!important}
+.claTourPop{position:fixed;width:340px;max-width:calc(100vw - 24px);background:#fff;border-radius:16px;border-top:6px solid #8dc63f;padding:16px 18px 16px;box-shadow:0 18px 48px rgba(0,0,0,.4);outline:none}
+.claTourPop.mid{top:50%;left:50%;transform:translate(-50%,-50%);width:400px}
+.claTourPop.sheet{left:0;right:0;bottom:0;top:auto;width:auto;max-width:none;border-radius:18px 18px 0 0;max-height:46vh;overflow:auto;padding-bottom:calc(16px + env(safe-area-inset-bottom))}
+.claTourPop.sheet.mid{top:auto;left:0;transform:none;width:auto}
+.claTourCount{font-size:12px;font-weight:700;color:#5b6272;text-transform:uppercase;letter-spacing:.05em;margin:0 0 4px}
+.claTourTitle{margin:0 0 6px;font-size:17px;letter-spacing:-.01em}
+.claTourText{margin:0 0 14px;font-size:14px;color:#26292f}
+.claTourBar{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.claTourNav{display:flex;gap:8px}
+.claTourBtn{display:inline-flex;align-items:center;justify-content:center;background:#8dc63f;color:#000;border:1.5px solid #8dc63f;border-radius:12px;padding:9px 16px;font-weight:700;font-size:14px;line-height:1.2;font-family:inherit;cursor:pointer;min-height:40px}
+.claTourBtn:hover{background:#9bd34b}
+.claTourBtn.o{background:#fff;color:#111;border-color:#c5ccb8}.claTourBtn.o:hover{background:#f3f6ec}
+.claTourBtn.link{background:transparent;border-color:transparent;color:#5b6272;padding-left:4px;padding-right:4px;font-weight:600;text-decoration:underline}.claTourBtn.link:hover{background:transparent;color:#111}
+.claTourBtn[hidden]{display:none!important}
+.claTourBtn:focus-visible,.claTourPop:focus-visible{outline:3px solid #000;outline-offset:2px}
+@media (prefers-reduced-motion:no-preference){.claTourSpot{transition:top .18s ease,left .18s ease,width .18s ease,height .18s ease}.claTourPop{transition:top .18s ease,left .18s ease}}
+@media print{.claTour{display:none!important}}
