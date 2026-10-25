@@ -27,6 +27,7 @@
       id: r.id, role: r.role, status: r.status, email: r.email, firstName: r.first_name || "", lastName: r.last_name || "",
       phone: r.phone, cellPhone: r.cell_phone || null, companyName: r.company_name, companyPhone: r.company_phone, companyAddress: r.company_address,
       companyWebsite: r.company_website, licenseOrNmls: r.license_or_nmls_number, avatarPath: r.avatar_path,
+      isRep: r.role === "rep" || (r.role === "super_admin" && !!r.is_rep),   // "works as a rep": real reps, or a super admin with profiles.is_rep
       termsAcceptedAt: iso(r.terms_accepted_at), isComplete: !!r.is_complete, createdAt: r.created_at });
     const toQuote = (r) => r && ({
       id: r.id, ownerId: r.owner_id, repId: r.rep_id, quoteType: r.quote_type, label: r.label, state: r.state, county: r.county,
@@ -147,7 +148,10 @@
       async deleteQuote(qid) { must(await sb.rpc("delete_my_quote", { p_quote: qid })); },
 
       async listMyClients() {
-        const asg = must(await sb.from("assignments").select("*").eq("active", true)).map(toAssignment);   // RLS: this rep's rows
+        const me = await uid();
+        // RLS already limits a rep to their own rows; the explicit rep_id filter matters for a super admin who also works as a rep,
+        // because admins can read EVERY assignment and this screen must show only their own clients.
+        const asg = must(await sb.from("assignments").select("*").eq("active", true).eq("rep_id", me)).map(toAssignment);
         const ids = asg.map((a) => a.clientUserId).filter(Boolean);
         const profs = ids.length ? must(await sb.from("profiles").select("*").in("id", ids)).map(toProfile) : [];
         const qs = ids.length ? must(await sb.from("quotes").select("id, owner_id, created_at").in("owner_id", ids)) : [];
@@ -165,15 +169,17 @@
         return must(await sb.from("quotes").select("*").eq("owner_id", cid).order("created_at", { ascending: false })).map(toQuote);
       },
       async inviteClient(email, opts) {
-        return fn("invite-user", { email, role: "client", cellPhone: await invitedCell(opts && opts.cellPhone), redirectTo: redirectBase() + "?invite=1" });
+        // asRep: the database applies the REP rules (assigned to the caller, never takes over another rep's client) even when the caller is a super admin
+        return fn("invite-user", { email, role: "client", repId: await uid(), asRep: true, cellPhone: await invitedCell(opts && opts.cellPhone), redirectTo: redirectBase() + "?invite=1" });
       },
 
       async adminListUsers() { return must(await sb.from("profiles").select("*").order("created_at")).map(toProfile); },
       async adminListAssignments() { return must(await sb.from("assignments").select("*").order("created_at", { ascending: false })).map(toAssignment); },
       async adminListQuotes() { return must(await sb.from("quotes").select("*").order("created_at", { ascending: false })).map(toQuote); },
-      async adminInvite(o) { return fn("invite-user", { email: o.email, role: o.role, repId: o.repId || null, cellPhone: await invitedCell(o.cellPhone), redirectTo: redirectBase() + "?invite=1" }); },
+      async adminInvite(o) { return fn("invite-user", { email: o.email, role: o.role, repId: o.repId || null, isRep: o.role === "super_admin" && !!o.isRep, cellPhone: await invitedCell(o.cellPhone), redirectTo: redirectBase() + "?invite=1" }); },
       async adminSetStatus(id, status) { return fn("set-user-status", { userId: id, status }); },
       async adminSetRole(id, role) { must(await sb.rpc("admin_set_role", { p_user: id, p_role: role })); },
+      async adminSetIsRep(id, on) { must(await sb.rpc("admin_set_is_rep", { p_user: id, p_is_rep: !!on })); },   // super admins only ("Also works as a rep")
       async adminReassign(email, repId) { must(await sb.rpc("admin_reassign_client", { p_client_email: email, p_rep_id: repId })); },
       async adminAuditLog(limit) {
         return must(await sb.from("audit_log").select("*").order("at", { ascending: false }).limit(limit || 100))

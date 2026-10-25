@@ -24,8 +24,12 @@
   };
   CLA.daysLeft = (iso) => Math.max(0, Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000));
   CLA.expiryHtml = (q) => { const d = CLA.daysLeft(q.expiresAt); return '<span class="expiry' + (d <= 5 ? " soon" : "") + '">Auto-deletes ' + CLA.date(q.expiresAt) + " (" + d + " day" + (d === 1 ? "" : "s") + " left)</span>"; };
-  CLA.roleLabel = (r) => ({ super_admin: "Super admin", rep: "CLA rep", client: "Client / agent" }[r] || r);
+  // "Is a rep" = role rep, OR a super admin with the also-a-rep switch on (profile.isRep, from profiles.is_rep). Pass a profile.
+  CLA.isRep = (p) => !!p && (p.role === "rep" || (p.role === "super_admin" && !!p.isRep));
+  CLA.roleLabel = (r, p) => (r === "super_admin" && p && p.isRep ? "Super admin + rep" : { super_admin: "Super admin", rep: "CLA rep", client: "Client / agent" }[r] || r);
   CLA.homeFor = (role) => (role === "super_admin" ? "admin.html" : role === "rep" ? "rep.html" : "client.html");
+  // where "my quotes / my clients" live: reps and admin+rep accounts use the rep dashboard
+  CLA.quotesHome = (p) => (CLA.isRep(p) ? "rep.html" : CLA.homeFor(p && p.role));
   CLA.q = (name) => new URLSearchParams(location.search).get(name);
   CLA.safeNext = (n) => (n && /^[\w./-]+\.html(\?[\w=&%.-]*)?$/.test(n) && !/^\/\//.test(n) ? n : null);   // same-folder pages only
 
@@ -47,8 +51,9 @@
     let right = '<a class="navlink" href="../index.html">Calculator (guest)</a>';
     if (profile) {
       const url = await A.getAvatarUrl(profile);
-      right = '<a class="navlink" href="../index.html">Calculator</a><a class="navlink" href="' + CLA.homeFor(profile.role) + '">Dashboard</a>' +
-        '<a class="chip" href="profile.html">' + CLA.avatarImg(url, profile, "sm") + '<span>' + CLA.esc(CLA.fullName(profile)) + '<small>' + CLA.roleLabel(profile.role) + "</small></span></a>" +
+      right = '<a class="navlink" href="../index.html">Calculator</a><a class="navlink" href="' + CLA.homeFor(profile.role) + '">' + (profile.role === "super_admin" && profile.isRep ? "Admin dashboard" : "Dashboard") + "</a>" +
+        (profile.role === "super_admin" && profile.isRep ? '<a class="navlink" id="repLink" href="rep.html">Rep dashboard</a>' : "") +
+        '<a class="chip" href="profile.html">' + CLA.avatarImg(url, profile, "sm") + '<span>' + CLA.esc(CLA.fullName(profile)) + '<small>' + CLA.roleLabel(profile.role, profile) + "</small></span></a>" +
         '<button class="btn sec" id="signOut" type="button">Sign out</button>';
     }
     document.body.insertAdjacentHTML("afterbegin",
@@ -68,7 +73,8 @@
     if (!s) { toLogin(); throw new Error("redirect"); }
     let me;
     try { me = await A.getMyProfile(); } catch (e) { await A.signOut(); toLogin(); throw e; }
-    if (roles && !roles.includes(me.role)) { location.replace(CLA.homeFor(me.role)); throw new Error("redirect"); }
+    // "rep" admits real reps AND super admins who also work as a rep; every other entry is an exact role
+    if (roles && !roles.some((r) => (r === "rep" ? CLA.isRep(me) : r === me.role))) { location.replace(CLA.homeFor(me.role)); throw new Error("redirect"); }
     await CLA.renderHeader(A, me);
     return { A, me };
   };

@@ -57,8 +57,8 @@
   const { $ } = CLA; let { A, me } = await CLA.boot(null);
   if (CLA.q("welcome")) $("welcome").hidden = false;
   const isClient = me.role === "client";
-  $("co").hidden = !isClient; $("phoneLbl").textContent = me.role === "rep" ? "Phone (required for reps)" : "Phone";
-  $("cellHint").textContent = me.role === "rep" ? "US numbers only. Shown to the clients and agents assigned to you, and to CLA admins." : me.role === "client" ? "US numbers only. Shown to your CLA rep and CLA admins." : "US numbers only. Shown to CLA admins.";
+  $("co").hidden = !isClient; $("phoneLbl").textContent = CLA.isRep(me) ? "Phone (required for reps)" : "Phone";
+  $("cellHint").textContent = CLA.isRep(me) ? "US numbers only. Shown to the clients and agents assigned to you, and to CLA admins." : me.role === "client" ? "US numbers only. Shown to your CLA rep and CLA admins." : "US numbers only. Shown to CLA admins.";
   CLA.bindPhoneInput($("cellPhone"), $("cellErr"));
   let staged = null;
   const fields = ["firstName", "lastName", "phone", "cellPhone", "companyName", "companyPhone", "companyAddress", "companyWebsite", "licenseOrNmls"];
@@ -87,7 +87,7 @@
     e.preventDefault(); $("err").textContent = ""; $("ok").textContent = "";
     const v = {}; fields.forEach((k) => (v[k] = $(k).value.trim()));
     if (!v.firstName || !v.lastName) { $("err").textContent = "First and last name are required."; return; }
-    if (me.role === "rep" && !v.phone) { $("err").textContent = "Reps need a phone number."; return; }
+    if (CLA.isRep(me) && !v.phone) { $("err").textContent = "Reps need a phone number."; return; }
     if (!$("cellPhone").check()) { $("err").textContent = CLA.PHONE_MSG; $("cellPhone").focus(); return; }
     if (v.companyWebsite && !/^https?:\/\//i.test(v.companyWebsite)) { $("err").textContent = "Website should start with https://"; return; }
     $("save").disabled = true;

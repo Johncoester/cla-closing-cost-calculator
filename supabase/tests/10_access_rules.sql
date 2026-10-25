@@ -53,14 +53,14 @@ end $$;
 -- ids
 create function tests.id(k text) returns uuid language sql as $$
   select ('00000000-0000-4000-8000-0000000000' || k)::uuid $$;
--- admin a1 | reps b1 jane, b2 marcus | clients c1 sam, c2 lee, c3 pat (unassigned), c4 dee (disabled, marcus), c5 omar (marcus)
+-- admin a1 (ALSO a rep, is_rep; clients c6 quinn + pending rae) | reps b1 jane, b2 marcus | clients c1 sam, c2 lee, c3 pat (unassigned), c4 dee (disabled, marcus), c5 omar (marcus)
 
 -- ---------------- sanity: seed shape ----------------
-select tests.is('seed: 9 quotes inserted',   (select count(*)::text from public.quotes), '9');
+select tests.is('seed: 11 quotes inserted',   (select count(*)::text from public.quotes), '11');
 select tests.is('seed: expires_at = created_at + 30 days on every quote',
-  (select count(*)::text from public.quotes where expires_at = created_at + interval '30 days'), '9');
+  (select count(*)::text from public.quotes where expires_at = created_at + interval '30 days'), '11');
 select tests.is('seed: client_user_id linked for existing clients',
-  (select count(*)::text from public.assignments where client_user_id is not null), '4');
+  (select count(*)::text from public.assignments where client_user_id is not null), '5');
 select tests.is('seed: pre-signup assignment has no user yet',
   (select count(*)::text from public.assignments where client_email = 'nina.newagent@example.com' and client_user_id is null), '1');
 select tests.is('seed: avatar_path synced by photos trigger',
@@ -113,8 +113,8 @@ select tests.is('rep Jane sees self + her 2 clients', tests.q(tests.id('b1'), 's
 select tests.is('rep Marcus sees self + omar (dee is disabled but still his client)', tests.q(tests.id('b2'), 'select * from public.profiles'), '3');
 select tests.is('rep cannot see another rep''s client',
   tests.q(tests.id('b1'), 'select * from public.profiles where id = ''' || tests.id('c5') || ''''), '0');
-select tests.is('admin sees all 10 profiles (8 seeded + 2 signed up earlier in this test)',
-  tests.q(tests.id('a1'), 'select * from public.profiles'), '10');
+select tests.is('admin sees all 11 profiles (9 seeded + 2 signed up earlier in this test)',
+  tests.q(tests.id('a1'), 'select * from public.profiles'), '11');
 select tests.is('disabled client reads nothing', tests.q(tests.id('c4'), 'select * from public.profiles'), '0');
 select tests.is('client updates own phone',
   tests.x(tests.id('c1'), 'update public.profiles set phone = ''240-555-9999'' where id = ''' || tests.id('c1') || ''''), 'ok:1');
@@ -169,7 +169,7 @@ select tests.is('rep Jane cannot see Omar''s quote (other rep)',
 select tests.is('rep Marcus sees Omar''s quote; Dee (disabled) has none', tests.q(tests.id('b2'), 'select * from public.quotes'), '1');
 select tests.is('rep does not see unassigned Pat''s quote',
   tests.q(tests.id('b1'), 'select * from public.quotes where owner_id = ''' || tests.id('c3') || ''''), '0');
-select tests.is('admin sees all non-expired quotes incl. soft-deleted (8)', tests.q(tests.id('a1'), 'select * from public.quotes'), '8');
+select tests.is('admin sees all non-expired quotes incl. soft-deleted (10)', tests.q(tests.id('a1'), 'select * from public.quotes'), '10');
 select tests.is('anon sees no quotes', tests.q(null, 'select * from public.quotes'), 'ERR:42501');
 select tests.is('disabled client sees no quotes', tests.q(tests.id('c4'), 'select * from public.quotes'), '0');
 
@@ -240,7 +240,7 @@ select tests.is('purge job then removes the aged-out quote', (select private.pur
 -- ---------------- assignments ----------------
 select tests.is('client sees own assignment row only', tests.q(tests.id('c1'), 'select * from public.assignments'), '1');
 select tests.is('rep Jane sees her 2 assignment rows', tests.q(tests.id('b1'), 'select * from public.assignments'), '2');
-select tests.is('admin sees all 5 assignments', tests.q(tests.id('a1'), 'select * from public.assignments'), '5');
+select tests.is('admin sees all 7 assignments', tests.q(tests.id('a1'), 'select * from public.assignments'), '7');
 select tests.is('client cannot assign themselves',
   tests.x(tests.id('c3'), 'insert into public.assignments (client_email, rep_id) values (''pat.homes@example.com'', ''' || tests.id('b1') || ''')'), 'ERR:42501');
 select tests.is('rep adds own unassigned client by email (Pat)',
@@ -493,7 +493,8 @@ end $$;
 
 -- ---------------- admin MFA switch ----------------
 update public.app_settings set value = 'true' where key = 'require_admin_mfa';
-select tests.is('MFA required: admin at aal1 sees only self-level (none of others'' quotes)', tests.q(tests.id('a1'), 'select * from public.quotes where owner_id <> ''' || tests.id('a1') || ''''), '0');
+-- the sample admin is also a rep: at aal1 the admin policies are off, but the REP policies still apply, so exactly her own client Quinn's quote (1) is visible, nothing else
+select tests.is('MFA required: admin+rep at aal1 sees only rep-level quotes (own client Quinn, 1), none of the others''', tests.q(tests.id('a1'), 'select * from public.quotes where owner_id <> ''' || tests.id('a1') || ''''), '1');
 select tests.is('MFA required: admin at aal2 sees quotes', (tests.q(tests.id('a1'), 'select * from public.quotes', 'aal2')::int > 0)::text, 'true');
 select tests.is('MFA required: admin at aal1 cannot call admin RPC',
   tests.x(tests.id('a1'), 'select public.admin_set_status(''' || tests.id('c3') || ''', ''disabled'')', 'aal1'), 'ERR:42501');
@@ -561,6 +562,247 @@ select tests.is('pg_cron job scheduled (or pg_cron absent in this environment)',
   (select case when exists (select 1 from pg_extension where extname = 'pg_cron')
      then (select count(*)::text from cron.job where jobname = 'purge-expired-quotes' and command like '%purge_expired_quotes%')
      else '1' end), '1');
+
+
+-- =====================================================================
+-- Admin who ALSO works as a rep (migration 6): profiles.is_rep
+-- =====================================================================
+-- first value of a query, run as a user ('ERR:<sqlstate>' on error)
+create function tests.v(uid uuid, sql text, aal text default 'aal1') returns text language plpgsql as $$
+declare res text;
+begin
+  perform set_config('request.jwt.claims', json_build_object('sub', uid, 'role', 'authenticated', 'aal', aal)::text, true);
+  perform set_config('role', 'authenticated', true);
+  begin execute sql into res; exception when others then res := 'ERR:' || sqlstate; end;
+  perform set_config('role', 'postgres', true);
+  perform set_config('request.jwt.claims', '', true);
+  return coalesce(res, 'null');
+end $$;
+
+-- run a DML/RPC statement as a user, THEN read a value (fresh snapshot): 'ok:<rows>/<value>'
+create function tests.xv(uid uuid, dml text, readsql text) returns text language plpgsql as $$
+declare r text; v text;
+begin
+  r := tests.x(uid, dml);
+  execute readsql into v;
+  return r || '/' || coalesce(v, 'null');
+end $$;
+
+-- ---------------- the flag and its guards ----------------
+select tests.is('seed: admin Alex is a super admin with is_rep',
+  (select role::text || '/' || is_rep::text from public.profiles where id = tests.id('a1')), 'super_admin/true');
+select tests.is('every role=rep profile has is_rep (backfill + trigger)',
+  (select count(*)::text from public.profiles where role = 'rep' and not is_rep), '0');
+select tests.is('no client has is_rep', (select count(*)::text from public.profiles where role = 'client' and is_rep), '0');
+select tests.is('invitation carried is_rep to the profile (Alex signed up via a flagged invitation)',
+  (select is_rep::text from public.invitations where email = 'sample.admin@clatitle.com'), 'true');
+select tests.is('Alex is_complete (has a phone)', (select is_complete::text from public.profiles where id = tests.id('a1')), 'true');
+-- a client can never be a rep: the trigger forces false ...
+update public.profiles set is_rep = true where id = tests.id('c3');
+select tests.is('trigger forces is_rep=false for a client', (select is_rep::text from public.profiles where id = tests.id('c3')), 'false');
+-- ... and the CHECK constraint is the backstop if the trigger were ever bypassed
+alter table public.profiles disable trigger profiles_rep_flag_trg;
+do $$ begin
+  begin update public.profiles set is_rep = true where id = tests.id('c3');
+    perform tests.is('CHECK: a client cannot be a rep (trigger bypassed)', 'allowed', 'rejected');
+  exception when check_violation then perform tests.is('CHECK: a client cannot be a rep (trigger bypassed)', 'rejected', 'rejected'); end;
+  begin update public.profiles set is_rep = false where id = tests.id('b1');
+    perform tests.is('CHECK: a rep cannot lose is_rep (trigger bypassed)', 'allowed', 'rejected');
+  exception when check_violation then perform tests.is('CHECK: a rep cannot lose is_rep (trigger bypassed)', 'rejected', 'rejected'); end;
+end $$;
+alter table public.profiles enable trigger profiles_rep_flag_trg;
+do $$ begin
+  begin insert into public.invitations (email, role, is_rep) values ('client.rep@example.com', 'client', true);
+    perform tests.is('invitation: a client cannot be flagged rep', 'allowed', 'rejected');
+  exception when check_violation then perform tests.is('invitation: a client cannot be flagged rep', 'rejected', 'rejected'); end;
+  begin insert into public.invitations (email, role, is_rep) values ('not.cla@example.com', 'super_admin', true);
+    perform tests.is('invitation: flagged rep needs @clatitle.com', 'allowed', 'rejected');
+  exception when check_violation then perform tests.is('invitation: flagged rep needs @clatitle.com', 'rejected', 'rejected'); end;
+end $$;
+select tests.is('nobody flips is_rep through the API (column not granted): Alex herself',
+  tests.x(tests.id('a1'), 'update public.profiles set is_rep = false where id = ''' || tests.id('a1') || ''''), 'ERR:42501');
+select tests.is('a rep cannot flip is_rep through the API',
+  tests.x(tests.id('b1'), 'update public.profiles set is_rep = true where id = ''' || tests.id('b1') || ''''), 'ERR:42501');
+select tests.is('a client cannot flip is_rep through the API',
+  tests.x(tests.id('c1'), 'update public.profiles set is_rep = true where id = ''' || tests.id('c1') || ''''), 'ERR:42501');
+
+-- more people sign up the normal way: a plain super admin (d1), an admin flagged on the invitation (d2), a non-CLA admin (d3)
+insert into public.invitations (email, role, is_rep) values
+  ('plain.admin@clatitle.com', 'super_admin', false), ('flag.admin@clatitle.com', 'super_admin', true), ('outside.admin@example.com', 'super_admin', false);
+insert into auth.users (id, email) values
+  (tests.id('d1'), 'plain.admin@clatitle.com'), (tests.id('d2'), 'flag.admin@clatitle.com'), (tests.id('d3'), 'outside.admin@example.com');
+update public.profiles set first_name = 'Pia', last_name = 'Plain', phone = '301-555-0199' where id = tests.id('d1');
+update public.profiles set first_name = 'Flo', last_name = 'Flag' where id = tests.id('d2');
+update public.profiles set first_name = 'Otto', last_name = 'Outside', phone = '301-555-0198' where id = tests.id('d3');
+select tests.is('plain super admin: not a rep', (select is_rep::text from public.profiles where id = tests.id('d1')), 'false');
+select tests.is('flagged invitation: new super admin is a rep from day one', (select is_rep::text from public.profiles where id = tests.id('d2')), 'true');
+select tests.is('sign-up audit row records is_rep',
+  (select details ->> 'is_rep' from public.audit_log where action = 'profile_created' and target_id = tests.id('d2')), 'true');
+select tests.is('is_complete: admin+rep without a phone is NOT complete', (select is_complete::text from public.profiles where id = tests.id('d2')), 'false');
+update public.profiles set phone = null where id = tests.id('d1');
+select tests.is('is_complete: a plain admin does not need a phone', (select is_complete::text from public.profiles where id = tests.id('d1')), 'true');
+
+-- ---------------- who is "a rep" ----------------
+select tests.is('private.is_rep(): Alex (admin+rep) yes', tests.v(tests.id('a1'), 'select private.is_rep()::text'), 'true');
+select tests.is('private.is_rep(): plain admin no',      tests.v(tests.id('d1'), 'select private.is_rep()::text'), 'false');
+select tests.is('private.is_rep(): rep Jane yes',        tests.v(tests.id('b1'), 'select private.is_rep()::text'), 'true');
+select tests.is('private.is_rep(): client no',           tests.v(tests.id('c1'), 'select private.is_rep()::text'), 'false');
+select tests.is('private.is_admin(): Alex is still an admin', tests.v(tests.id('a1'), 'select private.is_admin()::text'), 'true');
+
+-- ---------------- admin_set_is_rep ----------------
+select tests.is('rep cannot call admin_set_is_rep', tests.x(tests.id('b1'), 'select public.admin_set_is_rep(''' || tests.id('d1') || ''', true)'), 'ERR:42501');
+select tests.is('client cannot call admin_set_is_rep', tests.x(tests.id('c1'), 'select public.admin_set_is_rep(''' || tests.id('d1') || ''', true)'), 'ERR:42501');
+select tests.is('anon cannot call admin_set_is_rep', tests.x(null, 'select public.admin_set_is_rep(''' || tests.id('d1') || ''', true)'), 'ERR:42501');
+select tests.is('only super admins can be switched: a rep', tests.x(tests.id('a1'), 'select public.admin_set_is_rep(''' || tests.id('b1') || ''', false)'), 'ERR:23514');
+select tests.is('only super admins can be switched: a client', tests.x(tests.id('a1'), 'select public.admin_set_is_rep(''' || tests.id('c1') || ''', true)'), 'ERR:23514');
+select tests.is('rep access needs a CLA email', tests.x(tests.id('a1'), 'select public.admin_set_is_rep(''' || tests.id('d3') || ''', true)'), 'ERR:23514');
+select tests.is('unknown user', tests.x(tests.id('a1'), 'select public.admin_set_is_rep(gen_random_uuid(), true)'), 'ERR:P0002');
+update public.app_settings set value = 'true' where key = 'require_admin_mfa';
+select tests.is('MFA required: admin+rep at aal1 cannot call admin_set_is_rep (rep access is not admin access)',
+  tests.x(tests.id('a1'), 'select public.admin_set_is_rep(''' || tests.id('d1') || ''', true)', 'aal1'), 'ERR:42501');
+update public.app_settings set value = 'false' where key = 'require_admin_mfa';
+select tests.is('admin switches plain admin Pia on', tests.x(tests.id('a1'), 'select public.admin_set_is_rep(''' || tests.id('d1') || ''', true)'), 'ok:1');
+select tests.is('...she is now a rep', (select is_rep::text from public.profiles where id = tests.id('d1')), 'true');
+select tests.is('...and the change is audited (before > after)',
+  (select (details ->> 'before') || '>' || (details ->> 'after') from public.audit_log where action = 'rep_flag_changed' and target_id = tests.id('d1')), 'false>true');
+select tests.is('switching to the same value is a harmless no-op (no second audit row)',
+  tests.xv(tests.id('a1'), 'select public.admin_set_is_rep(''' || tests.id('d1') || ''', true)', $q$select count(*)::text from public.audit_log where action = 'rep_flag_changed' and target_id = tests.id('d1')$q$), 'ok:1/1');
+update public.profiles set is_rep = false where id = tests.id('d1');   -- back to a plain admin for the rest
+
+-- ---------------- Alex acting as a rep (MFA on, aal1 = admin policies off, rep policies only) ----------------
+update public.app_settings set value = 'true' where key = 'require_admin_mfa';
+select tests.is('rep-only view: Alex sees herself + client Quinn (2 profiles)', tests.q(tests.id('a1'), 'select * from public.profiles'), '2');
+select tests.is('rep-only view: Alex sees her 2 assignments (Quinn, pending Rae)', tests.q(tests.id('a1'), 'select * from public.assignments'), '2');
+select tests.is('rep-only view: Alex sees own quote + Quinn''s (2)', tests.q(tests.id('a1'), 'select * from public.quotes'), '2');
+select tests.is('rep-only view: Alex cannot see Sam (Jane''s client)',
+  tests.q(tests.id('a1'), 'select * from public.quotes where owner_id = ''' || tests.id('c1') || ''''), '0');
+select tests.is('rep-only view: Alex reads Rae''s pending invitation (cell), not Nina''s (Marcus''s client)',
+  tests.q(tests.id('a1'), 'select * from public.invitations where email = ''rae.pending@example.com''') || '/' ||
+  tests.q(tests.id('a1'), 'select * from public.invitations where email = ''nina.newagent@example.com'''), '1/0');
+select tests.is('rep-only view: Alex cannot read the audit log', tests.q(tests.id('a1'), 'select * from public.audit_log'), '0');
+select tests.is('rep-only view: Alex cannot use the admin reassign RPC',
+  tests.x(tests.id('a1'), 'select public.admin_reassign_client(''pat.homes@example.com'', ''' || tests.id('a1') || ''')'), 'ERR:42501');
+select tests.is('rep-only view: Alex adds her own client by email', tests.x(tests.id('a1'),
+  'insert into public.assignments (client_email, rep_id) values (''self.added@example.com'', ''' || tests.id('a1') || ''')'), 'ok:1');
+select tests.is('rep-only view: Alex cannot assign a client to Jane',
+  tests.x(tests.id('a1'), 'insert into public.assignments (client_email, rep_id) values (''for.jane@example.com'', ''' || tests.id('b1') || ''')'), 'ERR:42501');
+-- a plain admin (not a rep) at aal1 under MFA has NO rep powers at all
+select tests.is('MFA on, plain admin at aal1: sees only herself', tests.q(tests.id('d1'), 'select * from public.profiles'), '1');
+update public.app_settings set value = 'false' where key = 'require_admin_mfa';
+delete from public.assignments where client_email = 'self.added@example.com';
+select tests.is('admin view: Alex still sees everything (all profiles)', (tests.q(tests.id('a1'), 'select * from public.profiles')::int >= 14)::text, 'true');
+
+-- ---------------- the client's side: Quinn's rep is Alex ----------------
+do $$ declare r text; begin
+  perform set_config('request.jwt.claims', json_build_object('sub', tests.id('c6'), 'aal', 'aal1')::text, true);
+  perform set_config('role', 'authenticated', true);
+  select first_name || '/' || coalesce(phone, '') || '/' || coalesce(cell_phone, '') || '/' || coalesce(avatar_path, '-') into r from public.get_my_rep_contact();
+  perform set_config('role', 'postgres', true);
+  perform tests.is('client Quinn: get_my_rep_contact returns Alex (name, office phone, cell, photo path)', r,
+    'Alex/301-555-0100/+13015550101/' || tests.id('a1') || '/avatar');
+  perform set_config('request.jwt.claims', json_build_object('sub', tests.id('c6'), 'aal', 'aal1')::text, true);
+  perform set_config('role', 'authenticated', true);
+  select first_name into r from public.get_my_rep();
+  perform set_config('role', 'postgres', true);
+  perform set_config('request.jwt.claims', '', true);
+  perform tests.is('client Quinn: get_my_rep returns Alex too', r, 'Alex');
+end $$;
+select tests.is('Quinn can read Alex''s photo row (paired as rep/client)', tests.q(tests.id('c6'), 'select * from public.photos where owner_id = ''' || tests.id('a1') || ''''), '1');
+select tests.is('Pat cannot read Alex''s photo row', tests.q(tests.id('c3'), 'select * from public.photos where owner_id = ''' || tests.id('a1') || ''''), '0');
+insert into storage.objects (bucket_id, name) values ('avatars', tests.id('a1') || '/avatar');
+select tests.is('Quinn can read Alex''s photo object (storage policy)', tests.q(tests.id('c6'), 'select * from storage.objects where name = ''' || tests.id('a1') || '/avatar'''), '1');
+select tests.is('Pat cannot read Alex''s photo object', tests.q(tests.id('c3'), 'select * from storage.objects where name = ''' || tests.id('a1') || '/avatar'''), '0');
+
+-- ---------------- quotes: rep_id ----------------
+select tests.is('seed: Quinn''s quote carries Alex as rep (co-branding)',
+  (select rep_id::text from public.quotes where id = '00000000-0000-4000-8000-00000000f00a'), tests.id('a1')::text);
+select tests.is('seed: Alex''s own quote has rep_id = Alex (like a rep)',
+  (select rep_id::text from public.quotes where id = '00000000-0000-4000-8000-00000000f00b'), tests.id('a1')::text);
+select tests.is('Quinn saves a quote through the API', tests.x(tests.id('c6'), 'insert into public.quotes (quote_type, label) values (''buyer'', ''quinn api'')'), 'ok:1');
+select tests.is('...rep_id = Alex', (select rep_id::text from public.quotes where label = 'quinn api'), tests.id('a1')::text);
+select tests.is('Alex saves her own quote through the API', tests.x(tests.id('a1'), 'insert into public.quotes (quote_type, label) values (''buyer'', ''alex api'')'), 'ok:1');
+select tests.is('...rep_id = Alex', (select rep_id::text from public.quotes where label = 'alex api'), tests.id('a1')::text);
+select tests.is('a plain admin''s own quote has no rep_id',
+  tests.xv(tests.id('d1'), 'insert into public.quotes (quote_type, label) values (''buyer'', ''plain admin'')', $q$select coalesce(rep_id::text, 'null') from public.quotes where label = 'plain admin'$q$), 'ok:1/null');
+
+-- ---------------- assignments: who can be a rep ----------------
+select tests.is('admin assigns a client to Alex', tests.x(tests.id('a1'), 'select public.admin_reassign_client(''pat.homes@example.com'', ''' || tests.id('a1') || ''')'), 'ok:1');
+select tests.is('...Pat''s rep is now Alex', (select rep_id::text from public.assignments where client_email = 'pat.homes@example.com' and active), tests.id('a1')::text);
+update public.app_settings set value = 'true' where key = 'require_admin_mfa';
+select tests.is('...rep-only Alex now sees Pat''s quote', tests.q(tests.id('a1'), 'select * from public.quotes where owner_id = ''' || tests.id('c3') || ''''), '1');
+update public.app_settings set value = 'false' where key = 'require_admin_mfa';
+select tests.is('a super admin who is NOT a rep cannot be assigned clients (RPC)',
+  tests.x(tests.id('a1'), 'select public.admin_reassign_client(''pat.homes@example.com'', ''' || tests.id('d1') || ''')'), 'ERR:23514');
+select tests.is('...and Pat is still Alex''s',
+  (select rep_id::text from public.assignments where client_email = 'pat.homes@example.com' and active), tests.id('a1')::text);
+do $$ begin
+  begin insert into public.assignments (client_email, rep_id) values ('x.direct@example.com', tests.id('d1'));
+    perform tests.is('trigger: assignments.rep_id must be rep-capable (plain admin)', 'allowed', 'rejected');
+  exception when check_violation then perform tests.is('trigger: assignments.rep_id must be rep-capable (plain admin)', 'rejected', 'rejected'); end;
+  begin insert into public.assignments (client_email, rep_id) values ('x.direct@example.com', tests.id('c1'));
+    perform tests.is('trigger: assignments.rep_id must be rep-capable (client)', 'allowed', 'rejected');
+  exception when check_violation then perform tests.is('trigger: assignments.rep_id must be rep-capable (client)', 'rejected', 'rejected'); end;
+end $$;
+select tests.is('switching rep access OFF with active clients is refused (Alex)',
+  tests.x(tests.id('a1'), 'select public.admin_set_is_rep(''' || tests.id('a1') || ''', false)'), 'ERR:55006');
+select tests.is('...Alex is still a rep', (select is_rep::text from public.profiles where id = tests.id('a1')), 'true');
+
+-- ---------------- inviting ----------------
+select tests.is('Alex invites a client from the rep dashboard (as_rep): assigned to herself',
+  tests.xv(tests.id('a1'), 'select public.create_invitation(''as.rep.client@example.com'', ''client'', null, ''703-555-0140'', false, true)', $q$select rep_id::text from public.assignments where client_email = 'as.rep.client@example.com' and active$q$), 'ok:1/' || tests.id('a1'));
+select tests.is('...with the cell stored as E.164', (select cell_phone from public.invitations where email = 'as.rep.client@example.com'), '+17035550140');
+select tests.x(tests.id('b2'), 'select public.create_invitation(''marcus.owned@example.com'', ''client'')');
+select tests.is('as_rep: Alex cannot take over another rep''s client',
+  tests.x(tests.id('a1'), 'select public.create_invitation(''marcus.owned@example.com'', ''client'', null, null, false, true)'), 'ERR:23505');
+select tests.is('as_rep: Alex cannot invite a rep', tests.x(tests.id('a1'), 'select public.create_invitation(''new.rep@clatitle.com'', ''rep'', null, null, false, true)'), 'ERR:42501');
+select tests.is('as_rep: Alex cannot invite an admin', tests.x(tests.id('a1'), 'select public.create_invitation(''new.admin@clatitle.com'', ''super_admin'', null, null, false, true)'), 'ERR:42501');
+select tests.is('as_rep needs the caller to be a rep (plain admin Otto)', tests.x(tests.id('d3'), 'select public.create_invitation(''o.client@example.com'', ''client'', null, null, false, true)'), 'ERR:42501');
+select tests.is('a client cannot use as_rep', tests.x(tests.id('c1'), 'select public.create_invitation(''o.client@example.com'', ''client'', null, null, false, true)'), 'ERR:42501');
+select tests.is('Alex acting as admin (no as_rep) may reassign: explicit rep takes over the pending client',
+  tests.xv(tests.id('a1'), 'select public.create_invitation(''marcus.owned@example.com'', ''client'', ''' || tests.id('a1') || ''')', $q$select rep_id::text from public.assignments where client_email = 'marcus.owned@example.com' and active$q$), 'ok:1/' || tests.id('a1'));
+select tests.is('admin invites a super admin who also works as a rep',
+  tests.xv(tests.id('a1'), 'select public.create_invitation(''new.admin.rep@clatitle.com'', ''super_admin'', null, null, true)', $q$select is_rep::text from public.invitations where email = 'new.admin.rep@clatitle.com'$q$), 'ok:1/true');
+select tests.is('p_is_rep with a non-CLA email is refused', tests.x(tests.id('a1'), 'select public.create_invitation(''new.admin@example.com'', ''super_admin'', null, null, true)'), 'ERR:22023');
+select tests.is('p_is_rep with the client role is refused', tests.x(tests.id('a1'), 'select public.create_invitation(''c.flag@example.com'', ''client'', null, null, true)'), 'ERR:42501');
+select tests.is('a rep cannot invite flagged admins', tests.x(tests.id('b1'), 'select public.create_invitation(''new.admin2@clatitle.com'', ''super_admin'', null, null, true)'), 'ERR:42501');
+select tests.is('a rep invitation is stored with is_rep = true',
+  tests.xv(tests.id('a1'), 'select public.create_invitation(''new.rep2@clatitle.com'', ''rep'')', $q$select is_rep::text from public.invitations where email = 'new.rep2@clatitle.com'$q$), 'ok:1/true');
+select tests.is('a plain admin invitation is is_rep = false',
+  tests.xv(tests.id('a1'), 'select public.create_invitation(''new.plain@clatitle.com'', ''super_admin'')', $q$select is_rep::text from public.invitations where email = 'new.plain@clatitle.com'$q$), 'ok:1/false');
+select tests.is('there is exactly one create_invitation (no stale overloads)',
+  (select count(*)::text from pg_proc where proname = 'create_invitation' and pronamespace = 'public'::regnamespace), '1');
+
+-- ---------------- role changes keep the flag consistent ----------------
+select tests.is('admin demotes flagged admin Flo to client: is_rep forced false',
+  tests.xv(tests.id('a1'), 'select public.admin_set_role(''' || tests.id('d2') || ''', ''client'')', $q$select is_rep::text from public.profiles where id = tests.id('d2')$q$), 'ok:1/false');
+select tests.is('...back to super admin: stays false (switch it on again on purpose)',
+  tests.xv(tests.id('a1'), 'select public.admin_set_role(''' || tests.id('d2') || ''', ''super_admin'')', $q$select is_rep::text from public.profiles where id = tests.id('d2')$q$), 'ok:1/false');
+select tests.is('promoting a CLA super admin to rep sets is_rep',
+  tests.xv(tests.id('a1'), 'select public.admin_set_role(''' || tests.id('d2') || ''', ''rep'')', $q$select is_rep::text from public.profiles where id = tests.id('d2')$q$), 'ok:1/true');
+select tests.is('a rep promoted to super admin keeps rep access (their clients stay theirs)',
+  tests.xv(tests.id('a1'), 'select public.admin_set_role(''' || tests.id('d2') || ''', ''super_admin'')', $q$select is_rep::text from public.profiles where id = tests.id('d2')$q$), 'ok:1/true');
+
+-- ---------------- disabled admin+rep ----------------
+select tests.is('admin disables Alex', tests.x(tests.id('d2'), 'select public.admin_set_status(''' || tests.id('a1') || ''', ''disabled'')'), 'ok:1');
+select tests.is('disabled Alex has no rep and no admin powers',
+  tests.v(tests.id('a1'), 'select private.is_rep()::text') || '/' || tests.q(tests.id('a1'), 'select * from public.quotes'), 'false/0');
+select tests.is('a disabled rep is not shown as the client''s rep', tests.q(tests.id('c6'), 'select * from public.get_my_rep()'), '0');
+select tests.is('admin re-enables Alex', tests.x(tests.id('d2'), 'select public.admin_set_status(''' || tests.id('a1') || ''', ''active'')'), 'ok:1');
+select tests.is('...Quinn has her rep back', tests.q(tests.id('c6'), 'select * from public.get_my_rep()'), '1');
+
+-- ---------------- switching off once the clients are moved ----------------
+select tests.is('Pia can be switched on and off while she has no clients',
+  tests.x(tests.id('a1'), 'select public.admin_set_is_rep(''' || tests.id('d1') || ''', true)') || '/' ||
+  tests.xv(tests.id('a1'), 'select public.admin_set_is_rep(''' || tests.id('d1') || ''', false)', $q$select is_rep::text from public.profiles where id = tests.id('d1')$q$), 'ok:1/ok:1/false');
+update public.assignments set active = false where rep_id = tests.id('a1') and active;
+select tests.is('after Alex''s clients are moved away she can switch rep access off',
+  tests.xv(tests.id('d2'), 'select public.admin_set_is_rep(''' || tests.id('a1') || ''', false)', $q$select is_rep::text from public.profiles where id = tests.id('a1')$q$), 'ok:1/false');
+select tests.is('...and Alex is an admin only again: private.is_rep() false', tests.v(tests.id('a1'), 'select private.is_rep()::text'), 'false');
+select tests.is('...her old quote keeps its rep_id (immutable history)', (select rep_id::text from public.quotes where id = '00000000-0000-4000-8000-00000000f00b'), tests.id('a1')::text);
+select tests.is('function privileges: new RPCs are not callable by anon, are by authenticated',
+  (select (not has_function_privilege('anon', 'public.admin_set_is_rep(uuid, boolean)', 'execute')
+       and not has_function_privilege('anon', 'public.create_invitation(text, public.user_role, uuid, text, boolean, boolean)', 'execute')
+       and has_function_privilege('authenticated', 'public.admin_set_is_rep(uuid, boolean)', 'execute'))::text), 'true');
 
 -- ---------------- summary ----------------
 do $$ declare f int; t int; begin
