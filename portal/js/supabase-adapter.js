@@ -1,0 +1,175 @@
+/* Supabase implementation of the adapter contract (see auth-adapter.js).
+ * Written against the documented supabase-js v2 API; NOT yet run against a live project (none exists yet).
+ * Only the project URL and the public "anon" key go in portal/config.js. The service-role key never
+ * appears in the browser: invites and disabling users go through the Edge Functions in supabase/functions/.
+ * Every read here relies on Row Level Security (supabase/migrations/*_rls_and_rpc.sql); this file does
+ * no access checking of its own. */
+(function () {
+  const CLA = (window.CLA = window.CLA || {});
+
+  CLA.createSupabaseAdapter = function (cfg, supabaseLib) {
+    const sb = supabaseLib.createClient(cfg.url, cfg.anonKey, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "implicit" },
+    });
+    const must = ({ data, error }) => { if (error) throw new Error(friendly(error)); return data; };
+    function friendly(e) {
+      const m = e.message || String(e);
+      if (/Invalid login credentials/i.test(m)) return "Invalid email or password.";
+      if (/Email not confirmed/i.test(m)) return "Check your email for the invitation link first.";
+      if (/rate limit|too many/i.test(m)) return "Too many attempts. Wait a minute and try again.";
+      if (e.code === "42501" || /row-level security|permission denied/i.test(m)) return "You do not have access to that.";
+      return m;
+    }
+    const iso = (x) => x || null;
+
+    // ---- row <-> DTO mappers ----
+    const toProfile = (r) => r && ({
+      id: r.id, role: r.role, status: r.status, email: r.email, firstName: r.first_name || "", lastName: r.last_name || "",
+      phone: r.phone, companyName: r.company_name, companyPhone: r.company_phone, companyAddress: r.company_address,
+      companyWebsite: r.company_website, licenseOrNmls: r.license_or_nmls_number, avatarPath: r.avatar_path,
+      termsAcceptedAt: iso(r.terms_accepted_at), isComplete: !!r.is_complete, createdAt: r.created_at });
+    const toQuote = (r) => r && ({
+      id: r.id, ownerId: r.owner_id, repId: r.rep_id, quoteType: r.quote_type, label: r.label, state: r.state, county: r.county,
+      propertyAddress: r.property_address, price: r.price == null ? null : +r.price, inputs: r.inputs, results: r.results,
+      feeVersion: r.fee_version, createdAt: r.created_at, expiresAt: r.expires_at, deleted: !!r.deleted_at });
+    const toAssignment = (r) => ({ id: r.id, clientEmail: r.client_email, clientUserId: r.client_user_id, repId: r.rep_id, active: r.active, createdAt: r.created_at });
+    const snapToRow = (s) => ({
+      quote_type: s.quoteType, label: s.label || null, state: s.state || null, county: s.county || null,
+      property_address: s.propertyAddress || null, price: s.price == null ? null : +s.price,
+      inputs: s.inputs || {}, results: s.results || {}, fee_version: s.feeVersion || null });
+
+    async function uid() {
+      const { data } = await sb.auth.getSession();
+      if (!data.session) throw new Error("Please sign in.");
+      return data.session.user.id;
+    }
+    // Edge Function errors carry the JSON body in error.context
+    async function fn(name, body) {
+      const { data, error } = await sb.functions.invoke(name, { body });
+      if (error) {
+        let msg = error.message;
+        try { const j = await error.context.json(); if (j && j.error) msg = j.error; } catch (e) {}
+        throw new Error(msg);
+      }
+      if (data && data.error) throw new Error(data.error);
+      return data;
+    }
+    const redirectBase = () => new URL("set-password.html", location.href.replace(/[?#].*$/, "")).href;
+
+    // signed photo URLs are cached for 50 minutes of their 60
+    const urlCache = new Map();
+    const PROFILE_COLS = "*";
+
+    return {
+      mode: "supabase",
+      async getSession() {
+        const { data } = await sb.auth.getSession();
+        return data.session ? { userId: data.session.user.id, email: data.session.user.email } : null;
+      },
+      async signIn(email, password) {
+        const d = must(await sb.auth.signInWithPassword({ email: String(email).trim(), password }));
+        return { userId: d.user.id, email: d.user.email };
+      },
+      async signOut() { urlCache.clear(); await sb.auth.signOut(); },
+      async requestPasswordReset(email, redirectTo) {
+        // Supabase answers the same whether or not the email exists.
+        must(await sb.auth.resetPasswordForEmail(String(email).trim(), { redirectTo: redirectTo || redirectBase() }));
+        return true;
+      },
+      async hasRecoverySession() { const { data } = await sb.auth.getSession(); return !!data.session; },
+      async updatePassword(pw) { must(await sb.auth.updateUser({ password: pw })); return true; },
+
+      async getMyProfile() {
+        const id = await uid();
+        const r = must(await sb.from("profiles").select(PROFILE_COLS).eq("id", id).maybeSingle());
+        if (!r) throw new Error("Your account is disabled or not set up. Contact CLA.");
+        return toProfile(r);
+      },
+      async updateMyProfile(p) {
+        const id = await uid(), m = { firstName: "first_name", lastName: "last_name", phone: "phone", companyName: "company_name",
+          companyPhone: "company_phone", companyAddress: "company_address", companyWebsite: "company_website", licenseOrNmls: "license_or_nmls_number" };
+        const row = {}; for (const k in m) if (k in p) row[m[k]] = p[k] === "" ? (k === "firstName" || k === "lastName" ? "" : null) : p[k];
+        const r = must(await sb.from("profiles").update(row).eq("id", id).select(PROFILE_COLS).single());
+        return toProfile(r);
+      },
+      async acceptTerms() { const id = await uid(); must(await sb.from("profiles").update({ terms_accepted_at: new Date().toISOString() }).eq("id", id)); },
+      async uploadAvatar(file) {
+        const bad = await CLA.validatePhoto(file); if (bad) throw new Error(bad);
+        const id = await uid(), path = id + "/avatar", blob = await CLA.prepareAvatar(file);
+        must(await sb.storage.from("avatars").upload(path, blob, { upsert: true, contentType: file.type, cacheControl: "3600" }));
+        const have = must(await sb.from("photos").select("id").eq("owner_id", id).maybeSingle());
+        const meta = { storage_path: path, mime_type: file.type, size_bytes: blob.size };
+        if (have) must(await sb.from("photos").update(meta).eq("owner_id", id));
+        else must(await sb.from("photos").insert(Object.assign({ owner_id: id }, meta)));
+        urlCache.delete(id);
+        return this.getMyProfile();
+      },
+      async removeAvatar() {
+        const id = await uid();
+        await sb.storage.from("avatars").remove([id + "/avatar"]);
+        must(await sb.from("photos").delete().eq("owner_id", id));
+        urlCache.delete(id);
+        return this.getMyProfile();
+      },
+      async getAvatarUrl(p) {
+        if (!p || !p.avatarPath) return null;
+        const hit = urlCache.get(p.id); if (hit && hit.exp > Date.now()) return hit.url;
+        const { data, error } = await sb.storage.from("avatars").createSignedUrl(p.avatarPath, 3600);
+        if (error || !data) return null;
+        urlCache.set(p.id, { url: data.signedUrl, exp: Date.now() + 50 * 60000 });
+        return data.signedUrl;
+      },
+      async getMyRep() {
+        const rows = must(await sb.rpc("get_my_rep"));
+        const r = Array.isArray(rows) ? rows[0] : rows; if (!r) return null;
+        return { id: r.id, firstName: r.first_name, lastName: r.last_name, phone: r.phone, email: r.email, avatarPath: r.avatar_path };
+      },
+
+      async saveQuote(snap) {
+        const id = await uid();
+        return toQuote(must(await sb.from("quotes").insert(Object.assign({ owner_id: id }, snapToRow(snap))).select().single()));
+      },
+      async updateQuote(qid, snap) {
+        const row = snapToRow(snap);                       // expires_at is not updatable: no expiry extension
+        return toQuote(must(await sb.from("quotes").update(row).eq("id", qid).select().single()));
+      },
+      async listMyQuotes() {
+        const id = await uid();
+        return must(await sb.from("quotes").select("*").eq("owner_id", id).order("created_at", { ascending: false })).map(toQuote);
+      },
+      async getQuote(qid) { return toQuote(must(await sb.from("quotes").select("*").eq("id", qid).maybeSingle())); },
+      async deleteQuote(qid) { must(await sb.rpc("delete_my_quote", { p_quote: qid })); },
+
+      async listMyClients() {
+        const asg = must(await sb.from("assignments").select("*").eq("active", true)).map(toAssignment);   // RLS: this rep's rows
+        const ids = asg.map((a) => a.clientUserId).filter(Boolean);
+        const profs = ids.length ? must(await sb.from("profiles").select("*").in("id", ids)).map(toProfile) : [];
+        const qs = ids.length ? must(await sb.from("quotes").select("id, owner_id, created_at").in("owner_id", ids)) : [];
+        return asg.map((a) => {
+          const p = profs.find((x) => x.id === a.clientUserId) || null, mine = qs.filter((q) => q.owner_id === a.clientUserId);
+          return { email: a.clientEmail, profile: p, pending: !p, quoteCount: mine.length,
+            lastQuoteAt: mine.length ? mine.map((q) => q.created_at).sort().pop() : null };
+        });
+      },
+      async listQuotesForClient(cid) {
+        return must(await sb.from("quotes").select("*").eq("owner_id", cid).order("created_at", { ascending: false })).map(toQuote);
+      },
+      async inviteClient(email) {
+        return fn("invite-user", { email, role: "client", redirectTo: redirectBase() + "?invite=1" });
+      },
+
+      async adminListUsers() { return must(await sb.from("profiles").select("*").order("created_at")).map(toProfile); },
+      async adminListAssignments() { return must(await sb.from("assignments").select("*").order("created_at", { ascending: false })).map(toAssignment); },
+      async adminListQuotes() { return must(await sb.from("quotes").select("*").order("created_at", { ascending: false })).map(toQuote); },
+      async adminInvite(o) { return fn("invite-user", { email: o.email, role: o.role, repId: o.repId || null, redirectTo: redirectBase() + "?invite=1" }); },
+      async adminSetStatus(id, status) { return fn("set-user-status", { userId: id, status }); },
+      async adminSetRole(id, role) { must(await sb.rpc("admin_set_role", { p_user: id, p_role: role })); },
+      async adminReassign(email, repId) { must(await sb.rpc("admin_reassign_client", { p_client_email: email, p_rep_id: repId })); },
+      async adminAuditLog(limit) {
+        return must(await sb.from("audit_log").select("*").order("at", { ascending: false }).limit(limit || 100))
+          .map((r) => ({ id: r.id, at: r.at, actorId: r.actor_id, action: r.action, targetType: r.target_type, targetId: r.target_id, details: r.details }));
+      },
+      async adminLogQuoteView(qid) { must(await sb.rpc("admin_log_quote_view", { p_quote: qid })); },
+    };
+  };
+})();

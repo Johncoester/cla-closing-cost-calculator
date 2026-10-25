@@ -1,0 +1,173 @@
+/* Mock implementation of the adapter contract (see auth-adapter.js). Local sample data in
+ * localStorage; no network. It mirrors the database access rules so the screens behave like the real thing:
+ * reps see only their assigned clients, clients see only themselves and their rep, quotes expire after 30 days.
+ *
+ * PASSWORDS: the mock never stores or checks one. Any non-empty password signs in a sample account.
+ * Only the signed-in user id is kept (localStorage "cla_portal_mock_session"). */
+(function () {
+  const CLA = (window.CLA = window.CLA || {});
+  const KEY = "cla_portal_mock_v1", SKEY = "cla_portal_mock_session", DAY = 86400000;
+
+  CLA.createMockAdapter = function () {
+    const load = () => {
+      try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.version === 1) return s; } catch (e) {}
+      const s = CLA.MOCK_SEED(); localStorage.setItem(KEY, JSON.stringify(s)); return s;
+    };
+    const save = (s) => localStorage.setItem(KEY, JSON.stringify(s));
+    const uid = () => ((crypto.randomUUID && crypto.randomUUID()) || "m" + Date.now() + Math.random().toString(16).slice(2));
+    const clone = (x) => JSON.parse(JSON.stringify(x));
+    const err = (m) => { throw new Error(m); };
+    const lc = (e) => String(e || "").trim().toLowerCase();
+    const live = (q) => new Date(q.expiresAt).getTime() > Date.now();       // RLS: expired rows invisible at once
+    const complete = (p) => !!(p.firstName && p.lastName && (p.role !== "rep" || p.phone));
+
+    function me(s) {
+      const id = localStorage.getItem(SKEY); const p = id && s.users.find((u) => u.id === id);
+      return p && p.status === "active" ? p : null;
+    }
+    function need(s) { return me(s) || err("Please sign in."); }
+    const log = (s, actor, action, targetType, targetId, details) =>
+      s.audit.unshift({ id: uid(), at: new Date().toISOString(), actorId: actor, action, targetType, targetId, details: details || {} });
+    const repOf = (s, clientId) => { const a = s.assignments.find((x) => x.active && x.clientUserId === clientId); const r = a && s.users.find((u) => u.id === a.repId && u.status === "active"); return r || null; };
+    const myClientIds = (s, repId) => s.assignments.filter((a) => a.active && a.repId === repId && a.clientUserId).map((a) => a.clientUserId);
+    const dto = (p) => { const o = clone(p); o.isComplete = complete(p); return o; };
+
+    // quotes visible to `u` (same rules as the quotes RLS policies)
+    function visibleQuotes(s, u) {
+      const mine = myClientIds(s, u.id);
+      return s.quotes.filter((q) => live(q) && (
+        u.role === "super_admin" ? true :
+        (q.ownerId === u.id && !q.deletedAt) || (u.role === "rep" && mine.includes(q.ownerId) && !q.deletedAt)));
+    }
+    const qdto = (q) => { const o = clone(q); delete o.deletedAt; return o; };
+    function snapToQuote(s, u, snap, base) {
+      const q = Object.assign(base || {}, {
+        quoteType: snap.quoteType, label: snap.label || null, state: snap.state || null, county: snap.county || null,
+        propertyAddress: snap.propertyAddress || null, price: snap.price == null ? null : +snap.price,
+        inputs: clone(snap.inputs || {}), results: clone(snap.results || {}), feeVersion: snap.feeVersion || null });
+      if (!base) {
+        const now = Date.now(); const rep = u.role === "rep" ? u : repOf(s, u.id);
+        Object.assign(q, { id: uid(), ownerId: u.id, repId: rep ? rep.id : null, createdAt: new Date(now).toISOString(),
+          expiresAt: new Date(now + 30 * DAY).toISOString(), deletedAt: null });
+      }
+      return q;
+    }
+
+    const A = {
+      mode: "mock",
+      async getSession() { const u = me(load()); return u ? { userId: u.id, email: u.email } : null; },
+      async signIn(email, password) {
+        const s = load(); const u = s.users.find((x) => x.email === lc(email));
+        if (!password) err("Enter your password.");
+        if (!u || u.status !== "active") err("Invalid email or password.");   // same message for unknown and disabled
+        localStorage.setItem(SKEY, u.id); return { userId: u.id, email: u.email };
+      },
+      async signOut() { localStorage.removeItem(SKEY); },
+      async requestPasswordReset(email) { /* always "succeeds" so the screen never reveals which emails exist */ return true; },
+      async hasRecoverySession() { return true; },
+      async updatePassword(pw) { if (!pw || pw.length < 12) err("Password is too short."); return true; },   // nothing is stored
+
+      async getMyProfile() { const s = load(); return dto(need(s)); },
+      async updateMyProfile(patch) {
+        const s = load(), u = need(s);
+        for (const k of ["firstName", "lastName", "phone", "companyName", "companyPhone", "companyAddress", "companyWebsite", "licenseOrNmls"]) {
+          if (k in patch) u[k] = patch[k] == null || patch[k] === "" ? (k === "firstName" || k === "lastName" ? "" : null) : String(patch[k]).slice(0, 300);
+        }
+        save(s); return dto(u);
+      },
+      async acceptTerms() { const s = load(), u = need(s); u.termsAcceptedAt = new Date().toISOString(); save(s); },
+      async uploadAvatar(file) {
+        const bad = await CLA.validatePhoto(file); if (bad) err(bad);
+        const blob = await CLA.prepareAvatar(file);
+        const url = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
+        const s = load(), u = need(s); s.photos[u.id] = url; u.avatarPath = u.id + "/avatar";
+        log(s, u.id, "photo_changed", "photo", null, { mime_type: file.type, size_bytes: blob.size }); save(s); return dto(u);
+      },
+      async removeAvatar() { const s = load(), u = need(s); delete s.photos[u.id]; u.avatarPath = null; log(s, u.id, "photo_removed", "photo", null, {}); save(s); return dto(u); },
+      async getAvatarUrl(p) {
+        if (!p || !p.avatarPath) return null; const s = load(), u = me(s);
+        if (!u) return null;
+        const ok = u.id === p.id || u.role === "super_admin" || (repOf(s, p.id) || {}).id === u.id || (repOf(s, u.id) || {}).id === p.id;
+        return ok ? s.photos[p.id] || null : null;
+      },
+      async getMyRep() {
+        const s = load(), u = need(s), r = repOf(s, u.id); if (!r) return null;
+        return { id: r.id, firstName: r.firstName, lastName: r.lastName, phone: r.phone, email: r.email, avatarPath: r.avatarPath };
+      },
+
+      async saveQuote(snap) { const s = load(), u = need(s); const q = snapToQuote(s, u, snap); s.quotes.unshift(q); save(s); return qdto(q); },
+      async updateQuote(id, snap) {
+        const s = load(), u = need(s); const q = s.quotes.find((x) => x.id === id && x.ownerId === u.id && !x.deletedAt && live(x));
+        if (!q) err("That quote is no longer available."); snapToQuote(s, u, snap, q); save(s); return qdto(q);   // expiry is NOT extended
+      },
+      async listMyQuotes() { const s = load(), u = need(s); return visibleQuotes(s, u).filter((q) => q.ownerId === u.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(qdto); },
+      async getQuote(id) { const s = load(), u = need(s); const q = visibleQuotes(s, u).find((x) => x.id === id); return q ? qdto(q) : null; },
+      async deleteQuote(id) {
+        const s = load(), u = need(s); const q = s.quotes.find((x) => x.id === id && x.ownerId === u.id && !x.deletedAt && live(x));
+        if (!q) err("No such quote."); q.deletedAt = new Date().toISOString(); log(s, u.id, "quote_deleted", "quote", id, { owner_id: u.id }); save(s);
+      },
+
+      async listMyClients() {
+        const s = load(), u = need(s); if (u.role !== "rep") err("Reps only.");
+        return s.assignments.filter((a) => a.active && a.repId === u.id).map((a) => {
+          const p = a.clientUserId && s.users.find((x) => x.id === a.clientUserId);
+          const qs = p ? visibleQuotes(s, u).filter((q) => q.ownerId === p.id) : [];
+          return { email: a.clientEmail, profile: p ? dto(p) : null, pending: !p, quoteCount: qs.length,
+            lastQuoteAt: qs.length ? qs.map((q) => q.createdAt).sort().pop() : null };
+        });
+      },
+      async listQuotesForClient(clientId) { const s = load(), u = need(s); return visibleQuotes(s, u).filter((q) => q.ownerId === clientId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(qdto); },
+      async inviteClient(email) {
+        const s = load(), u = need(s); if (u.role !== "rep") err("Reps only."); return invite(s, u, { email, role: "client", repId: u.id });
+      },
+
+      async adminListUsers() { const s = load(), u = need(s); if (u.role !== "super_admin") err("Admins only."); return s.users.map(dto); },
+      async adminListAssignments() { const s = load(), u = need(s); if (u.role !== "super_admin") err("Admins only."); return clone(s.assignments); },
+      async adminListQuotes() { const s = load(), u = need(s); if (u.role !== "super_admin") err("Admins only."); return visibleQuotes(s, u).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((q) => Object.assign(qdto(q), { deleted: !!q.deletedAt })); },
+      async adminInvite(o) { const s = load(), u = need(s); if (u.role !== "super_admin") err("Admins only."); return invite(s, u, o); },
+      async adminSetStatus(id, status) {
+        const s = load(), u = need(s); if (u.role !== "super_admin") err("Admins only."); if (id === u.id) err("You cannot disable yourself.");
+        const t = s.users.find((x) => x.id === id) || err("No such user."); const before = t.status; t.status = status;
+        log(s, u.id, status === "disabled" ? "user_disabled" : "user_enabled", "profile", id, { before, after: status }); save(s);
+      },
+      async adminSetRole(id, role) {
+        const s = load(), u = need(s); if (u.role !== "super_admin") err("Admins only."); if (id === u.id) err("You cannot change your own role.");
+        const t = s.users.find((x) => x.id === id) || err("No such user.");
+        if (role === "rep" && !t.email.endsWith("@clatitle.com")) err("Reps must use an @clatitle.com email.");
+        const before = t.role; t.role = role; log(s, u.id, "role_changed", "profile", id, { before, after: role }); save(s);
+      },
+      async adminReassign(email, repId) {
+        const s = load(), u = need(s); if (u.role !== "super_admin") err("Admins only."); const e = lc(email);
+        const rep = s.users.find((x) => x.id === repId && x.role === "rep") || err("Pick a rep.");
+        s.assignments.filter((a) => a.clientEmail === e && a.active).forEach((a) => (a.active = false));
+        const p = s.users.find((x) => x.email === e);
+        s.assignments.push({ id: uid(), clientEmail: e, clientUserId: p ? p.id : null, repId: rep.id, active: true, createdAt: new Date().toISOString() });
+        log(s, u.id, "assignment_changed", "assignment", null, { client_email: e, rep_id: rep.id }); save(s);
+      },
+      async adminAuditLog(limit) { const s = load(), u = need(s); if (u.role !== "super_admin") err("Admins only."); return clone(s.audit.slice(0, limit || 100)); },
+      async adminLogQuoteView(id) { const s = load(), u = need(s); if (u.role !== "super_admin") return; log(s, u.id, "quote_viewed_by_admin", "quote", id, {}); save(s); },
+
+      // test/demo helper (mock only): put the sample data back
+      async _reset() { localStorage.removeItem(KEY); localStorage.removeItem(SKEY); },
+    };
+
+    function invite(s, actor, o) {
+      const e = lc(o.email), role = o.role;
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) err("Enter a valid email address.");
+      if (role === "rep" && !e.endsWith("@clatitle.com")) err("Reps must use an @clatitle.com email.");
+      if (s.users.some((x) => x.email === e)) err("That email already has an account.");
+      const existing = s.assignments.find((a) => a.clientEmail === e && a.active);
+      if (role === "client" && existing && actor.role !== "super_admin" && existing.repId !== actor.id) err("That client already belongs to another rep.");
+      s.invitations = s.invitations.filter((i) => i.email !== e);
+      s.invitations.push({ email: e, role, invitedBy: actor.id, createdAt: new Date().toISOString() });
+      if (role === "client" && o.repId) {
+        s.assignments.filter((a) => a.clientEmail === e && a.active && a.repId !== o.repId).forEach((a) => (a.active = false));
+        if (!s.assignments.some((a) => a.clientEmail === e && a.active))
+          s.assignments.push({ id: uid(), clientEmail: e, clientUserId: null, repId: o.repId, active: true, createdAt: new Date().toISOString() });
+      }
+      log(s, actor.id, "invite_sent", "invitation", null, { email: e, role, rep_id: o.repId || null }); save(s);
+      return { ok: true, mockNote: "Demo mode: no email is sent." };
+    }
+    return A;
+  };
+})();

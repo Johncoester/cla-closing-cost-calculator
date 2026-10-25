@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quote — C.L.A. Quote Portal</title>
+<meta name="theme-color" content="#000000"><meta name="robots" content="noindex">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="portal.css">
+<script src="config.js"></script>
+<script src="js/mock-data.js"></script><script src="js/mock-adapter.js"></script><script src="js/supabase-adapter.js"></script><script src="js/auth-adapter.js"></script><script src="js/portal-ui.js"></script>
+</head><body>
+<main class="pg mid" id="main">
+<div class="noprint" style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px"><a href="javascript:history.back()">← Back</a><button class="btn" type="button" id="print">Print / Save PDF</button></div>
+<div id="err" class="msg err" role="alert"></div>
+<div id="body" class="stack" hidden>
+ <div class="cobrand" id="cobrand"></div>
+ <section class="hero"><small id="hLabel"></small><div class="big" id="hValue"></div><p class="sum" id="hSub"></p></section>
+ <div id="lines" class="stack"></div>
+ <p class="sum" id="warns"></p>
+ <p class="sum noprint" id="expiry"></p>
+</div>
+</main>
+<footer class="disc"><p>Estimate only, not a Loan Estimate, Closing Disclosure, or commitment to insure; actual charges may vary. Contact C.L.A. Title &amp; Escrow for a binding quote.</p></footer>
+<script>
+(async () => {
+  const { $, esc } = CLA; const { A, me } = await CLA.boot(null);
+  $("print").onclick = () => window.print();
+  const id = CLA.q("id"); const q = id && (await A.getQuote(id));
+  if (!q) { $("err").textContent = "That quote was not found. Quotes are deleted automatically 30 days after they are created."; return; }
+  if (me.role === "super_admin" && q.ownerId !== me.id) A.adminLogQuoteView(q.id).catch(() => {});
+  // who owns it, and who is their rep
+  let owner = me.id === q.ownerId ? me : null, rep = null;
+  if (!owner && me.role === "rep") { const c = (await A.listMyClients()).find((x) => x.profile && x.profile.id === q.ownerId); owner = c && c.profile; }
+  if (!owner && me.role === "super_admin") owner = (await A.adminListUsers()).find((u) => u.id === q.ownerId);
+  if (me.role === "client") rep = await A.getMyRep();
+  else if (me.role === "rep") rep = owner && owner.role === "client" ? me : null;
+  else if (q.repId) rep = (await A.adminListUsers()).find((u) => u.id === q.repId);
+  if (owner && owner.role === "rep") rep = owner;
+  const party = async (p, role) => !p ? "" : '<div class="party">' + CLA.avatarImg(await A.getAvatarUrl(p), p, "lg") + "<div><b>" + esc(CLA.fullName(p)) + "</b><span>" + esc(role === "rep" ? "C.L.A. Title & Escrow" : p.companyName || "") + "</span><span>" + esc(p.phone || "") + (p.licenseOrNmls && role !== "rep" ? " · " + esc(p.licenseOrNmls) : "") + "</span></div></div>";
+  const clientSide = owner && owner.role === "client" ? await party(owner, "client") : "";
+  const repSide = await party(rep, "rep");
+  $("cobrand").innerHTML = (clientSide || "") + (clientSide && repSide ? '<div class="divider"></div>' : "") + (repSide || '<div class="party"><div class="logo" style="width:56px;height:56px;font-size:18px">CLA</div><div><b>C.L.A. Title &amp; Escrow</b><span>Closing cost estimate</span></div></div>') +
+    '<div class="meta">Prepared ' + CLA.date(q.createdAt) + "<br>" + esc(q.propertyAddress || "") + (q.feeVersion ? "<br>Fees: " + esc(q.feeVersion) : "") + "</div>";
+  const r = q.results || {}, h = r.headline || {};
+  $("hLabel").textContent = h.label || (q.quoteType === "buyer" ? "Estimated total" : "Net proceeds"); $("hValue").textContent = CLA.money(h.value);
+  $("hSub").textContent = [q.label, q.county ? q.county + ", " + q.state : null].filter(Boolean).join(" · ");
+  const groups = []; (r.lines || []).forEach((l) => { let g = groups.find((x) => x.sec === l.sec); if (!g) groups.push((g = { sec: l.sec, rows: [] })); g.rows.push(l); });
+  const two = (r.lines || []).some((l) => "b" in l);
+  $("lines").innerHTML = groups.map((g) => '<section class="card flush"><div class="sh"><h2>' + esc(g.sec) + '</h2></div><div class="tablewrap"><table><tbody>' + g.rows.map((l) => "<tr><td>" + esc(l.item) + "</td>" + (two ? '<td class="num">' + (l.b ? CLA.money(l.b) : "—") + '</td><td class="num">' + (l.s ? CLA.money(l.s) : "—") + "</td>" : '<td class="num">' + CLA.money(l.amt) + "</td>") + "</tr>").join("") + "</tbody></table></div></section>").join("") || '<div class="card"><pre style="white-space:pre-wrap;margin:0;font:inherit">' + esc(r.text || "") + "</pre></div>";
+  $("warns").innerHTML = (r.warnings || []).map(esc).join("<br>");
+  $("expiry").innerHTML = CLA.expiryHtml(q) + ". Run a new quote any time from the calculator.";
+  $("body").hidden = false;
+})();
+</script></body></html>

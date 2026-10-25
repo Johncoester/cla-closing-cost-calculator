@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Rep dashboard — C.L.A. Quote Portal</title>
+<meta name="theme-color" content="#000000"><meta name="robots" content="noindex">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="portal.css">
+<script src="config.js"></script>
+<script src="js/mock-data.js"></script><script src="js/mock-adapter.js"></script><script src="js/supabase-adapter.js"></script><script src="js/auth-adapter.js"></script><script src="js/portal-ui.js"></script>
+</head><body>
+<main class="pg">
+<div class="grid2" style="grid-template-columns:minmax(0,1fr) auto;margin-bottom:20px;align-items:center">
+ <div class="pcard" id="hello"></div>
+ <a class="btn o" href="../index.html">Open the calculator</a>
+</div>
+<div class="seg" id="tabs" role="tablist"></div>
+
+<div id="pClients" class="stack">
+ <section class="card flush">
+  <div class="sh"><h2>My clients and agents</h2><div class="grow"><span class="sum" id="cCount"></span></div></div>
+  <div class="tablewrap"><table><thead><tr><th>Client</th><th>Email</th><th class="num">Saved quotes</th><th>Last quote</th><th>Status</th></tr></thead><tbody id="clients"></tbody></table></div>
+ </section>
+ <section class="card flush" id="detail" hidden>
+  <div class="sh"><h2 id="dTitle"></h2><div class="grow"><button class="btn sec sm" id="dClose" type="button">Close</button></div></div>
+  <div class="tablewrap"><table><thead><tr><th>Quote</th><th>Type</th><th class="num">Price</th><th>Saved</th><th></th></tr></thead><tbody id="dRows"></tbody></table></div>
+ </section>
+ <section class="card">
+  <h2>Invite a client or agent</h2>
+  <p class="sub">They get an email to set a password. They are matched to you by email, so quotes they save show up here.</p>
+  <div id="iErr" class="msg err" role="alert"></div><div id="iOk" class="msg ok" role="status"></div>
+  <form id="inv" class="row" style="grid-template-columns:minmax(0,1fr) auto;align-items:end;margin-bottom:0" novalidate>
+   <div><label for="iEmail">Client email</label><input type="email" id="iEmail" placeholder="agent@brokerage.com" autocomplete="off"></div>
+   <button class="btn" type="submit">Send invite</button>
+  </form>
+ </section>
+</div>
+
+<div id="pQuotes" hidden>
+ <section class="card flush">
+  <div class="sh"><h2>All saved quotes</h2><div class="grow"><span class="sum">Your clients' quotes and your own. Quotes delete themselves 30 days after they were created.</span></div></div>
+  <div class="tablewrap"><table><thead><tr><th>Client</th><th>Quote</th><th>Type</th><th class="num">Price</th><th>Saved</th><th></th></tr></thead><tbody id="qRows"></tbody></table></div>
+ </section>
+</div>
+</main>
+<script>
+(async () => {
+  const { $, esc } = CLA; const { A, me } = await CLA.boot(["rep"]);
+  const myUrl = await A.getAvatarUrl(me);
+  $("hello").innerHTML = CLA.avatarImg(myUrl, me, "lg") + "<div><h1 class='pt' style='margin-bottom:2px'>Hi " + esc(me.firstName || "there") + "</h1><p>" + esc(me.phone || "Add your phone number in your profile") + " · " + esc(me.email) + '</p><p><a href="profile.html">Edit profile and photo</a></p></div>';
+  CLA.tabs($("tabs"), ["My clients", "Quotes"], (i) => { $("pClients").hidden = i !== 0; $("pQuotes").hidden = i !== 1; if (i === 1) loadAll(); });
+
+  const typeBadge = (q) => '<span class="badge ' + (q.quoteType === "buyer" ? "" : "warn") + '">' + (q.quoteType === "buyer" ? "Buyer quote" : "Seller net") + "</span>";
+  const qRow = (q, who) => "<tr>" + (who ? "<td>" + who + "</td>" : "") + "<td><b>" + esc(q.label || q.propertyAddress || "Quote") + "</b><br>" + CLA.expiryHtml(q) + "</td><td>" + typeBadge(q) + '</td><td class="num">' + CLA.money0(q.price) + "</td><td>" + CLA.date(q.createdAt) + '</td><td class="num"><a class="btn o sm" href="quote.html?id=' + encodeURIComponent(q.id) + '">View</a></td></tr>';
+  let clients = [];
+  async function loadClients() {
+    clients = await A.listMyClients(); $("cCount").textContent = clients.length + " client" + (clients.length === 1 ? "" : "s");
+    $("clients").innerHTML = clients.length ? clients.map((c, i) => {
+      const p = c.profile, name = p ? CLA.fullName(p) : c.email;
+      const st = c.pending ? '<span class="badge warn">Invited, not signed up</span>' : p.status === "disabled" ? '<span class="badge off">Disabled</span>' : '<span class="badge">Active</span>';
+      return '<tr class="' + (p ? "click" : "") + '" data-i="' + i + '"><td><div class="who">' + (p ? CLA.avImg(p, "sm") : CLA.avatarImg(null, {}, "sm")) + "<div><b>" + esc(name) + "</b><span>" + esc(p && p.companyName || "") + "</span></div></div></td><td>" + esc(c.email) + '</td><td class="num">' + c.quoteCount + "</td><td>" + CLA.date(c.lastQuoteAt) + "</td><td>" + st + "</td></tr>";
+    }).join("") : '<tr><td colspan="5" class="empty">No clients yet. Invite one below, or ask an admin to assign you some.</td></tr>';
+    CLA.fillAvatars(A, $("clients"));
+  }
+  $("clients").onclick = async (e) => {
+    const tr = e.target.closest("tr[data-i]"); if (!tr) return; const c = clients[+tr.dataset.i]; if (!c.profile) return;
+    const qs = await A.listQuotesForClient(c.profile.id);
+    $("dTitle").textContent = "Saved quotes: " + CLA.fullName(c.profile); $("detail").hidden = false;
+    $("dRows").innerHTML = qs.length ? qs.map((q) => qRow(q)).join("") : '<tr><td colspan="5" class="empty">No saved quotes in the last 30 days.</td></tr>';
+    $("detail").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  };
+  $("dClose").onclick = () => ($("detail").hidden = true);
+  async function loadAll() {
+    const rows = [];
+    for (const c of clients) if (c.profile) for (const q of await A.listQuotesForClient(c.profile.id)) rows.push([q, CLA.fullName(c.profile)]);
+    for (const q of await A.listMyQuotes()) rows.push([q, "<i>Me</i>"]);
+    rows.sort((a, b) => b[0].createdAt.localeCompare(a[0].createdAt));
+    $("qRows").innerHTML = rows.length ? rows.map((r) => qRow(r[0], r[1].startsWith("<i>") ? r[1] : esc(r[1]))).join("") : '<tr><td colspan="6" class="empty">No saved quotes yet.</td></tr>';
+  }
+  $("inv").onsubmit = async (e) => {
+    e.preventDefault(); $("iErr").textContent = ""; $("iOk").textContent = ""; const email = $("iEmail").value.trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { $("iErr").textContent = "Enter a valid email address."; return; }
+    try { const r = await A.inviteClient(email); $("iOk").textContent = "Invitation recorded for " + email + ". " + ((r && r.mockNote) || "They will get an email shortly."); $("iEmail").value = ""; await loadClients(); }
+    catch (ex) { $("iErr").textContent = ex.message; }
+  };
+  await loadClients();
+})();
+</script></body></html>

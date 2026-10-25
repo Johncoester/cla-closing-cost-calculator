@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sign in — C.L.A. Quote Portal</title>
+<meta name="theme-color" content="#000000"><meta name="robots" content="noindex">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="portal.css">
+<script src="config.js"></script>
+<script src="js/mock-data.js"></script><script src="js/mock-adapter.js"></script><script src="js/supabase-adapter.js"></script><script src="js/auth-adapter.js"></script><script src="js/portal-ui.js"></script>
+</head><body>
+<main class="pg narrow">
+<div class="card">
+ <h1 class="pt">Sign in</h1>
+ <p class="sub">Use the email address CLA invited. There is no public sign-up.</p>
+ <div id="err" class="msg err" role="alert"></div>
+ <form id="f" novalidate>
+  <div class="fgrp"><label for="email">Email</label><input type="email" id="email" autocomplete="username" inputmode="email" required></div>
+  <div class="fgrp"><label for="pw">Password</label><input type="password" id="pw" autocomplete="current-password" required></div>
+  <button class="btn" id="go" type="submit" style="width:100%">Sign in</button>
+ </form>
+ <div class="linkrow"><a href="forgot.html">Forgot password?</a><a href="../index.html">Use the calculator as a guest</a></div>
+</div>
+<div class="card" id="demoCard" hidden style="margin-top:20px">
+ <h2>Demo accounts</h2>
+ <p class="sub" style="margin-bottom:8px">Demo mode only. Pick one, then press Sign in (any password works here).</p>
+ <div class="demos" id="demos"></div>
+</div>
+</main>
+<script>
+(async () => {
+  const { $, esc } = CLA; const { A } = await CLA.boot(false);
+  const s = await A.getSession();
+  if (s) { try { const me = await A.getMyProfile(); location.replace(CLA.safeNext(CLA.q("next")) || CLA.homeFor(me.role)); return; } catch (e) {} }
+  if (A.mode === "mock") {
+    $("demoCard").hidden = false;
+    const people = [["sample.admin@clatitle.com", "Alex Admin", "Super admin"], ["sample.rep.jane@clatitle.com", "Jane Rep", "CLA rep, 2 clients"],
+      ["sample.rep.marcus@clatitle.com", "Marcus Rep", "CLA rep"], ["sam.agent@example.com", "Sam Agent", "Client / agent, rep Jane"], ["lee.lender@example.com", "Lee Lender", "Client, no photo yet"]];
+    $("demos").innerHTML = people.map((p) => '<button type="button" data-e="' + esc(p[0]) + '"><span><b>' + esc(p[1]) + '</b><small>' + esc(p[2]) + " · " + esc(p[0]) + "</small></span></button>").join("");
+    $("demos").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; $("email").value = b.dataset.e; $("pw").value = "demo-password"; $("pw").focus(); };
+  }
+  $("f").onsubmit = async (e) => {
+    e.preventDefault(); $("err").textContent = ""; $("go").disabled = true;
+    try {
+      await A.signIn($("email").value, $("pw").value);
+      const me = await A.getMyProfile();
+      if (sessionStorage.getItem("cla_pending_quote")) { location.href = "quote-saved.html"; return; }
+      location.href = CLA.safeNext(CLA.q("next")) || CLA.homeFor(me.role);
+    } catch (ex) { $("err").textContent = ex.message; $("go").disabled = false; }
+  };
+})();
+</script></body></html>
