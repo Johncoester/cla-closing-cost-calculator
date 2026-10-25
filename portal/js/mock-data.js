@@ -82,6 +82,12 @@
     // Nina has no account yet (pending); her invitation carries her cell so the rep can see it. Mirrors supabase/seed.sql.
     const invitations = [{ email: "nina.newagent@example.com", role: "client", invitedBy: id("b2"), cellPhone: "+17035550181", createdAt: iso(20) },
       { email: "rae.pending@example.com", role: "client", invitedBy: id("a1"), cellPhone: "+15715550191", createdAt: iso(20) }];
-    return { version: 4, users, assignments, quotes, audit, photos, invitations };
+    // staff feedback (migration 13): a few sample submissions so the admin Feedback panel has something to show
+    const feedback = [
+      { id: "fb1", createdAt: iso(3), userId: id("b1"), roleAtSubmit: "rep", category: "bug", message: "The Save as new quote button sometimes says saved but the quote list does not update until I refresh.", pagePath: "/index.html", status: "new", notifiedAt: null, decidedAt: null, decidedNote: null },
+      { id: "fb2", createdAt: iso(2), userId: id("a2"), roleAtSubmit: "admin", category: "idea", message: "Could the Users table have a search box? With more reps it gets long.", pagePath: "/portal/admin.html", status: "notified", notifiedAt: iso(2), decidedAt: null, decidedNote: null },
+      { id: "fb3", createdAt: iso(1), userId: id("b2"), roleAtSubmit: "rep", category: "question", message: "Where do I change my cell number so it shows on the quotes?", pagePath: "/portal/rep.html", status: "approved", notifiedAt: iso(1), decidedAt: iso(1), decidedNote: "Profile page, top right. Added a tip to the dashboard." },
+    ];
+    return { version: 5, users, assignments, quotes, audit, photos, invitations, feedback };
   };
 })();

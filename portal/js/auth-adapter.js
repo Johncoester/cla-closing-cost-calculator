@@ -64,6 +64,14 @@
  *                                            on needs an @clatitle.com email; off needs reassignTo while they still have active clients (same rule as above)
  *   adminReassign(clientEmail, repId)
  *   adminAuditLog(limit)                  -> AuditRow[]
+ *  Staff feedback (migration 13). STAFF = admin, super_admin or rep (by role, active). Clients and guests: every call below refuses (or returns nothing).
+ *   submitFeedback({category, message, page})   -> {id}      category: bug|idea|question|other; message 1-2000 chars (trimmed); page = PATH ONLY
+ *                                                 (query / hash are cut off). At most 10 per hour and 40 per day per person (throws a readable message).
+ *   listMyFeedback()                      -> Feedback[]  the caller's own submissions, newest first (the "Your feedback" list; shows status and John's note)
+ *   adminListFeedback()                   -> Feedback[]  ADMIN or SUPER ADMIN: everything, newest first
+ *   adminSetFeedbackStatus(id, status, note?)   SUPER ADMIN ONLY. status: approved|dismissed; note optional (<= 1000 chars). 'new' and 'notified' are set by the assistant, not here.
+ *   Feedback = {id, createdAt, userId, roleAtSubmit, category, message, pagePath, status: new|notified|approved|dismissed, notifiedAt, decidedAt, decidedNote}
+ *   The message is USER CONTENT: put it on the page with textContent / CLA.esc(), never as raw HTML.
  *   adminLogQuoteView(quoteId)
  *
  * Profile : {id, role, isRep, status, email, firstName, lastName, phone, cellPhone, companyName, companyPhone,

@@ -10,7 +10,7 @@
 
   CLA.createMockAdapter = function () {
     const load = () => {
-      try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.version === 4) return s; } catch (e) {}
+      try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.version === 5) return s; } catch (e) {}
       const s = CLA.MOCK_SEED(); localStorage.setItem(KEY, JSON.stringify(s)); return s;
     };
     const save = (s) => localStorage.setItem(KEY, JSON.stringify(s));
@@ -23,6 +23,7 @@
     const isSuper = (u) => !!u && u.role === "super_admin";                                // private.is_super_admin()
     const isRep = (u) => !!u && (u.role === "rep" || (isAdminRole(u) && !!u.isRep));      // same rule as private.is_rep() / profiles.is_rep
     // the same checks the RPCs make (migration 10): an admin may only act on reps and clients; a super admin on anyone
+    const isStaff = (u) => !!u && u.status === "active" && ["super_admin", "admin", "rep"].includes(u.role);   // private.is_staff(): by ROLE
     const needAdmin = (s) => { const u = need(s); if (!isAdminRole(u)) err("Admins only."); return u; };
     const needSuper = (s) => { const u = needAdmin(s); if (!isSuper(u)) err("Only a super admin can do that."); return u; };
     const activeClients = (s, repId) => s.assignments.filter((a) => a.repId === repId && a.active);
@@ -198,6 +199,31 @@
         const p = s.users.find((x) => x.email === e);
         s.assignments.push({ id: uid(), clientEmail: e, clientUserId: p ? p.id : null, repId: rep.id, active: true, createdAt: new Date().toISOString() });
         log(s, u.id, "assignment_changed", "assignment", null, { client_email: e, rep_id: rep.id }); save(s);
+      },
+      // ---- staff feedback (migration 13). Same rules as submit_feedback / admin_set_feedback_status / the RLS on public.feedback. ----
+      async submitFeedback(o) {
+        const s = load(), u = need(s); if (!isStaff(u)) err("Not allowed.");
+        const category = String((o && o.category) || "").trim().toLowerCase(), message = String((o && o.message) || "").trim();
+        if (!["bug", "idea", "question", "other"].includes(category)) err("Category must be bug, idea, question or other.");
+        if (!message) err("Message is required.");
+        if (message.length > 2000) err("Message is too long (2000 characters at most).");
+        const page = String((o && o.page) || "").split("#")[0].split("?")[0].trim().slice(0, 200) || null;   // path only
+        s.feedback = s.feedback || [];
+        const mine = s.feedback.filter((f) => f.userId === u.id), now = Date.now();
+        if (mine.filter((f) => now - new Date(f.createdAt).getTime() < 3600000).length >= 10 || mine.filter((f) => now - new Date(f.createdAt).getTime() < DAY).length >= 40)
+          err("You have sent a lot of feedback recently: please try again later.");
+        const f = { id: uid(), createdAt: new Date().toISOString(), userId: u.id, roleAtSubmit: u.role, category, message, pagePath: page, status: "new", notifiedAt: null, decidedAt: null, decidedNote: null };
+        s.feedback.unshift(f); log(s, u.id, "feedback_submitted", "feedback", f.id, { category }); save(s); return { id: f.id };
+      },
+      async listMyFeedback() { const s = load(), u = need(s); if (!isStaff(u)) return []; return clone((s.feedback || []).filter((f) => f.userId === u.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))); },
+      async adminListFeedback() { const s = load(), u = needAdmin(s); return clone((s.feedback || []).slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt))); },
+      async adminSetFeedbackStatus(id, status, note) {
+        const s = load(), u = needSuper(s);
+        if (!["approved", "dismissed"].includes(status)) err("Status must be approved or dismissed.");
+        const n = String(note || "").trim() || null; if (n && n.length > 1000) err("Note is too long (1000 characters at most).");
+        const f = (s.feedback || []).find((x) => x.id === id) || err("No such feedback.");
+        const before = f.status; f.status = status; f.decidedAt = new Date().toISOString(); f.decidedNote = n;
+        log(s, u.id, "feedback_decided", "feedback", id, { before, after: status }); save(s);
       },
       async adminAuditLog(limit) { const s = load(); needAdmin(s); return clone(s.audit.slice(0, limit || 100)); },
       async adminLogQuoteView(id) { const s = load(), u = need(s); if (!isAdminRole(u)) return; log(s, u.id, "quote_viewed_by_admin", "quote", id, {}); save(s); },

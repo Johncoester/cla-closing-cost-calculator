@@ -13,7 +13,7 @@
     });
     const must = ({ data, error }) => { if (error) throw new Error(friendly(error)); return data; };
     // the database's own refusals (migrations 6 and 10) are written for people: show them, capitalized
-    const ownRefusal = (m) => /^(only a super admin|only an admin|you cannot|there must always|reps can only|this person has|reassign this person|choose a different rep|the rep who takes over)/i.test(m) ? m.charAt(0).toUpperCase() + m.slice(1) + (/[.!?]$/.test(m) ? "" : ".") : null;
+    const ownRefusal = (m) => /^(only a super admin|only an admin|you cannot|there must always|reps can only|this person has|reassign this person|choose a different rep|the rep who takes over|you have sent a lot|category must|message is|status must|note is too)/i.test(m) ? m.charAt(0).toUpperCase() + m.slice(1) + (/[.!?]$/.test(m) ? "" : ".") : null;
     function friendly(e) {
       const m = e.message || String(e);
       if (/Invalid login credentials/i.test(m)) return "Invalid email or password.";
@@ -26,6 +26,8 @@
     const iso = (x) => x || null;
 
     // ---- row <-> DTO mappers ----
+    const FB_COLS = "id, created_at, user_id, role_at_submit, category, message, page_path, status, notified_at, decided_at, decided_note";
+    const toFeedback = (r) => ({ id: r.id, createdAt: r.created_at, userId: r.user_id, roleAtSubmit: r.role_at_submit, category: r.category, message: r.message, pagePath: r.page_path, status: r.status, notifiedAt: r.notified_at, decidedAt: r.decided_at, decidedNote: r.decided_note });
     const toProfile = (r) => r && ({
       id: r.id, role: r.role, status: r.status, email: r.email, firstName: r.first_name || "", lastName: r.last_name || "",
       phone: r.phone, cellPhone: r.cell_phone || null, companyName: r.company_name, companyPhone: r.company_phone, companyAddress: r.company_address,
@@ -183,6 +185,11 @@
       async adminSetStatus(id, status) { return fn("set-user-status", { userId: id, status }); },
       // reassignTo: when the change stops someone who has active clients from being a rep, the rep who takes those clients over (migration 12)
       async adminSetRole(id, role, reassignTo) { must(await sb.rpc("admin_set_role", Object.assign({ p_user: id, p_role: role }, reassignTo ? { p_reassign_to: reassignTo } : {}))); },
+      // ---- staff feedback (migration 13): writes only through the RPCs; reads through RLS (own rows; admin and super admin all) ----
+      async submitFeedback(o) { const id = must(await sb.rpc("submit_feedback", { p_category: o.category, p_message: o.message, p_page: o.page || null })); return { id }; },
+      async listMyFeedback() { const me = await this.getMyProfile(); return must(await sb.from("feedback").select(FB_COLS).eq("user_id", me.id).order("created_at", { ascending: false }).limit(20)).map(toFeedback); },
+      async adminListFeedback() { return must(await sb.from("feedback").select(FB_COLS).order("created_at", { ascending: false }).limit(500)).map(toFeedback); },
+      async adminSetFeedbackStatus(id, status, note) { must(await sb.rpc("admin_set_feedback_status", { p_id: id, p_status: status, p_note: note || null })); },   // super admin only
       async adminSetIsRep(id, on, reassignTo) { must(await sb.rpc("admin_set_is_rep", Object.assign({ p_user: id, p_is_rep: !!on }, reassignTo ? { p_reassign_to: reassignTo } : {}))); },   // super admins only; targets: admin or super admin ("Also works as a rep")
       async adminReassign(email, repId) { must(await sb.rpc("admin_reassign_client", { p_client_email: email, p_rep_id: repId })); },
       async adminAuditLog(limit) {

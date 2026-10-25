@@ -160,6 +160,33 @@ never promote anyone to admin or super admin, and never invite an admin or super
   Screenshots (demo mode): `portal/tools/screenshots_admin_role.py`.
 * **Not covered here:** the Edge Functions `invite-user` / `set-user-status` only forward to the DB RPCs (comments updated for migration 11; nothing to redeploy for behaviour). The `?v=` cache-bust in `index.html` should be bumped with the release.
 
+## Staff feedback (migration 13)
+
+A small **Feedback** button in the header (portal pages and the calculator) for **staff only**: super admin, admin and rep. Clients / realtors and signed-out visitors never see it (the file is not even downloaded for them, and the database refuses them anyway).
+
+- **Dialog:** John's greeting at the top ("Hey! I am John Coester here to help you. Give me some feedback."), a category (Bug / Idea / Question / Other), a message (required, 2000 characters at most, live counter). The page is captured automatically, **path only** (no query string, no `#` part). No urgency field. After sending: "Thanks, John will review it." The dialog also lists the person's own submissions with their status ("Received", "John has been told", "Approved", "Closed") and John's note, if any.
+- **Where it lives:** `js/feedback-widget.js` + `feedback-widget.css`, loaded on demand by `CLA.startFeedback` (`portal-ui.js`, called from `CLA.boot`) and by `portal-hook.js` on the calculator. It sits in the header, not in the bottom-right corner, so it will not collide with a future chat launcher. It does not depend on the `chatbot` branch.
+- **Admin tab "Feedback"** (`admin.html`): admin and super admin see everything (filter by status, category, text). **Only a super admin** can Approve / Dismiss, with an optional note; an admin sees it read only.
+- **Database (`20261025000013_staff_feedback.sql`, forward-only):** table `public.feedback` (id, created_at, user_id, role_at_submit, category, message, page_path, status, notified_at, decided_at, decided_note, user_agent). RLS on; the API roles can only SELECT (staff their own rows, admin / super admin all). Rows are written ONLY by `submit_feedback(category, message, page)` (active staff only; trims and validates; **10 per hour, 40 per day** per person; stamps the role and user agent server-side, so none of that can be forged) and decided ONLY by `admin_set_feedback_status(id, status, note)` (super admin only; `approved` or `dismissed`). Both are audited (`feedback_submitted` with the category only, never the message; `feedback_decided` with before/after). `user_id` is `on delete set null`, so deleting a user keeps the feedback.
+- **Statuses:** `new` (just sent) -> `notified` (the assistant told John; set from SQL only) -> `approved` / `dismissed` (super admin in the app, or SQL).
+- **Messages are untrusted text:** shown with `textContent` / `esc()` everywhere.
+- **Apply live (when approved):** run `20261025000013_staff_feedback.sql` once in the Supabase SQL editor (nothing else: no Edge Function change), then deploy the site (the `?v=20261025f` cache-bust in `index.html` makes browsers fetch the new calculator hook). Until the migration is applied, the button works only in demo mode; on live it would show an error when sending.
+- **For an assistant / routine (service role or SQL editor; the API cannot do these):**
+
+```sql
+-- read-only: new, not yet notified
+select id, created_at, role_at_submit, category, message, page_path, user_id,
+       (select email from public.profiles p where p.id = f.user_id) as email
+  from public.feedback f where status = 'new' order by created_at;
+-- after telling John
+update public.feedback set status = 'notified', notified_at = now() where id in ('<id>') and status = 'new';
+-- when John decides
+update public.feedback set status = 'approved',  decided_at = now(), decided_note = '<optional note>' where id = '<id>';
+update public.feedback set status = 'dismissed', decided_at = now(), decided_note = '<optional note>' where id = '<id>';
+```
+
+Screenshots: `portal/tools/screenshots_staff_feedback.py` (demo mode).
+
 ## What is mocked, what is real
 
 | Piece | State |

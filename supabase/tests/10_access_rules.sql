@@ -1198,6 +1198,163 @@ select tests.is('the guard function and its helper are not callable by users',
 update public.profiles set role = 'super_admin' where id = tests.id('d2');
 update public.profiles set status = 'active' where role = 'super_admin';
 
+-- =====================================================================
+-- Migration 13: STAFF FEEDBACK. Staff = active super_admin / admin / rep (by role). Clients and guests: nothing.
+-- Cast: rep b1 Jane | admin a2 Robin | super admins a1 Alex, d1 Pia | client c1 Sam, c3 Pat | disabled rep a9 Dee
+--       new reps f1 Fay (rate limit, hour), f2 Fox (rate limit, day), f3 Fig (old rows, later demoted)
+-- =====================================================================
+insert into public.invitations (email, role, is_rep) values ('fay.rep@clatitle.com', 'rep', true), ('fox.rep@clatitle.com', 'rep', true), ('fig.rep@clatitle.com', 'rep', true);
+insert into auth.users (id, email) values (tests.id('f1'), 'fay.rep@clatitle.com'), (tests.id('f2'), 'fox.rep@clatitle.com'), (tests.id('f3'), 'fig.rep@clatitle.com');
+update public.profiles set first_name = 'Fay', last_name = 'Rep', phone = '301-555-0171' where id = tests.id('f1');
+update public.profiles set first_name = 'Fox', last_name = 'Rep', phone = '301-555-0172' where id = tests.id('f2');
+update public.profiles set first_name = 'Fig', last_name = 'Rep', phone = '301-555-0173' where id = tests.id('f3');
+create temp table fb_ids (k text primary key, id uuid);
+select tests.is('feedback table exists with RLS on and no writes granted to the API roles',
+  (select relrowsecurity::text from pg_class where oid = 'public.feedback'::regclass) || '/' ||
+  (has_table_privilege('authenticated', 'public.feedback', 'select') and not has_table_privilege('authenticated', 'public.feedback', 'insert')
+   and not has_table_privilege('authenticated', 'public.feedback', 'update') and not has_table_privilege('authenticated', 'public.feedback', 'delete')
+   and not has_table_privilege('anon', 'public.feedback', 'select') and not has_table_privilege('anon', 'public.feedback', 'insert'))::text, 'true/true');
+select tests.is('staff sources are active', (select string_agg(status::text, ',' order by id) from public.profiles where id in (tests.id('b1'), tests.id('a2'), tests.id('a1'), tests.id('d1'))), 'active,active,active,active');
+select tests.is('anon / client / disabled rep cannot submit',
+  tests.v(null, $$select public.submit_feedback('bug', 'hello')::text$$) || '/' || tests.v(tests.id('c1'), $$select public.submit_feedback('bug', 'hello')::text$$) || '/' ||
+  tests.v(tests.id('a9'), $$select public.submit_feedback('bug', 'hello')::text$$), 'ERR:42501/ERR:42501/ERR:42501');
+select tests.is('...nothing was stored', (select count(*)::text from public.feedback), '0');
+
+-- ----- staff can submit -----
+select tests.xv(tests.id('b1'), $$select 1$$, $$select 1$$);   -- warm-up of the helper (no-op)
+insert into fb_ids select 'b1', tests.v(tests.id('b1'), $$select public.submit_feedback('Bug', '  The Save button does nothing.  ', '/portal/rep.html')::text$$)::uuid;
+insert into fb_ids select 'a2', tests.v(tests.id('a2'), $$select public.submit_feedback('idea', 'Add a CSV export of my clients.', '/index.html')::text$$)::uuid;
+insert into fb_ids select 'a1', tests.v(tests.id('a1'), $$select public.submit_feedback('QUESTION', 'How do I add a county?', null)::text$$)::uuid;
+select tests.is('a rep, an admin and a super admin (who also reps) can submit and get an id back', (select count(*)::text from fb_ids), '3');
+select tests.is('stored: user_id, role_at_submit by ROLE (not the rep flag), status new, category lower-cased, message trimmed, page kept',
+  (select string_agg(f.role_at_submit || '/' || f.category || '/' || f.status || '/' || (f.user_id = case i.k when 'b1' then tests.id('b1') when 'a2' then tests.id('a2') else tests.id('a1') end)::text || '/' || coalesce(f.page_path, '-') || '/' || f.message, '|' order by i.k)
+     from public.feedback f join fb_ids i on i.id = f.id),
+  'super_admin/question/new/true/-/How do I add a county?|admin/idea/new/true//index.html/Add a CSV export of my clients.|rep/bug/new/true//portal/rep.html/The Save button does nothing.');
+select tests.is('notified_at, decided_at, decided_note start empty', (select count(*)::text from public.feedback where notified_at is not null or decided_at is not null or decided_note is not null), '0');
+select tests.is('audit: one feedback_submitted row per send, with the category but NOT the message',
+  (select count(*)::text from public.audit_log where action = 'feedback_submitted') || '/' ||
+  (select count(*)::text from public.audit_log where action = 'feedback_submitted' and details::text like '%Save button%'), '3/0');
+-- page: path only
+insert into fb_ids select 'pg1', tests.v(tests.id('d1'), $$select public.submit_feedback('other', 'page test 1', '/portal/admin.html?token=abc&x=1#section')::text$$)::uuid;
+insert into fb_ids select 'pg2', tests.v(tests.id('d1'), $$select public.submit_feedback('other', 'page test 2', '   ')::text$$)::uuid;
+insert into fb_ids select 'pg3', tests.v(tests.id('d1'), $$select public.submit_feedback('other', 'page test 3', '#only-a-hash')::text$$)::uuid;
+insert into fb_ids select 'pg4', tests.v(tests.id('d1'), ($$select public.submit_feedback('other', 'page test 4', '/$$ || repeat('x', 300) || $$')::text$$))::uuid;
+select tests.is('page: query and hash are cut off; blank or hash-only becomes null; long paths are cut to 200',
+  (select coalesce(page_path, '-') from public.feedback where id = (select id from fb_ids where k = 'pg1')) || '|' ||
+  (select coalesce(page_path, '-') from public.feedback where id = (select id from fb_ids where k = 'pg2')) || '|' ||
+  (select coalesce(page_path, '-') from public.feedback where id = (select id from fb_ids where k = 'pg3')) || '|' ||
+  (select length(page_path)::text from public.feedback where id = (select id from fb_ids where k = 'pg4')), '/portal/admin.html|-|-|200');
+-- user agent comes from the request headers, not from a parameter
+select set_config('request.headers', '{"user-agent":"TestAgent/1.0 (Phone)"}', false);
+insert into fb_ids select 'ua', tests.v(tests.id('d1'), $$select public.submit_feedback('other', 'ua test')::text$$)::uuid;
+select set_config('request.headers', '', false);
+select tests.is('user agent is taken from the request headers (and is null when there are none)',
+  (select coalesce(user_agent, '-') from public.feedback where id = (select id from fb_ids where k = 'ua')) || '|' || (select coalesce(user_agent, '-') from public.feedback where id = (select id from fb_ids where k = 'pg1')), 'TestAgent/1.0 (Phone)|-');
+
+-- ----- validation -----
+select tests.is('bad category / no message / blank message / null message are refused (22023)',
+  tests.v(tests.id('b1'), $$select public.submit_feedback('complaint', 'x')::text$$) || '/' || tests.v(tests.id('b1'), $$select public.submit_feedback('bug', '')::text$$) || '/' ||
+  tests.v(tests.id('b1'), $$select public.submit_feedback('bug', E'  \n\t ')::text$$) || '/' || tests.v(tests.id('b1'), $$select public.submit_feedback('bug', null)::text$$) || '/' ||
+  tests.v(tests.id('b1'), $$select public.submit_feedback(null, 'x')::text$$), 'ERR:22023/ERR:22023/ERR:22023/ERR:22023/ERR:22023');
+select tests.is('2001 characters refused, exactly 2000 accepted (and trimmed before counting)',
+  tests.v(tests.id('b1'), 'select public.submit_feedback(''bug'', ' || quote_literal(repeat('a', 2001)) || ')::text') || '/' ||
+  (case when tests.v(tests.id('b1'), 'select public.submit_feedback(''bug'', ' || quote_literal('  ' || repeat('a', 2000) || '  ') || ')::text') ~ '^[0-9a-f-]{36}$' then 'ok' else 'bad' end), 'ERR:22023/ok');
+select tests.is('...the 2000 one is stored at 2000, nothing from the refusals', (select max(length(message))::text from public.feedback where user_id = tests.id('b1')) || '/' || (select count(*)::text from public.feedback where user_id = tests.id('b1')), '2000/2');
+select tests.is('there is no way to name the user or status in the call (no such parameters)',
+  tests.v(tests.id('b1'), $$select public.submit_feedback('bug', 'x', '/p', 'other-user')::text$$) || '/' || tests.v(tests.id('b1'), $$select public.submit_feedback(p_category := 'bug', p_message := 'x', p_user_id := gen_random_uuid())::text$$), 'ERR:42883/ERR:42883');
+
+-- ----- rate limits: 10 per hour, 40 per day, per person -----
+create temp table rl as select tests.v(tests.id('f1'), 'select public.submit_feedback(''other'', ''rate ' || g || ''')::text') as r from generate_series(1, 10) g;
+select tests.is('ten in an hour are accepted', (select count(*)::text from rl where r ~ '^[0-9a-f-]{36}$'), '10');
+select tests.is('the 11th within the hour is refused (54000); another person is unaffected',
+  tests.v(tests.id('f1'), $$select public.submit_feedback('other', 'rate 11')::text$$) || '/' || (case when tests.v(tests.id('b1'), $$select public.submit_feedback('other', 'jane again')::text$$) ~ '^[0-9a-f-]{36}$' then 'ok' else 'bad' end), 'ERR:54000/ok');
+update public.feedback set created_at = now() - interval '61 minutes' where user_id = tests.id('f1');
+select tests.is('...after an hour the same person can send again', (case when tests.v(tests.id('f1'), $$select public.submit_feedback('other', 'rate 12')::text$$) ~ '^[0-9a-f-]{36}$' then 'ok' else 'bad' end), 'ok');
+insert into public.feedback (user_id, role_at_submit, category, message, created_at)
+  select tests.id('f2'), 'rep', 'other', 'old ' || g, now() - interval '3 hours' - (g || ' minutes')::interval from generate_series(1, 40) g;
+select tests.is('40 in the last day (but none in the last hour): the next is refused (54000)', tests.v(tests.id('f2'), $$select public.submit_feedback('other', 'one too many')::text$$), 'ERR:54000');
+update public.feedback set created_at = now() - interval '25 hours' where user_id = tests.id('f2') and message = 'old 1';
+select tests.is('...as soon as one falls out of the 24 hour window it works again', (case when tests.v(tests.id('f2'), $$select public.submit_feedback('other', 'now ok')::text$$) ~ '^[0-9a-f-]{36}$' then 'ok' else 'bad' end), 'ok');
+select tests.is('a refused send stored nothing', (select count(*)::text from public.feedback where user_id = tests.id('f2') and message = 'one too many'), '0');
+
+-- ----- reading -----
+insert into public.feedback (user_id, role_at_submit, category, message, created_at) select tests.id('f3'), 'rep', 'idea', 'fig idea ' || g, now() - interval '3 days' from generate_series(1, 3) g;
+select tests.is('a rep reads exactly their OWN rows, not anyone else''s',
+  tests.q(tests.id('b1'), 'select * from public.feedback') || '/' || (select count(*)::text from public.feedback where user_id = tests.id('b1')) || '/' ||
+  tests.q(tests.id('b1'), 'select * from public.feedback where user_id <> auth.uid()'), '3/3/0');
+select tests.is('a rep cannot read another rep''s row even by its id', tests.q(tests.id('f3'), 'select * from public.feedback where id = ''' || (select id from fb_ids where k = 'b1') || ''''), '0');
+select tests.is('admin and super admin read ALL rows', tests.q(tests.id('a2'), 'select * from public.feedback') || '/' || tests.q(tests.id('d1'), 'select * from public.feedback') || '/' || (select count(*)::text from public.feedback),
+  (select count(*)::text from public.feedback) || '/' || (select count(*)::text from public.feedback) || '/' || (select count(*)::text from public.feedback));
+select tests.is('a client reads nothing (0 rows), a guest is refused', tests.q(tests.id('c1'), 'select * from public.feedback') || '/' || tests.q(null, 'select * from public.feedback'), '0/ERR:42501');
+select tests.is('a disabled rep reads nothing', tests.q(tests.id('a9'), 'select * from public.feedback'), '0');
+update public.profiles set role = 'client' where id = tests.id('f3');
+select tests.is('someone moved to client loses access to their old rows and cannot submit', tests.q(tests.id('f3'), 'select * from public.feedback') || '/' || tests.v(tests.id('f3'), $$select public.submit_feedback('bug', 'x')::text$$), '0/ERR:42501');
+update public.profiles set role = 'rep' where id = tests.id('f3');
+select tests.is('...and gets them back as a rep again', tests.q(tests.id('f3'), 'select * from public.feedback'), '3');
+select tests.is('the status list a person sees: own rows only, with status', tests.v(tests.id('a2'), 'select string_agg(distinct status, '','') from public.feedback where user_id = auth.uid()'), 'new');
+
+-- ----- forging: no direct writes, whatever the role -----
+select tests.is('direct INSERT is refused for rep, admin, super admin, client, guest (even naming another user_id / status)',
+  tests.x(tests.id('b1'), 'insert into public.feedback (user_id, role_at_submit, category, message) values (auth.uid(), ''rep'', ''bug'', ''forged'')') || '/' ||
+  tests.x(tests.id('a2'), 'insert into public.feedback (user_id, role_at_submit, category, message, status) values (' || tests.u('b1') || ', ''super_admin'', ''bug'', ''forged'', ''approved'')') || '/' ||
+  tests.x(tests.id('d1'), 'insert into public.feedback (user_id, role_at_submit, category, message) values (auth.uid(), ''super_admin'', ''bug'', ''forged'')') || '/' ||
+  tests.x(tests.id('c1'), 'insert into public.feedback (user_id, role_at_submit, category, message) values (auth.uid(), ''rep'', ''bug'', ''forged'')') || '/' ||
+  tests.x(null, 'insert into public.feedback (role_at_submit, category, message) values (''rep'', ''bug'', ''forged'')'), 'ERR:42501/ERR:42501/ERR:42501/ERR:42501/ERR:42501');
+select tests.is('direct UPDATE and DELETE are refused for everyone, super admin included',
+  tests.x(tests.id('b1'), 'update public.feedback set status = ''approved'', message = ''edited'' where user_id = auth.uid()') || '/' ||
+  tests.x(tests.id('a2'), 'update public.feedback set status = ''dismissed''') || '/' || tests.x(tests.id('d1'), 'update public.feedback set status = ''approved'', decided_note = ''x''') || '/' ||
+  tests.x(tests.id('b1'), 'delete from public.feedback where user_id = auth.uid()') || '/' || tests.x(tests.id('d1'), 'delete from public.feedback'), 'ERR:42501/ERR:42501/ERR:42501/ERR:42501/ERR:42501');
+select tests.is('...nothing was forged, edited or removed', (select count(*)::text from public.feedback where message in ('forged', 'edited') or status <> 'new'), '0');
+select tests.is('the table itself also guards its columns (service-role inserts): bad status, category, role, long message are refused (23514)',
+  tests.p('insert into public.feedback (role_at_submit, category, message, status) values (''rep'', ''bug'', ''x'', ''bogus'')') || '/' ||
+  tests.p('insert into public.feedback (role_at_submit, category, message) values (''rep'', ''rant'', ''x'')') || '/' ||
+  tests.p('insert into public.feedback (role_at_submit, category, message) values (''client'', ''bug'', ''x'')') || '/' ||
+  tests.p('insert into public.feedback (role_at_submit, category, message) values (''rep'', ''bug'', repeat(''a'', 2001))') || '/' ||
+  tests.p('insert into public.feedback (role_at_submit, category, message) values (''rep'', ''bug'', '''')'), 'ERR:23514/ERR:23514/ERR:23514/ERR:23514/ERR:23514');
+
+-- ----- deciding: super admin only -----
+select tests.is('only a super admin can set a status: admin, rep, client and guest are refused (42501)',
+  tests.v(tests.id('a2'), $$select public.admin_set_feedback_status('$$ || (select id from fb_ids where k = 'b1') || $$', 'approved')::text$$) || '/' ||
+  tests.v(tests.id('b1'), $$select public.admin_set_feedback_status('$$ || (select id from fb_ids where k = 'b1') || $$', 'approved')::text$$) || '/' ||
+  tests.v(tests.id('c1'), $$select public.admin_set_feedback_status('$$ || (select id from fb_ids where k = 'b1') || $$', 'approved')::text$$) || '/' ||
+  tests.v(null, $$select public.admin_set_feedback_status('$$ || (select id from fb_ids where k = 'b1') || $$', 'approved')::text$$), 'ERR:42501/ERR:42501/ERR:42501/ERR:42501');
+select tests.is('...still new', (select status from public.feedback where id = (select id from fb_ids where k = 'b1')), 'new');
+select tests.is('bad status, unknown id, overlong note are refused (22023 / P0002 / 22023)',
+  tests.v(tests.id('d1'), $$select public.admin_set_feedback_status('$$ || (select id from fb_ids where k = 'b1') || $$', 'notified')::text$$) || '/' ||
+  tests.v(tests.id('d1'), $$select public.admin_set_feedback_status('$$ || (select id from fb_ids where k = 'b1') || $$', 'new')::text$$) || '/' ||
+  tests.v(tests.id('d1'), $$select public.admin_set_feedback_status('$$ || (select id from fb_ids where k = 'b1') || $$', null)::text$$) || '/' ||
+  tests.v(tests.id('d1'), $$select public.admin_set_feedback_status(gen_random_uuid(), 'approved')::text$$) || '/' ||
+  tests.v(tests.id('d1'), $$select public.admin_set_feedback_status('$$ || (select id from fb_ids where k = 'b1') || $$', 'approved', '$$ || repeat('n', 1001) || $$')::text$$), 'ERR:22023/ERR:22023/ERR:22023/ERR:P0002/ERR:22023');
+select tests.is('a super admin approves with a note', tests.v(tests.id('d1'), $$select public.admin_set_feedback_status('$$ || (select id from fb_ids where k = 'b1') || $$', 'approved', '  Fixed in the next release.  ')::text$$), '');
+select tests.is('...status, decided_at and the trimmed note are set; the message is untouched',
+  (select status || '/' || (decided_at is not null)::text || '/' || decided_note || '/' || message from public.feedback where id = (select id from fb_ids where k = 'b1')), 'approved/true/Fixed in the next release./The Save button does nothing.');
+select tests.is('...the submitter sees the decision and note on their own row', tests.v(tests.id('b1'), 'select status || ''/'' || decided_note from public.feedback where message like ''The Save button%'''), 'approved/Fixed in the next release.');
+select tests.is('dismissing with a blank note (spaces, tab, newline)', tests.v(tests.id('a1'), $$select public.admin_set_feedback_status('$$ || (select id from fb_ids where k = 'a2') || $$', 'dismissed', E'  \t\n ')::text$$), '');
+select tests.is('...stores status dismissed and a null note', (select status || '/' || coalesce(decided_note, 'null') from public.feedback where id = (select id from fb_ids where k = 'a2')), 'dismissed/null');
+select tests.is('...and a decision can be changed later', tests.v(tests.id('a1'), $$select public.admin_set_feedback_status('$$ || (select id from fb_ids where k = 'a2') || $$', 'approved', 'on second thought')::text$$), '');
+select tests.is('audit: feedback_decided rows record before and after', (select string_agg(details ->> 'before' || '>' || (details ->> 'after'), ',' order by at) from public.audit_log where action = 'feedback_decided'), 'new>approved,new>dismissed,dismissed>approved');
+-- the assistant (service role / SQL editor): mark rows notified and decide, plain UPDATEs
+create temp table new_before as select count(*) n from public.feedback where status = 'new';
+select tests.is('service role: the assistant''s SELECT of new rows returns them with the email', (select (count(*) = (select n from new_before) and count(email) = count(*))::text from (select f.id, (select email from public.profiles p where p.id = f.user_id) as email from public.feedback f where f.status = 'new') t), 'true');
+select tests.is('service role: UPDATE to notified works and leaves no new rows', tests.p($$update public.feedback set status = 'notified', notified_at = now() where status = 'new'$$), 'ok');
+select tests.is('...every notified row has notified_at, none are new', (select (count(*) filter (where status = 'new') = 0 and count(notified_at) = count(*) filter (where status = 'notified'))::text from public.feedback), 'true');
+select tests.is('service role: approve / dismiss with a note by plain UPDATE', tests.p($$update public.feedback set status = 'dismissed', decided_at = now(), decided_note = 'duplicate' where id = '$$ || (select id from fb_ids where k = 'pg1') || $$'$$), 'ok');
+select tests.is('...stored', (select status || '/' || decided_note from public.feedback where id = (select id from fb_ids where k = 'pg1')), 'dismissed/duplicate');
+-- MFA
+update public.app_settings set value = 'true' where key = 'require_admin_mfa';
+select tests.is('MFA on: an admin at aal1 reads only their own rows (aal2: all); a super admin at aal1 cannot decide',
+  tests.q(tests.id('a2'), 'select * from public.feedback', 'aal1') || '/' || tests.q(tests.id('a2'), 'select * from public.feedback', 'aal2') || '/' ||
+  tests.v(tests.id('d1'), $$select public.admin_set_feedback_status('$$ || (select id from fb_ids where k = 'b1') || $$', 'approved')::text$$, 'aal1'),
+  (select count(*)::text from public.feedback where user_id = tests.id('a2')) || '/' || (select count(*)::text from public.feedback) || '/ERR:42501');
+update public.app_settings set value = 'false' where key = 'require_admin_mfa';
+select tests.is('privileges: anon cannot run the feedback RPCs or is_staff; authenticated can run the RPCs',
+  (not has_function_privilege('anon', 'public.submit_feedback(text, text, text)', 'execute') and not has_function_privilege('anon', 'public.admin_set_feedback_status(uuid, text, text)', 'execute')
+   and has_function_privilege('authenticated', 'public.submit_feedback(text, text, text)', 'execute') and has_function_privilege('authenticated', 'public.admin_set_feedback_status(uuid, text, text)', 'execute')
+   and not has_function_privilege('anon', 'private.is_staff()', 'execute'))::text, 'true');
+select tests.is('private.is_staff(): rep, admin, super admin yes; client, disabled rep no',
+  tests.v(tests.id('b1'), 'select private.is_staff()::text') || '/' || tests.v(tests.id('a2'), 'select private.is_staff()::text') || '/' || tests.v(tests.id('d1'), 'select private.is_staff()::text') || '/' ||
+  tests.v(tests.id('c1'), 'select private.is_staff()::text') || '/' || tests.v(tests.id('a9'), 'select private.is_staff()::text'), 'true/true/true/false/false');
+
 -- ---------------- privileges ----------------
 select tests.is('function privileges: anon cannot run the admin RPCs, authenticated can',
   (select (not has_function_privilege('anon', 'public.admin_set_role(uuid, public.user_role, uuid)', 'execute')

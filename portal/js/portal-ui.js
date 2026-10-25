@@ -42,6 +42,18 @@
   CLA.manageBlock = (actor, target) => CLA.canManage(actor, target) ? "" :
     target.id === actor.id ? "You cannot change your own account." :
     "Only a super admin can change a super admin.";
+  // Staff = admin, super admin or rep BY ROLE (an active account). Clients / realtors and guests are never staff. Same rule as private.is_staff().
+  CLA.isStaff = (p) => !!p && (p.role === "super_admin" || p.role === "admin" || p.role === "rep") && (!p.status || p.status === "active");
+  // ---- staff feedback: a "Feedback" button in the header. Staff only: others never even download the widget. ----
+  CLA.FEEDBACK_V = "20261025f";   // cache-bust for feedback-widget.js / .css; bump with the ?v= in index.html
+  CLA.startFeedback = async function (A, me, opts) {
+    try {
+      if (!A || !CLA.isStaff(me) || typeof A.submitFeedback !== "function") return null;
+      const base = (opts && opts.base) || "", v = "?v=" + CLA.FEEDBACK_V;
+      if (!CLA.mountFeedback) await new Promise((res, rej) => { const s = document.createElement("script"); s.src = base + "js/feedback-widget.js" + v; s.onload = res; s.onerror = () => rej(new Error("load")); document.head.appendChild(s); });
+      return await CLA.mountFeedback({ A, me, base, ver: CLA.FEEDBACK_V });
+    } catch (e) { return null; }   // feedback is optional; never break a page over it
+  };
   // where "my quotes / my clients" live: reps and admin+rep accounts use the rep dashboard
   CLA.quotesHome = (p) => (CLA.isRep(p) ? "rep.html" : CLA.homeFor(p && p.role));
   CLA.q = (name) => new URLSearchParams(location.search).get(name);
@@ -90,6 +102,7 @@
     // "rep" admits real reps AND admins / super admins who also work as a rep; every other entry is an exact role
     if (roles && !roles.some((r) => (r === "rep" ? CLA.isRep(me) : r === me.role))) { location.replace(CLA.homeFor(me.role)); throw new Error("redirect"); }
     await CLA.renderHeader(A, me);
+    CLA.startFeedback(A, me, { base: "" });
     return { A, me };
   };
 

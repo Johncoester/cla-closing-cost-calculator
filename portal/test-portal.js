@@ -260,13 +260,15 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
 
   // ---- admin.html itself (jsdom): what an Admin vs a Super admin sees and can click ----
   const pdir = __dirname;
+  // jsdom cannot lazy-load scripts, so the staff feedback widget is inlined right after portal-ui.js (the real pages load it on demand)
+  const WIDGET = "<script>" + fs.readFileSync(path.join(__dirname, "js", "feedback-widget.js"), "utf8") + "</script>";
   const renderAdmin = async (email, expectBlocked, prep) => {
     // first load seeds + signs in (the page redirects to login when signed out), so seed the session first in a throwaway window
     const w0 = boot(), A0 = w0.CLA.createMockAdapter({}); if (prep) { await A0.signIn("sample.admin@clatitle.com", "x"); await prep(A0); } await A0.signIn(email, "x");
     const store = { cla_portal_mock_v1: w0.localStorage.getItem("cla_portal_mock_v1"), cla_portal_mock_session: w0.localStorage.getItem("cla_portal_mock_session") };
     const html = fs.readFileSync(path.join(pdir, "admin.html"), "utf8")
       .replace(/<link[^>]*fonts\.googleapis[^>]*>/, "").replace(/<script src="config\.js"><\/script>/, "<script>window.CLA_PORTAL_CONFIG={mode:'mock'}</script>")
-      .replace(/<script src="(js\/[\w-]+\.js)"><\/script>/g, (m, f) => "<script>" + fs.readFileSync(path.join(pdir, f), "utf8") + "</script>");
+      .replace(/<script src="(js\/[\w-]+\.js)"><\/script>/g, (m, f) => "<script>" + fs.readFileSync(path.join(pdir, f), "utf8") + "</script>" + (f === "js/portal-ui.js" ? WIDGET : ""));
     const errs = [];
     const dom = new JSDOM(html, { url: "http://localhost/portal/admin.html", runScripts: "dangerously", pretendToBeVisual: true, virtualConsole: new VirtualConsole(),
       beforeParse(win) { win.crypto.randomUUID = require("crypto").randomUUID; win.confirm = () => true; win.addEventListener("error", (e) => errs.push(e.message));
@@ -328,6 +330,112 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     }
     await new Promise((r) => setTimeout(r, 30)); process.removeListener("unhandledRejection", swallow);
     ok("admin.html: clients and plain reps are redirected (no users table, no header)");
+  }
+
+  // ---- staff feedback (migration 13): mock adapter rules ----
+  {
+    const GREET = "Hey! I am John Coester here to help you. Give me some feedback.";
+    // sample rows exist for the admin panel
+    await as("sample.admin@clatitle.com"); assert.strictEqual((await A.adminListFeedback()).length, 3); ok("feedback: the demo data has 3 sample submissions");
+    // clients and signed-out visitors can neither send nor read
+    await as("sam.agent@example.com");
+    await reject(A.submitFeedback({ category: "bug", message: "hi", page: "/x" }), /Not allowed/, "feedback: a client cannot submit");
+    assert.strictEqual((await A.listMyFeedback()).length, 0); await reject(A.adminListFeedback(), /Admins only/, "feedback: a client cannot read the admin list");
+    await reject(A.adminSetFeedbackStatus("fb1", "approved"), /Admins only/, "feedback: a client cannot decide");
+    w.localStorage.removeItem("cla_portal_mock_session");
+    await reject(A.submitFeedback({ category: "bug", message: "hi" }), /./, "feedback: a guest cannot submit"); await reject(A.listMyFeedback(), /./, "feedback: a guest cannot read");
+    // a rep: sends, reads only their own, cannot read others or decide
+    await as("sample.rep.jane@clatitle.com");
+    const r1 = await A.submitFeedback({ category: " IDEA ", message: "  Please add a dark mode.  ", page: "/portal/rep.html?client=secret#top" });
+    const mine = await A.listMyFeedback(); assert.strictEqual(mine.length, 2); const row = mine.find((f) => f.id === r1.id);
+    assert.deepStrictEqual([row.category, row.message, row.pagePath, row.status, row.roleAtSubmit, row.userId], ["idea", "Please add a dark mode.", "/portal/rep.html", "new", "rep", id("b1")]); ok("feedback: a rep submits (trimmed, category normalised, page = path only, status new, role stamped)");
+    assert.ok(mine.every((f) => f.userId === id("b1"))); ok("feedback: a rep sees only their own submissions");
+    await reject(A.adminListFeedback(), /Admins only/, "feedback: a rep cannot read everyone's feedback");
+    await reject(A.adminSetFeedbackStatus(r1.id, "approved"), /Admins only/, "feedback: a rep cannot decide");
+    // validation
+    await reject(A.submitFeedback({ category: "bug", message: "   \n\t " }), /Message is required/, "feedback: an empty message is refused");
+    await reject(A.submitFeedback({ category: "urgent", message: "x" }), /Category must be/, "feedback: an unknown category (no urgency field) is refused");
+    await reject(A.submitFeedback({ category: "bug", message: "x".repeat(2001) }), /too long/, "feedback: 2001 characters refused");
+    await A.submitFeedback({ category: "bug", message: "x".repeat(2000) }); ok("feedback: exactly 2000 characters accepted");
+    assert.strictEqual((await A.listMyFeedback())[0].pagePath, null); ok("feedback: no page given -> none stored");
+    // rate limit: 10 per hour (2 so far this hour; her sample row is days old)
+    for (let i = 0; i < 8; i++) await A.submitFeedback({ category: "other", message: "n" + i });
+    await reject(A.submitFeedback({ category: "other", message: "one too many" }), /a lot of feedback/, "feedback: the 11th in an hour is refused");
+    await as("sample.rep.marcus@clatitle.com"); await A.submitFeedback({ category: "other", message: "me too" }); ok("feedback: someone else is not affected by Jane's limit");
+    // admin / super admin read everything; only a super admin decides
+    await as("sample.robin.admin@clatitle.com"); const all = await A.adminListFeedback(); assert.ok(all.length >= 12 && all.some((f) => f.userId === id("b1")) && all.some((f) => f.userId === id("b2"))); ok("feedback: an Admin reads everyone's feedback");
+    await reject(A.adminSetFeedbackStatus("fb1", "approved"), /Only a super admin/, "feedback: an Admin cannot approve or dismiss");
+    await A.submitFeedback({ category: "idea", message: "Admin idea" }); assert.strictEqual((await A.listMyFeedback()).length, 2); ok("feedback: an Admin can send feedback too (their own: sample + new)");
+    await as("sample.admin@clatitle.com");
+    await reject(A.adminSetFeedbackStatus("fb1", "notified"), /approved or dismissed/, "feedback: notified is not settable from the app");
+    await reject(A.adminSetFeedbackStatus("nope", "approved"), /No such feedback/, "feedback: an unknown id is refused");
+    await reject(A.adminSetFeedbackStatus("fb1", "approved", "n".repeat(1001)), /too long/, "feedback: a 1001-character note is refused");
+    await A.adminSetFeedbackStatus("fb1", "approved", "  Fixed in the next release  ");
+    let f1 = (await A.adminListFeedback()).find((f) => f.id === "fb1"); assert.deepStrictEqual([f1.status, f1.decidedNote, !!f1.decidedAt], ["approved", "Fixed in the next release", true]); ok("feedback: a super admin approves with a trimmed note");
+    await A.adminSetFeedbackStatus("fb1", "dismissed", "   "); f1 = (await A.adminListFeedback()).find((f) => f.id === "fb1"); assert.deepStrictEqual([f1.status, f1.decidedNote], ["dismissed", null]); ok("feedback: a decision can be changed; a blank note is stored as none");
+    const au = await A.adminAuditLog(50); assert.ok(au.some((x) => x.action === "feedback_decided") && au.some((x) => x.action === "feedback_submitted")); assert.ok(!JSON.stringify(au.filter((x) => x.action === "feedback_submitted")).includes("dark mode")); ok("feedback: audited (the message itself is not copied into the audit log)");
+    await as("sample.rep.jane@clatitle.com"); assert.strictEqual((await A.listMyFeedback()).every((f) => f.userId === id("b1")), true);
+  }
+
+  // ---- staff feedback: the widget on real pages (jsdom) ----
+  {
+    const GREET = "Hey! I am John Coester here to help you. Give me some feedback.";
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms || 30));
+    const renderPage = async (file, email, waitFor, prep) => {
+      const w0 = boot(), A0 = w0.CLA.createMockAdapter({}); if (prep) { await A0.signIn("sample.admin@clatitle.com", "x"); await prep(A0); } if (email) await A0.signIn(email, "x");
+      const store = { cla_portal_mock_v1: w0.localStorage.getItem("cla_portal_mock_v1"), cla_portal_mock_session: w0.localStorage.getItem("cla_portal_mock_session") };
+      const html = fs.readFileSync(path.join(pdir, file), "utf8").replace(/<link[^>]*fonts\.googleapis[^>]*>/, "").replace(/<script src="config\.js"><\/script>/, "<script>window.CLA_PORTAL_CONFIG={mode:'mock'}</script>")
+        .replace(/<script src="(js\/[\w-]+\.js)"><\/script>/g, (m, f) => "<script>" + fs.readFileSync(path.join(pdir, f), "utf8") + "</script>" + (f === "js/portal-ui.js" ? WIDGET : ""));
+      const errs = [], dom = new JSDOM(html, { url: "http://localhost/portal/" + file + "?secret=1#frag", runScripts: "dangerously", pretendToBeVisual: true, virtualConsole: new VirtualConsole(),
+        beforeParse(win) { win.crypto.randomUUID = require("crypto").randomUUID; win.confirm = () => true; win.addEventListener("error", (e) => errs.push(e.message)); for (const k in store) win.localStorage.setItem(k, store[k]); } });
+      for (let i = 0; i < 60 && !dom.window.document.querySelector(waitFor); i++) await tick(20);
+      await tick(60); return { dom, d: dom.window.document, win: dom.window, errs };
+    };
+    const fire = (win, el, type) => el.dispatchEvent(new win.Event(type, { bubbles: true, cancelable: true }));
+    // staff see the button; the greeting heads the dialog
+    const R = await renderPage("rep.html", "sample.rep.jane@clatitle.com", "#claFeedbackLink"), d = R.d;
+    assert.strictEqual(R.errs.length, 0, R.errs.join()); assert.ok(d.querySelector("header .hr #claFeedbackLink")); assert.strictEqual(d.getElementById("claFeedbackLink").textContent, "Feedback"); ok("feedback widget: a rep sees a Feedback button in the header");
+    assert.ok(d.getElementById("claFb").hidden); d.getElementById("claFeedbackLink").click(); assert.ok(!d.getElementById("claFb").hidden); ok("feedback widget: the button opens the dialog");
+    assert.strictEqual(d.getElementById("claFbHi").textContent, GREET); assert.ok(d.getElementById("claFb").textContent.includes(GREET)); assert.ok(d.getElementById("claFb").querySelector(".claFbBody").firstElementChild === d.getElementById("claFbHi")); ok("feedback widget: John's greeting is at the top of the dialog (exact text)");
+    assert.strictEqual(R.win.CLA.FEEDBACK_GREETING, GREET);
+    assert.deepStrictEqual([...d.querySelectorAll("#claFbCat option")].map((o) => o.value), ["bug", "idea", "question", "other"]); assert.ok(!/urgen|priority/i.test(d.getElementById("claFb").textContent)); ok("feedback widget: categories Bug / Idea / Question / Other, no urgency");
+    assert.strictEqual(d.getElementById("claFbPage").textContent, "Page: /portal/rep.html"); ok("feedback widget: the page is captured automatically, path only (no query or hash)");
+    // empty message refused, nothing sent
+    fire(R.win, d.getElementById("claFbForm"), "submit"); assert.match(d.getElementById("claFbErr").textContent, /write a message/); assert.ok(d.getElementById("claFbDone").hidden); ok("feedback widget: an empty message is refused");
+    // counter + max
+    const ta = d.getElementById("claFbMsg"); assert.strictEqual(ta.maxLength, 2000); ta.value = "abc"; fire(R.win, ta, "input"); assert.strictEqual(d.getElementById("claFbCount").textContent, "3 / 2000"); ok("feedback widget: 2000-character limit and a live counter");
+    // send (hostile text is shown as text)
+    const evil = '<img src=x onerror="window.pwned=1"> & <b>bold</b>';
+    d.getElementById("claFbCat").value = "idea"; ta.value = evil; fire(R.win, d.getElementById("claFbForm"), "submit"); await tick(60);
+    assert.ok(!d.getElementById("claFbDone").hidden && d.getElementById("claFbForm").hidden); assert.strictEqual(d.getElementById("claFbDone").querySelector(".claFbThanks").textContent, "Thanks, John will review it."); ok("feedback widget: confirmation 'Thanks, John will review it.'");
+    assert.ok(!d.querySelector("#claFb img")); assert.ok(!d.querySelector("#claFbMine img")); assert.ok(d.getElementById("claFbMine").textContent.includes(evil)); assert.ok(!R.win.pwned); ok("feedback widget: the message is escaped (shown as text, nothing runs)");
+    assert.match(d.getElementById("claFbMine").textContent, /Idea.*Received/); ok("feedback widget: staff see their own submission and its status in the dialog");
+    const stored = JSON.parse(R.win.localStorage.getItem("cla_portal_mock_v1")).feedback[0]; assert.deepStrictEqual([stored.pagePath, stored.category, stored.status], ["/portal/rep.html", "idea", "new"]); ok("feedback widget: stored with the page path and category");
+    d.getElementById("claFbClose").click(); assert.ok(d.getElementById("claFb").hidden); R.dom.window.close();
+    // Esc closes
+    const R2 = await renderPage("profile.html", "sample.rep.jane@clatitle.com", "#claFeedbackLink"); R2.d.getElementById("claFeedbackLink").click(); R2.d.dispatchEvent(new R2.win.KeyboardEvent("keydown", { key: "Escape" })); assert.ok(R2.d.getElementById("claFb").hidden); ok("feedback widget: also on other portal pages, and Escape closes it"); await tick(60); R2.dom.window.close();
+    // not staff: no button, no dialog (client, realtor-like client, signed-out login page)
+    const swallow = (e) => { if (!(e && e.message === "redirect")) throw e; }; process.on("unhandledRejection", swallow);
+    const C = await renderPage("client.html", "sam.agent@example.com", "header"); assert.ok(C.d.querySelector("header") && !C.d.getElementById("claFeedbackLink") && !C.d.getElementById("claFb") && !/Feedback/.test(C.d.querySelector("header").textContent)); ok("feedback widget: hidden for a client"); C.dom.window.close();
+    const Cp = await renderPage("profile.html", "sam.agent@example.com", "header"); assert.ok(!Cp.d.getElementById("claFeedbackLink") && !Cp.d.getElementById("claFb")); ok("feedback widget: hidden for a client on the profile page"); Cp.dom.window.close();
+    const L = await renderPage("login.html", null, "header"); assert.ok(!L.d.getElementById("claFeedbackLink")); ok("feedback widget: hidden for guests (signed out)"); L.dom.window.close();
+    await tick(30); process.removeListener("unhandledRejection", swallow);
+    // direct calls cannot bypass the role rule
+    const w2 = boot(), CL = w2.CLA, A2 = CL.createMockAdapter({}); await A2.signIn("sam.agent@example.com", "x"); const me2 = await A2.getMyProfile();
+    assert.strictEqual(await CL.startFeedback(A2, me2, { base: "" }), null); assert.strictEqual(await CL.startFeedback(A2, null, {}), null); assert.ok(!CL.isStaff(me2) && !CL.isStaff(null) && !CL.isStaff({ role: "rep", status: "disabled" }) && CL.isStaff({ role: "rep", status: "active" }) && CL.isStaff({ role: "admin" }) && CL.isStaff({ role: "super_admin" })); ok("feedback widget: startFeedback / isStaff refuse clients, guests and disabled reps");
+    // admin pages: an Admin reads everything but cannot decide; a Super admin can
+    const RA = await renderPage("admin.html", "sample.robin.admin@clatitle.com", "#users tr", async (A0) => { await A0.submitFeedback({ category: "bug", message: evil, page: "/portal/admin.html" }); });
+    assert.ok(RA.d.getElementById("claFeedbackLink")); const tabs = [...RA.d.querySelectorAll("#tabs button")]; assert.strictEqual(tabs[4].textContent, "Feedback"); tabs[4].click(); await tick(80);
+    assert.ok(!RA.d.getElementById("pFeedback").hidden); assert.ok(RA.d.querySelectorAll("#fbRows tr").length >= 4); assert.strictEqual(RA.d.querySelectorAll("#fbRows [data-fb]").length, 0); assert.match(RA.d.getElementById("fNote").textContent, /Read only/); ok("feedback panel: an Admin lists everything but has no approve/dismiss buttons");
+    assert.ok(!RA.d.querySelector("#fbRows img") && RA.d.getElementById("fbRows").textContent.includes(evil)); assert.strictEqual(RA.errs.length, 0, RA.errs.join()); ok("feedback panel: messages are escaped");
+    RA.d.getElementById("fStatus").value = "approved"; fire(RA.win, RA.d.getElementById("fStatus"), "change"); assert.strictEqual(RA.d.querySelectorAll("#fbRows tr").length, 1); assert.match(RA.d.getElementById("fbRows").textContent, /Where do I change my cell/); RA.d.getElementById("fStatus").value = "";
+    RA.d.getElementById("fCat").value = "idea"; fire(RA.win, RA.d.getElementById("fCat"), "change"); assert.ok([...RA.d.querySelectorAll("#fbRows tr")].every((tr) => /Idea/.test(tr.children[2].textContent))); RA.d.getElementById("fCat").value = "";
+    RA.d.getElementById("fFilter").value = "dark"; fire(RA.win, RA.d.getElementById("fFilter"), "input"); assert.match(RA.d.getElementById("fbRows").textContent, /No feedback matches/); ok("feedback panel: filters by status, category and text"); RA.dom.window.close();
+    const RS = await renderPage("admin.html", "sample.admin@clatitle.com", "#users tr"); [...RS.d.querySelectorAll("#tabs button")][4].click(); await tick(80);
+    assert.match(RS.d.getElementById("fNote").textContent, /approve or dismiss/); const btn = RS.d.querySelector('#fbRows button[data-fb="fb1"][data-to="approved"]'); assert.ok(btn && RS.d.querySelector('#fbRows button[data-fb="fb1"][data-to="dismissed"]'));
+    RS.d.querySelector('#fbRows input[data-note="fb1"]').value = "Thanks, fixed"; btn.click(); await tick(80);
+    const st = JSON.parse(RS.win.localStorage.getItem("cla_portal_mock_v1")).feedback.find((f) => f.id === "fb1"); assert.deepStrictEqual([st.status, st.decidedNote], ["approved", "Thanks, fixed"]); assert.match(RS.d.querySelector('#fbRows input[data-note="fb1"]').closest("tr").textContent, /Approved/); ok("feedback panel: a super admin approves with a note");
+    assert.strictEqual(RS.errs.length, 0, RS.errs.join()); RS.dom.window.close();
   }
 
   // ---- Supabase adapter against a fake client ----
@@ -403,5 +511,21 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
   await reject(refuse("there must always be at least one active super admin", "55000").adminSetRole("u", "client"), /^There must always be at least one active super admin\.$/, "supabase: the last-super-admin refusal reads well");
   await reject(refuse("only a super admin can disable or re-enable an admin or super admin", "42501").adminSetStatus("u", "disabled"), /^Only a super admin can disable or re-enable an admin or super admin\.$/, "supabase: Edge Function refusals read well too");
   await reject(refuse("not allowed", "42501").adminSetRole("u", "client"), /You do not have access to that/, "supabase: a bare 42501 is still the generic message");
+
+  // ---- staff feedback through the Supabase adapter ----
+  {
+    const fb = [{ id: "f1", created_at: "2026-10-25T10:00:00Z", user_id: id("b1"), role_at_submit: "rep", category: "bug", message: "<b>x</b>", page_path: "/index.html", status: "new", notified_at: null, decided_at: null, decided_note: null }];
+    const cl = []; const chain2 = (t) => { const o = {}; for (const m of ["select", "eq", "order", "limit"]) o[m] = (...a) => { cl.push([t, m, a]); return o; }; o.then = (res) => res({ data: t === "feedback" ? fb : [{ id: id("b1"), role: "rep", is_rep: false, status: "active", email: "e", first_name: "J", last_name: "R", is_complete: true }], error: null }); o.maybeSingle = o.single = async () => ({ data: { id: id("b1"), role: "rep", is_rep: false, status: "active", email: "e", first_name: "J", last_name: "R", is_complete: true }, error: null }); return o; };
+    const SF = CLA.createSupabaseAdapter({ url: "u", anonKey: "k" }, { createClient: () => ({ auth: { getSession: async () => ({ data: { session: { user: { id: id("b1"), email: "e" } } } }) }, from: (t) => chain2(t),
+      rpc: async (n, a) => { cl.push(["rpc", n, a]); return { data: n === "submit_feedback" ? "new-id" : null, error: null }; } }) });
+    assert.strictEqual((await SF.submitFeedback({ category: "idea", message: "m", page: "/p" })).id, "new-id"); assert.strictEqual(JSON.stringify(cl.find((c) => c[1] === "submit_feedback")[2]), JSON.stringify({ p_category: "idea", p_message: "m", p_page: "/p" })); ok("supabase: submitFeedback calls the submit_feedback RPC (no table insert)");
+    await SF.adminSetFeedbackStatus("f1", "approved", "ok"); assert.strictEqual(JSON.stringify(cl.find((c) => c[1] === "admin_set_feedback_status")[2]), JSON.stringify({ p_id: "f1", p_status: "approved", p_note: "ok" })); assert.ok(!cl.some((c) => c[0] === "feedback" && ["insert", "update", "delete"].includes(c[1]))); ok("supabase: deciding calls admin_set_feedback_status (no direct table writes)");
+    const list = await SF.adminListFeedback(); assert.strictEqual(JSON.stringify(list[0]), JSON.stringify({ id: "f1", createdAt: "2026-10-25T10:00:00Z", userId: id("b1"), roleAtSubmit: "rep", category: "bug", message: "<b>x</b>", pagePath: "/index.html", status: "new", notifiedAt: null, decidedAt: null, decidedNote: null })); ok("supabase: feedback rows map to the Feedback DTO");
+    assert.strictEqual((await SF.listMyFeedback()).length, 1); assert.ok(cl.some((c) => c[0] === "feedback" && c[1] === "eq" && c[2][0] === "user_id")); ok("supabase: listMyFeedback filters on the caller's user id");
+    assert.ok(!/user_agent/.test(JSON.stringify(cl.filter((c) => c[1] === "select")))); ok("supabase: the user agent column is never read into the app");
+    const rf = (message, code) => CLA.createSupabaseAdapter({ url: "u", anonKey: "k" }, { createClient: () => ({ auth: fake3.createClient().auth, rpc: async () => ({ data: null, error: { message, code } }) }) });
+    await reject(rf("you have sent a lot of feedback recently: please try again later", "54000").submitFeedback({ category: "bug", message: "x" }), /^You have sent a lot of feedback recently: please try again later\.$/, "supabase: the rate-limit message reads well");
+    await reject(rf("only a super admin can decide feedback", "42501").adminSetFeedbackStatus("f1", "approved"), /super admin/i, "supabase: a refusal to decide is shown");
+  }
   console.log("\nALL PASS (" + pass + " checks)");
 })().catch((e) => { console.error("FAIL", e); process.exit(1); });

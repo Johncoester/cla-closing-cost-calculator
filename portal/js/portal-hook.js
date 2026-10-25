@@ -50,6 +50,13 @@
       }
     }
 
+    // ---- staff feedback button (admin, super admin, rep only; clients and guests never load it) ----
+    // (loads its own file, so it works even if a cached portal-ui.js predates CLA.startFeedback; the widget re-checks the role itself)
+    if (me && ["super_admin", "admin", "rep"].includes(me.role) && me.status !== "disabled") {
+      const fv = (CLA.FEEDBACK_V || "20261025f");
+      (CLA.mountFeedback ? Promise.resolve() : load(base + "js/feedback-widget.js?v=" + fv)).then(() => CLA.mountFeedback({ A, me, base, ver: fv })).catch(() => {});   // optional: never break the calculator over it
+    }
+
     // ---- co-branded header (client photo + rep photo); shows on screen and in print ----
     // (a plain admin / super admin has no co-brand; one who also works as a rep brands their own quotes like a rep)
     if (me && (!CLA.isAdmin(me) || me.isRep)) {

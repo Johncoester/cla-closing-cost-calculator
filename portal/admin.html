@@ -40,14 +40,20 @@
 </div>
 <section class="card flush" id="pAudit" hidden><div class="sh"><h2>Audit log</h2><div class="grow"><span class="sum">Read only, newest first</span></div></div>
  <div class="tablewrap"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Details</th></tr></thead><tbody id="auditRows"></tbody></table></div></section>
+<section class="card flush" id="pFeedback" hidden><div class="sh"><h2>Staff feedback</h2><div class="grow" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;align-items:center">
+  <label class="vh" for="fStatus">Status</label><select id="fStatus" style="min-height:36px;width:auto"><option value="">All statuses</option><option value="new">New</option><option value="notified">Notified</option><option value="approved">Approved</option><option value="dismissed">Dismissed</option></select>
+  <label class="vh" for="fCat">Category</label><select id="fCat" style="min-height:36px;width:auto"><option value="">All categories</option><option value="bug">Bug</option><option value="idea">Idea</option><option value="question">Question</option><option value="other">Other</option></select>
+  <input type="text" id="fFilter" placeholder="Search message, person, page" style="min-height:36px;width:220px" aria-label="Search feedback"></div></div>
+ <p class="sum" id="fNote" style="margin:0 20px 10px"></p>
+ <div class="tablewrap"><table><thead><tr><th>When</th><th>From</th><th>Category</th><th>Message</th><th>Status</th><th>Decision</th></tr></thead><tbody id="fbRows"></tbody></table></div></section>
 </main>
 <script>
 (async () => {
   const { $, esc } = CLA; const { A, me } = await CLA.boot(["super_admin", "admin"]);
-  const panels = ["pUsers", "pQuotes", "pAssign", "pAudit"];
+  const panels = ["pUsers", "pQuotes", "pAssign", "pAudit", "pFeedback"];
   let users = [], asg = [], quotes = [];
   const uById = (id) => users.find((u) => u.id === id), nm = (id) => (id && uById(id) ? CLA.fullName(uById(id)) : id ? "(removed user)" : "System");
-  CLA.tabs($("tabs"), ["Users", "Quotes", "Assignments", "Audit log"], (i) => { panels.forEach((p, j) => ($(p).hidden = i !== j)); ({ 1: loadQuotes, 2: loadAsg, 3: loadAudit })[i] && ({ 1: loadQuotes, 2: loadAsg, 3: loadAudit })[i](); });
+  CLA.tabs($("tabs"), ["Users", "Quotes", "Assignments", "Audit log", "Feedback"], (i) => { panels.forEach((p, j) => ($(p).hidden = i !== j)); ({ 1: loadQuotes, 2: loadAsg, 3: loadAudit, 4: loadFeedback })[i] && ({ 1: loadQuotes, 2: loadAsg, 3: loadAudit, 4: loadFeedback })[i](); });
 
   // What this signed-in person may do (the database enforces the same rules; this only hides / greys out the rest):
   //   super admin: everything. admin: manage reps, clients and other admins (never a super admin, never promote; see CLA.canManage / README "Roles").
@@ -138,6 +144,28 @@
       : '<tr><td colspan="6" class="empty">No quotes match.</td></tr>'; }
   $("qFilter").oninput = drawQuotes;
   $("quotes").onclick = (e) => { const a = e.target.closest("[data-view]"); if (a) A.adminLogQuoteView(a.dataset.view).catch(() => {}); };
+
+  // ---- staff feedback: admin and super admin read everything; ONLY a super admin approves / dismisses (with a note). Messages are user content: escaped. ----
+  const FB_STATUS = { new: "New", notified: "Notified", approved: "Approved", dismissed: "Dismissed" }, FB_CAT = { bug: "Bug", idea: "Idea", question: "Question", other: "Other" };
+  let fbRows = [];
+  $("fNote").textContent = isSuper ? "You can approve or dismiss each item, with an optional note. The person sees the status and your note." : "Read only. Only a super admin can approve or dismiss feedback.";
+  async function loadFeedback() { fbRows = await A.adminListFeedback(); if (!users.length) users = await A.adminListUsers(); drawFeedback(); }
+  function drawFeedback() {
+    const st = $("fStatus").value, ct = $("fCat").value, q = $("fFilter").value.trim().toLowerCase();
+    const rows = fbRows.filter((f) => (!st || f.status === st) && (!ct || f.category === ct) && (!q || [f.message, nm(f.userId), f.pagePath].join(" ").toLowerCase().includes(q)));
+    $("fbRows").innerHTML = rows.length ? rows.map((f) => {
+      const who = uById(f.userId), badge = '<span class="badge' + (f.status === "dismissed" ? " off" : f.status === "new" ? " warn" : "") + '">' + esc(FB_STATUS[f.status] || f.status) + "</span>";
+      const decide = isSuper
+        ? '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><input type="text" maxlength="1000" data-note="' + esc(f.id) + '" placeholder="Note (optional)" aria-label="Note for this feedback" value="' + esc(f.decidedNote || "") + '" style="min-height:32px;width:180px;font-size:13px">' +
+          '<button class="btn sm" type="button" data-fb="' + esc(f.id) + '" data-to="approved">Approve</button><button class="btn o sm" type="button" data-fb="' + esc(f.id) + '" data-to="dismissed">Dismiss</button></div>'
+        : (f.decidedNote ? esc(f.decidedNote) : '<span class="sum">—</span>');
+      return "<tr><td>" + CLA.date(f.createdAt) + "</td><td><b>" + esc(who ? CLA.fullName(who) : "(removed user)") + "</b><span class='sum' style='display:block'>" + esc(CLA.ROLE_NAMES[f.roleAtSubmit] || f.roleAtSubmit) + "</span></td><td>" + esc(FB_CAT[f.category] || f.category) + "</td>" +
+        "<td style='white-space:pre-wrap;overflow-wrap:anywhere;max-width:420px'>" + esc(f.message) + (f.pagePath ? "<span class='sum' style='display:block'>Page: " + esc(f.pagePath) + "</span>" : "") + "</td><td>" + badge + (f.decidedAt ? "<span class='sum' style='display:block'>" + CLA.date(f.decidedAt) + "</span>" : "") + "</td><td>" + decide + "</td></tr>";
+    }).join("") : '<tr><td colspan="6" class="empty">No feedback matches.</td></tr>';
+  }
+  ["fStatus", "fCat"].forEach((i) => ($(i).onchange = drawFeedback)); $("fFilter").oninput = drawFeedback;
+  $("fbRows").onclick = async (e) => { const b = e.target.closest("[data-fb]"); if (!b) return; const note = $("fbRows").querySelector('[data-note="' + b.dataset.fb + '"]');
+    try { await A.adminSetFeedbackStatus(b.dataset.fb, b.dataset.to, note ? note.value : ""); CLA.toast(b.dataset.to === "approved" ? "Approved" : "Dismissed"); } catch (ex) { CLA.toast(ex.message); } await loadFeedback(); };
 
   async function loadAsg() {
     asg = await A.adminListAssignments(); const clientEmail = (a) => a.clientEmail;
