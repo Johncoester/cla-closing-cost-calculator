@@ -263,7 +263,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
   // jsdom cannot lazy-load scripts, so the staff feedback widget is inlined right after portal-ui.js (the real pages load it on demand)
   const WIDGET = "<script>" + fs.readFileSync(path.join(__dirname, "js", "feedback-widget.js"), "utf8") + "</script>";
   const TOURJS = "<script>" + fs.readFileSync(path.join(__dirname, "js", "tour.js"), "utf8") + "</script>";
-  const renderAdmin = async (email, expectBlocked, prep) => {
+  const renderAdmin = async (email, expectBlocked, prep, mutate) => {
     // first load seeds + signs in (the page redirects to login when signed out), so seed the session first in a throwaway window
     const w0 = boot(), A0 = w0.CLA.createMockAdapter({}); if (prep) { await A0.signIn("sample.admin@clatitle.com", "x"); await prep(A0); } await A0.signIn(email, "x");
     const store = { cla_portal_mock_v1: w0.localStorage.getItem("cla_portal_mock_v1"), cla_portal_mock_session: w0.localStorage.getItem("cla_portal_mock_session") };
@@ -273,6 +273,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     const errs = [];
     const dom = new JSDOM(html, { url: "http://localhost/portal/admin.html", runScripts: "dangerously", pretendToBeVisual: true, virtualConsole: new VirtualConsole(),
       beforeParse(win) { win.crypto.randomUUID = require("crypto").randomUUID; win.confirm = () => true; win.addEventListener("error", (e) => errs.push(e.message));
+        if (mutate) store.cla_portal_mock_v1 = mutate(store.cla_portal_mock_v1);
         for (const k in store) win.localStorage.setItem(k, store[k]); } });
     const d = dom.window.document;
     for (let i = 0; i < (expectBlocked ? 15 : 100) && d.querySelectorAll("#users tr").length < 13; i++) await new Promise((r) => setTimeout(r, 20));
@@ -293,6 +294,18 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     assert.ok(/Admin \(you\)/.test(rowMe.textContent) && !rowMe.querySelector("button[data-st]") && !rowMe.querySelector("select[data-role]")); assert.ok(rowMe.querySelector("input[data-also]").disabled); ok("admin.html: an Admin's own row has no role dropdown and no disable button");
     assert.strictEqual(d.getElementById("uCount").textContent, "13 users · 3 reps · 1 super admin · 2 admins · 7 clients · 1 admin also works as rep"); ok("admin.html: the user count line names super admins and admins separately");
     assert.match(d.querySelector("header .chip small").textContent, /^Admin$/); ok("admin.html: the header says Admin");
+    // "Active" only means not disabled: a person who was invited but has never signed in gets the warn badge (migration 15 data: lastSignInAt === null)
+    const stBadges = (root) => [...root.querySelectorAll(".badge")].filter((b) => /^(Active|Disabled|Invited, never signed in)$/.test(b.textContent)), badge = (uid) => stBadges(R.row(uid))[0];
+    assert.ok(badge(id("c7")).classList.contains("warn") && badge(id("c7")).textContent === "Invited, never signed in" && /has not signed in yet/.test(badge(id("c7")).title)); ok("admin.html: Nia (invited, never signed in) shows the warn badge 'Invited, never signed in'");
+    assert.ok(badge(id("b3")).classList.contains("warn") && badge(id("b3")).textContent === "Invited, never signed in"); ok("admin.html: Riley (a rep who has never signed in) shows it too");
+    assert.ok(!badge(id("c1")).classList.contains("warn") && badge(id("c1")).textContent === "Active" && /Last signed in/.test(badge(id("c1")).title)); ok("admin.html: Sam (has signed in) shows 'Active' with the last sign-in in the tooltip");
+    assert.ok(badge(id("a2")).textContent === "Active" && !badge(id("a2")).classList.contains("warn")); ok("admin.html: the admin looking at the page (just signed in) is 'Active'");
+    assert.ok(badge(id("c4")).classList.contains("off") && badge(id("c4")).textContent === "Disabled"); ok("admin.html: a disabled user still shows 'Disabled'");
+    assert.strictEqual(stBadges(d.getElementById("users")).filter((b) => b.classList.contains("warn")).length, 2); assert.strictEqual(stBadges(d.getElementById("users")).length, 13); ok("admin.html: every row has one status badge; exactly the two never-signed-in sample users carry the warn one");
+    {   // sign-in data unknown (migration 15 not applied, so the column never arrives): plain 'Active', never a wrong 'Invited' label
+      const U = await renderAdmin("sample.robin.admin@clatitle.com", false, null, (raw) => { const st = JSON.parse(raw); st.users.forEach((u) => delete u.lastSignInAt); return JSON.stringify(st); });
+      assert.strictEqual(stBadges(U.d.getElementById("users")).filter((b) => b.classList.contains("warn")).length, 0); assert.strictEqual(stBadges([...U.d.querySelectorAll("#users tr")].find((tr) => tr.textContent.includes("Nia Newcomer")))[0].textContent, "Active"); ok("admin.html: unknown sign-in data stays plain 'Active' (no wrong badge)"); U.dom.window.close();
+    }
     // "Move N realtors to...": changing a rep who has clients to Client opens the picker; cancel changes nothing; confirm moves the clients
     const change2 = (dd, el, v) => { el.value = v; el.dispatchEvent(new dd.defaultView.Event("change", { bubbles: true })); };
     const tick = (ms) => new Promise((r) => setTimeout(r, ms || 40));
@@ -529,6 +542,27 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     tcalls.length = 0; await mk(base).markTourSeen(); const mc = tcalls.find((c) => c[0] === "rpc"); assert.ok(mc && mc[1] === "mark_tour_seen" && (!mc[2] || Object.keys(mc[2]).length === 0)); ok("supabase: markTourSeen calls the mark_tour_seen RPC with no arguments (no table write)");
   }
 
+  // ---- last sign-in (migration 15): the admin Users table can tell "invited" from "signed in" ----
+  {
+    const rowsP = [{ id: id("a1"), role: "super_admin", status: "active", email: "a@clatitle.com", first_name: "A", last_name: "A", is_complete: true, last_seen_at: null },
+                   { id: id("c9"), role: "admin", status: "active", email: "pat@example.com", first_name: "", last_name: "", is_complete: false, last_seen_at: null },
+                   { id: id("c8"), role: "client", status: "active", email: "x@example.com", first_name: "X", last_name: "Y", is_complete: true, last_seen_at: null }];
+    const rc = []; const mkS = (rpcImpl) => CLA.createSupabaseAdapter({ url: "u", anonKey: "k" }, { createClient: () => ({ auth: { getSession: async () => ({ data: { session: { user: { id: id("a1"), email: "a@clatitle.com" } } } }) },
+      from: () => ({ select: () => ({ order: async () => ({ data: rowsP, error: null }) }) }), rpc: async (n, a) => { rc.push([n, a]); return rpcImpl(n, a); } }) });
+    const good = await mkS(async () => ({ data: [{ user_id: id("a1"), last_sign_in_at: "2026-10-25T16:06:26.556674+00:00" }, { user_id: id("c9"), last_sign_in_at: null }], error: null })).adminListUsers();
+    assert.ok(rc[0][0] === "admin_list_last_sign_ins" && (!rc[0][1] || Object.keys(rc[0][1]).length === 0)); ok("supabase: adminListUsers asks admin_list_last_sign_ins (no arguments), never profiles.last_seen_at");
+    assert.strictEqual(good.find((u) => u.id === id("a1")).lastSignInAt, "2026-10-25T16:06:26.556674+00:00"); assert.strictEqual(good.find((u) => u.id === id("c9")).lastSignInAt, null); assert.strictEqual(good.find((u) => u.id === id("c8")).lastSignInAt, undefined); ok("supabase: lastSignInAt = date (signed in), null (never signed in), undefined (not in the answer)");
+    const bad = await mkS(async () => ({ data: null, error: { message: "function public.admin_list_last_sign_ins() does not exist" } })).adminListUsers(); assert.ok(bad.length === 3 && bad.every((u) => u.lastSignInAt === undefined)); ok("supabase: RPC missing (migration 15 not applied) = lastSignInAt unknown, the user list still loads");
+    const thrown = await mkS(async () => { throw new Error("network"); }).adminListUsers(); assert.ok(thrown.length === 3 && thrown.every((u) => u.lastSignInAt === undefined)); ok("supabase: RPC throws = lastSignInAt unknown, the user list still loads");
+    // mock: never signed in until the first sign-in, then a date; ordinary profile reads never carry it
+    const wm = boot(), AM = wm.CLA.createMockAdapter({}); await AM.signIn("sample.admin@clatitle.com", "x");
+    const nia = async () => (await AM.adminListUsers()).find((u) => u.email === "sample.new.client@example.com");
+    assert.strictEqual((await nia()).lastSignInAt, null); await AM.signIn("sample.new.client@example.com", "x"); await AM.signIn("sample.admin@clatitle.com", "x");
+    assert.ok(/^2026-|^20\d\d-/.test((await nia()).lastSignInAt)); assert.ok(!("lastSignInAt" in (await AM.getMyProfile()))); ok("mock: never-signed-in user has lastSignInAt null until the first sign-in; getMyProfile does not expose it");
+    const mig = fs.readFileSync(path.join(__dirname, "..", "supabase", "migrations", "20261026000015_admin_last_sign_in.sql"), "utf8").replace(/^--.*$/gm, "");
+    assert.ok(/security definer/i.test(mig) && /set search_path = ''/.test(mig) && /private\.is_admin\(\)/.test(mig) && /auth\.users/.test(mig) && /revoke execute on function public\.admin_list_last_sign_ins\(\) from public, anon/.test(mig) && /grant\s+execute on function public\.admin_list_last_sign_ins\(\) to authenticated/.test(mig)); ok("migration 15: definer RPC, empty search_path, admin-only guard, revoked from anon/public");
+    assert.ok(!/alter table|drop |insert |update |delete |create policy|grant (select|update|insert)/i.test(mig) && /last_sign_in_at/.test(mig) && !/email|encrypted_password|token/i.test(mig.replace(/auth\.users|public\.profiles/g, ""))); ok("migration 15: read-only, no table/policy/grant changes, exposes only last_sign_in_at");
+  }
   // ---- Supabase adapter against a fake client ----
   const calls = [];
   const chain = (table, rows) => { const o = { _t: table };

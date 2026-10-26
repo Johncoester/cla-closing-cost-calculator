@@ -27,6 +27,7 @@ supabase/
   migrations/20261024000003_storage_photos.sql   private 'avatars' bucket + storage policies
   migrations/20261024000004_purge_job.sql        30-day purge function + pg_cron schedule
   migrations/20261025000005_cell_phone.sql       cell_phone on profiles + invitations (E.164 check), get_my_rep_contact(), create_invitation(+cell)
+  migrations/20261026000015_admin_last_sign_in.sql  admin_list_last_sign_ins(): auth.users.last_sign_in_at per profile (admin/super admin only) for the Users table badge
   migrations/20261025000006_admin_also_rep.sql   profiles.is_rep: a super admin who ALSO works as a rep; admin_set_is_rep(); create_invitation(+is_rep, +as_rep)
   functions/invite-user, functions/set-user-status   Edge Functions (service-role key stays server side; untested)
   seed.sql                                       fictional local test data (never for a real project)
@@ -258,3 +259,10 @@ Must be written: (a) an **API layer** (API Gateway + Lambda), because browsers c
 * A rep can still see a client's live quotes if the client is disabled (the assignment is unchanged). Reassigning the client moves access immediately.
 * Rep invites of a client who belongs to another rep fail with a message that reveals the client already has a rep. Acceptable inside CLA; tighten if reps should not learn that.
 * Seed reps use `sample.rep.*@clatitle.com` because the database insists on CLA addresses; no email is ever sent from seed data.
+
+## "Invited, never signed in" badge (migration 15, local branch `invited-badge`, not applied live)
+- **Problem:** a profile is `status = 'active'` from the moment of the invite, so the admin Users table showed "Active" for people who never opened their invite. `profiles.last_seen_at` cannot tell: no code writes it (it is NULL for everybody, including people who sign in daily).
+- **Source of truth:** `auth.users.last_sign_in_at` (NULL until the first sign-in, which includes accepting the invite link). The browser cannot read the auth schema, so `20261026000015_admin_last_sign_in.sql` adds `public.admin_list_last_sign_ins()` (admin / super admin only, read-only, returns only `user_id` + `last_sign_in_at`). `adminListUsers()` merges it into `Profile.lastSignInAt` (ISO = signed in, `null` = never, `undefined` = unknown).
+- **Badges (admin.html, Status column):** Disabled (unchanged) / **Invited, never signed in** (warn style, like "Invited, not signed up" in rep.html; tooltip with the invite date) / **Active** (tooltip: last signed in). If the migration is not applied yet the value is unknown and the page shows plain "Active" (never a wrong "Invited" label), so deploying the site before the migration is safe.
+- **Apply live (when approved):** run `20261026000015_admin_last_sign_in.sql` once in the Supabase SQL editor (idempotent, no table/policy changes), then deploy. Either order is safe; migration first shows the badge immediately.
+- **Edge:** someone who clicked the invite link but never finished setting a password has a sign-in time and shows "Active".

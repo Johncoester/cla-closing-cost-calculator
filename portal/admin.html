@@ -75,7 +75,11 @@
     const tip = (t) => t ? ' data-tip="' + esc(t) + '" tabindex="0"' : "";
     $("users").innerHTML = users.map((u) => {
       const a = asg.find((x) => x.active && x.clientUserId === u.id), rep = a && uById(a.repId);
-      const st = u.status === "active" ? '<span class="badge">Active</span>' : '<span class="badge off">Disabled</span>';
+      // "Active" only means "not disabled" (a profile is active from invite time). lastSignInAt === null = invited but has never signed in (migration 15);
+      // undefined = unknown (migration not applied), which stays plain "Active" rather than guessing.
+      const st = u.status !== "active" ? '<span class="badge off">Disabled</span>'
+        : u.lastSignInAt === null ? '<span class="badge warn" title="Invited ' + esc(CLA.date(u.createdAt)) + '; has not signed in yet">Invited, never signed in</span>'
+        : '<span class="badge"' + (u.lastSignInAt ? ' title="Last signed in ' + esc(CLA.date(u.lastSignInAt)) + '"' : "") + ">Active</span>";
       const mine = u.id === me.id, block = mine ? "" : CLA.manageBlock(me, u);   // "" = this person may be changed by me
       // "Also works as a rep": only for admin / super admin rows; only a super admin may switch it (CLA email needed to switch on)
       const cla = u.email.endsWith("@clatitle.com"), canAlso = isSuper && (cla || u.isRep);

@@ -47,7 +47,8 @@
  *                                            always assigned to the caller, with the REP rules even for an admin+rep (never takes over another rep's client)
  *  Admin   (roles super_admin and admin may call the read/assign methods; the "super admin only" ones are marked.
  *           An ADMIN may act on reps, clients and other admins (disable, demote to rep/client, edit); the database refuses anything on a super admin and any promotion to admin / super admin, see the README "Roles")
- *   adminListUsers()                      -> Profile[]
+ *   adminListUsers()                      -> Profile[]   each also carries lastSignInAt (migration 15, auth.users.last_sign_in_at): ISO time, null = invited but NEVER signed in, undefined = unknown
+ *                                            (migration not applied). profiles.status 'active' only means 'not disabled'; the Users table shows 'Invited, never signed in' for null.
  *   adminListAssignments()                -> Assignment[]
  *   adminListQuotes()                     -> Quote[]
  *   adminInvite({email, role, repId, cellPhone, isRep})   role: "rep" | "client" for an admin; also "admin" | "super_admin" for a SUPER ADMIN only.

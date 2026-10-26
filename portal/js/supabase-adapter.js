@@ -179,7 +179,14 @@
         return fn("invite-user", { email, role: "client", repId: await uid(), asRep: true, cellPhone: await invitedCell(opts && opts.cellPhone), redirectTo: redirectBase() + "?invite=1" });
       },
 
-      async adminListUsers() { return must(await sb.from("profiles").select("*").order("created_at")).map(toProfile); },
+      async adminListUsers() {
+        const rows = must(await sb.from("profiles").select("*").order("created_at")).map(toProfile);
+        // lastSignInAt (migration 15): ISO time of the person's first/last sign-in, null = has NEVER signed in (invited only), undefined = unknown
+        // (migration 15 not applied yet, or the call failed) so the page never guesses. profiles.last_seen_at is NOT used: nothing writes it.
+        let r = { error: true }; try { r = await sb.rpc("admin_list_last_sign_ins"); } catch (e) { /* unknown stays unknown */ }
+        if (!r.error && Array.isArray(r.data)) { const m = {}; r.data.forEach((x) => { m[x.user_id] = x.last_sign_in_at ? iso(x.last_sign_in_at) : null; }); rows.forEach((u) => { if (u.id in m) u.lastSignInAt = m[u.id]; }); }
+        return rows;
+      },
       async adminListAssignments() { return must(await sb.from("assignments").select("*").order("created_at", { ascending: false })).map(toAssignment); },
       async adminListQuotes() { return must(await sb.from("quotes").select("*").order("created_at", { ascending: false })).map(toQuote); },
       async adminInvite(o) { return fn("invite-user", { email: o.email, role: o.role, repId: o.repId || null, isRep: (o.role === "super_admin" || o.role === "admin") && !!o.isRep, cellPhone: await invitedCell(o.cellPhone), redirectTo: redirectBase() + "?invite=1" }); },

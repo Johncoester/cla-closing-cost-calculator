@@ -53,7 +53,7 @@
       s.audit.unshift({ id: uid(), at: new Date().toISOString(), actorId: actor, action, targetType, targetId, details: details || {} });
     const repOf = (s, clientId) => { const a = s.assignments.find((x) => x.active && x.clientUserId === clientId); const r = a && s.users.find((u) => u.id === a.repId && u.status === "active" && isRep(u)); return r || null; };
     const myClientIds = (s, repId) => s.assignments.filter((a) => a.active && a.repId === repId && a.clientUserId).map((a) => a.clientUserId);
-    const dto = (p) => { const o = clone(p); o.cellPhone = o.cellPhone || null; o.isRep = isRep(p); o.isComplete = complete(p); return o; };
+    const dto = (p) => { const o = clone(p); delete o.lastSignInAt; o.cellPhone = o.cellPhone || null; o.isRep = isRep(p); o.isComplete = complete(p); return o; };
     // same rule as the database trigger: blank -> null, valid US -> +1XXXXXXXXXX, anything else -> error
     const cellOrNull = (v) => { const n = CLA.normalizePhone(v); if (n === null) err(CLA.PHONE_MSG); return n || null; };
 
@@ -85,6 +85,7 @@
         const s = load(); const u = s.users.find((x) => x.email === lc(email));
         if (!password) err("Enter your password.");
         if (!u || u.status !== "active") err("Invalid email or password.");   // same message for unknown and disabled
+        u.lastSignInAt = new Date().toISOString(); save(s);   // like auth.users.last_sign_in_at
         localStorage.setItem(SKEY, u.id); return { userId: u.id, email: u.email };
       },
       async signOut() { localStorage.removeItem(SKEY); },
@@ -149,7 +150,7 @@
         return invite(s, u, { email, role: "client", repId: u.id, cellPhone: opts && opts.cellPhone }, true);   // asRep: rep rules even for an admin+rep (never takes over another rep's client)
       },
 
-      async adminListUsers() { const s = load(); needAdmin(s); return s.users.map(dto); },
+      async adminListUsers() { const s = load(); needAdmin(s); return s.users.map((u) => Object.assign(dto(u), { lastSignInAt: u.lastSignInAt })); },   // lastSignInAt: ISO or null = never signed in (like auth.users.last_sign_in_at via migration 15)
       async adminListAssignments() { const s = load(); needAdmin(s); return clone(s.assignments); },
       async adminListQuotes() { const s = load(), u = needAdmin(s); return visibleQuotes(s, u).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((q) => Object.assign(qdto(q), { deleted: !!q.deletedAt })); },
       async adminInvite(o) { const s = load(), u = needAdmin(s); return invite(s, u, o); },
