@@ -213,7 +213,7 @@ The same engine also runs on the public calculator, for **anyone** (guest or sig
 - **Tabs:** the Seller Net Sheet step opens that tab and puts the person's own tab back afterwards (also if they skip or press Esc). The tour never clicks Purchase / Cash / Refinance, because switching those rebuilds the documents and endorsements and would discard edits; it only points at them. No fee or number is changed.
 - **The chip:** shown only to someone who has not dismissed it. The x, starting the tour from the chip or from the header link all store `cla_calc_tour_chip = "1"` in `localStorage`, so it never comes back. If browser storage is blocked the chip is not shown at all. It does not print.
 - **Phones:** the box is a bottom sheet (also for the centred welcome note); on desktop a tall target (the breakdown) gets the box beside it instead of on top of it.
-- **Cache-bust:** `?v=20261026a` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
+- **Cache-bust:** `?v=20261026b` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
 - **Tests:** the "calculator tour" block in `portal/test-portal.js` (link, step counts, targets, skipping, tab restore, chip persistence, phone sheet, versions). Screenshots: `portal/tools/screenshots_calculator_tour.py`.
 
 ## What is mocked, what is real

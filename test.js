@@ -35,9 +35,9 @@ ok(near(line(flT,/Lender's Title/),fl.premiums.lenderFull)&&near(line(flT,/Owner
 ok(near(line(X.calc(R,inp({state:"FL",county:"Miami-Dade",price:400000,fees:[]})),/Doc stamps on deed/),2400)&&near(line(fl,/Doc stamps on deed/),2800),"FL deed stamps 0.70 / Miami-Dade 0.60");
 ok(near(line(fl,/Recording fees – Deed$/),10+2*8.5),"FL recording $10 + $8.50/page (3-page deed default)");
 // MD/VA/DC premiums are placeholders → warning, no invented numbers
-// MD + DC Fidelity (FNTIC) premiums are loaded (MD manual eff. 1/7/2026 V2, DC manual eff. 12/6/2023): no premium warnings; VA is still a placeholder
+// MD, DC and VA Fidelity (FNTIC) premiums are loaded (MD manual eff. 1/7/2026 V2, DC manual eff. 12/6/2023, VA manual eff. 11/6/2024): no premium warnings
 ok(!X.calc(R,inp({})).warnings.some(w=>/premium rates for MD/.test(w)),"MD premiums loaded: no MD premium-rate warning");
-ok(X.calc(R,inp({state:"VA",county:"Fairfax"})).warnings.some(w=>/premium rates for VA/.test(w)),"VA premium placeholder warning (no FNTIC VA manual yet)");
+ok(!X.calc(R,inp({state:"VA",county:"Fairfax"})).warnings.some(w=>/premium rates for VA/.test(w)),"VA premiums loaded: no VA premium-rate warning");
 {const pm=(o)=>X.premiums(R,inp(Object.assign({fees:[],pres:"actual"},o)));
  // hand calcs from the FNTIC manuals (basic/reissue/loan bands, $275 MD / $150 DC simultaneous, homeowner's = 120% of basic rounded up to whole $)
  const mdS=pm({price:400000,loan:320000,pol:"standard"}),mdH=pm({price:400000,loan:320000}),mdR=pm({price:400000,loan:320000,pol:"standard",rate:"reissue"}),mdF=pm({type:"refi",loan:360000,payoff:300000});
@@ -48,6 +48,14 @@ ok(X.calc(R,inp({state:"VA",county:"Fairfax"})).warnings.some(w=>/premium rates 
  ok(near(dS.owner,1986)&&near(dS.lenderFull,1273.2)&&near(dS.lenderActual,150),"DC $360k/$288k standard: owner 1,986.00, loan 1,273.20, simultaneous 150");
  ok(near(dH.owner,2384),"DC homeowner's = 120% of 1,986 rounded up = 2,384");ok(near(dF.lenderFull,763.92),"DC refi $288k residential refinance = 763.92");
  ok(near(pm({state:"DC",county:"District of Columbia",price:360000,loan:288000,pol:"standard",rate:"reissue"}).owner,1191.6),"DC owner's reissue $360k = 1,191.60")}
+{const vp=(o)=>X.premiums(R,inp(Object.assign({state:"VA",county:"Fairfax",fees:[],pres:"actual"},o)));
+ // hand calcs from the FNTIC VA manual eff. 11/6/2024: owner 4.31/4.08/3.75/2.49/2.21/1.93/1.79, loan 3.20/2.98/2.54/2.05/1.66/1.32/1.16, reissue + refinance = 70%, homeowner's = 120% (rounded up to whole $), simultaneous $200, minimums $250 (homeowner's $300)
+ const vS=vp({price:500000,loan:400000,pol:"standard"}),vH=vp({price:500000,loan:400000}),vR=vp({price:500000,loan:400000,pol:"standard",rate:"reissue"}),vF=vp({type:"refi",loan:400000,payoff:350000}),vBig=vp({price:1500000,loan:1200000,pol:"standard"});
+ ok(near(vS.owner,2097.5)&&near(vS.lenderFull,1247)&&near(vS.lenderActual,200),"VA $500k/$400k standard: owner 2,097.50, loan 1,247.00, simultaneous 200");
+ ok(near(vH.owner,2517),"VA $500k homeowner's = 120% of 2,097.50 = 2,517");ok(near(vR.owner,1468.25),"VA owner's reissue $500k = 70% = 1,468.25");ok(near(vF.lenderFull,872.9),"VA refi $400k residential refinance = 70% of 1,247 = 872.90");
+ ok(near(vBig.owner,5217.5)&&near(vBig.lenderFull,3225),"VA $1.5M/$1.2M standard: owner 5,217.50 (1M+ bands), loan 3,225.00");
+ ok(near(vp({price:400000,loan:450000,pol:"standard"}).lenderActual,349),"VA loan > price: 200 + 149 excess at loan rates");
+ ok(near(vp({price:50000,loan:40000,pol:"standard"}).owner,250)&&near(vp({price:50000,loan:40000}).owner,300)&&near(vp({type:"refi",loan:50000,payoff:40000}).lenderFull,250),"VA minimums: owner 250, homeowner's 300, loan 250")}
 // ---------- Lodestar regression (CLA quotes on clatitle.com, Rounded on; deed 3 pages, DOT 30 pages) ----------
 // Each quote uses the default-on CLA fees and endorsements, exactly as the page loads them. ±$1 for Lodestar rounding.
 const dflt=(st,type)=>X.claFees(R,st,type).filter(f=>f["Default On"]!=="N").map(f=>({name:f["Fee Name"],payer:f["Paid By"],tx:f.Transaction,sec:f["LE Section"],amt:+f.Amount}));
@@ -96,8 +104,8 @@ ok(X.claFees(R,"MD","refi").every(f=>f["Paid By"]!=="Seller")&&X.claFees(R,"MD",
 for(const st of["MD","VA","DC","FL"])ok(X.claFees(R,st,"refi").some(f=>/Processing Fee/.test(f["Fee Name"])&&+f.Amount===450),`${st} refi processing fee $450`);
 // no blank LE Section / Default On
 ok(R.CLA_Fees.every(f=>String(f["LE Section"]).trim()&&/^[YN]$/.test(String(f["Default On"]).trim())),"CLA_Fees: every active row has LE Section and Default On");
-// Lodestar Fidelity premium data points (MD/VA/DC). MD (FNTIC manual eff. 1/7/2026) and DC (FNTIC manual eff. 12/6/2023) are loaded and
-// must match Lodestar ±$1; VA has no FNTIC manual yet, so its tiers stay Active=N ("not loaded → warning").
+// Lodestar Fidelity premium data points (MD/VA/DC). MD (FNTIC manual eff. 1/7/2026), DC (FNTIC manual eff. 12/6/2023) and VA (FNTIC manual eff. 11/6/2024)
+// are loaded and must match Lodestar ±$1.
 const LP=[{q:"Q1",state:"MD",county:"Montgomery",price:450000,loan:360000,lenderFull:1232,ownerH:1775},
  {q:"Q3",type:"refi",state:"MD",county:"Montgomery",loan:360000,payoff:300000,lenderFull:758},
  {q:"Q4",state:"DC",county:"District of Columbia",price:450000,loan:360000,lenderFull:1554,ownerH:1530},
@@ -165,7 +173,7 @@ ok(near(SN({concession:{mode:"flat",val:3000}}).totals.pro,3000)&&SN({other:Arra
 // toggles
 ok(SN({bpst:true,state:"FL",county:"Orange",price:400000,ownerPays:false}).totals.gov===0,"SN: buyer-pays-seller's-deed-tax toggle removes FL deed stamps from the seller");
 ok(SN({fthb:true,price:400000}).gov.some(g=>/State transfer/.test(g.item)&&near(g.amt,1000))&&near(SN({price:400000}).gov.find(g=>/State transfer/.test(g.item)).amt,1000),"SN MD state transfer at $400k = $1,000 (seller share)");
-ok(SN({state:"VA",county:"Fairfax",ownerPays:true}).warnings.some(w=>/owner's premium/.test(w))&&!snVA.warnings.some(w=>/owner's premium|lender/.test(w))&&!snMD.warnings.some(w=>/premium/.test(w)),"SN VA (premiums still placeholders): missing owner's premium only warns when the seller pays it; never lender warnings; MD loaded so no warnings");
+ok(!SN({state:"VA",county:"Fairfax",ownerPays:true}).warnings.some(w=>/premium|lender/.test(w))&&!snVA.warnings.some(w=>/premium|lender/.test(w))&&!snMD.warnings.some(w=>/premium/.test(w)),"SN VA + MD (premiums loaded): no premium warnings, even when the seller pays the owner's policy");
 ok(SN({fees:[]}).totals.title===0&&near(SN({fees:[{name:"Custom",payer:"Seller",amt:100,sec:"C"}]}).totals.title,100),"SN fee list is editable (custom seller fee, none)");
 // live loader: fallback + success with mocked fetch
 (async()=>{
