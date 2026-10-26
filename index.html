@@ -4,8 +4,8 @@
 <meta name="theme-color" content="#000000">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="zip-county.js?v=20261026b"></script>
-<script src="fee-snapshot.js?v=20261026b"></script>
+<script src="zip-county.js?v=20261026c"></script>
+<script src="fee-snapshot.js?v=20261026c"></script>
 <style>
 :root{--g:#8dc63f;--gd:#6fa52a;--gdd:#4d7a17;--ink:#111;--mut:#5b6272;--line:#e3e8da;--bg:#f4f7ef;--field:#d5dbca}
 *{box-sizing:border-box}
@@ -227,6 +227,7 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 <div><label for="pres">Fee presentation</label><select id="pres"><option value="trid">Loan Estimate / CD (TRID)</option><option value="actual">Actual premium split</option></select></div></div>
 <label id="fthbWrap" class="chk"><input type="checkbox" id="fthb"><span>First-time homebuyer</span></label>
 <label id="occWrap" class="chk"><input type="checkbox" id="occ" checked><span>Owner-occupied principal residence</span></label>
+<div class="sum hint" id="occNote"></div>
 <label id="bpstWrap" class="chk"><input type="checkbox" id="bpst"><span>Buyer pays seller's transfer / deed tax <span class="sum">(contract term; e.g. FL deed stamps)</span></span></label>
 </section>
 <section class="card c2"><h2>Fees &amp; options</h2>
@@ -316,6 +317,7 @@ const sheetCsvUrl=tab=>`https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/
 const DOC_DEFAULTS={purchase:{"Deed":[1,3],"Deed of Trust":[1,30],"Release":[0,3],"Power of Attorney":[0,3]},
 cash:{"Deed":[1,3],"Deed of Trust":[0,30],"Release":[0,3],"Power of Attorney":[0,3]},
 refi:{"Deed":[0,3],"Deed of Trust":[1,30],"Release":[1,3],"Power of Attorney":[0,3]}};
+const MD_BIG_INSTR={"Deed":115,"Deed of Trust":115}; // Maryland clerk fee incl. $40 surcharge for an instrument of 10+ pages not solely a principal residence
 const SEC={B:"B. Services you cannot shop for",C:"C. Services you can shop for",E:"E. Taxes and other government fees",H:"H. Other"};
 
 // ---------- parsing ----------
@@ -364,7 +366,7 @@ function bandPremium(R,uw,st,pol,rt,amt){const b=uwRows(R.Premium_Tiers,uw,st).f
  for(const x of b){const f=num(x["Band From ($)"])||0,t=num(x["Band To ($)"]);const part=Math.min(a,t==null?Infinity:t)-f;if(part>0)p+=part/1000*(num(x["Rate per $1,000"])||0)+(num(x["Flat Amount ($)"])||0)}
  const mn=rule(R,uw,st,pol==="Owner"?"min_premium_owner":"min_premium_lender")||0;return r2(Math.max(p,mn))}
 function ownerPremium(R,i){const rt=i.rate==="reissue"?"Reissue":"Basic";let p=bandPremium(R,i.uw,i.state,"Owner",rt,i.price);if(p==null&&rt==="Reissue")p=bandPremium(R,i.uw,i.state,"Owner","Basic",i.price);
- if(p!=null&&i.pol==="enhanced"&&rt==="Basic"){const e=bandPremium(R,i.uw,i.state,"Owner","Enhanced",i.price);const pct=rule(R,i.uw,i.state,"enhanced_owner_pct");if(e!=null)p=e;else if(pct)p=r2(Math.ceil(p*pct/100))}return p}
+ if(p!=null&&i.pol==="enhanced"&&rt==="Basic"){const e=bandPremium(R,i.uw,i.state,"Owner","Enhanced",i.price);const pct=rule(R,i.uw,i.state,"enhanced_owner_pct");if(e!=null)p=e;else if(pct)p=r2(p*pct/100)}return p}
 function premiums(R,i){const W=[],o={owner:null,lenderActual:null,lenderFull:null};
  if(i.type!=="refi"){o.owner=ownerPremium(R,i);if(o.owner==null)W.push(`No active ${i.uw} owner's premium rates for ${i.state} in the fee sheet — owner's policy not included.`)}
  if(i.type!=="cash"&&i.loan>0){
@@ -403,7 +405,9 @@ function calc(R,i){const L=[],W=[],refi=i.type==="refi";
   const rows=pick(R.Recording_Fees,i.state,i.county,i.type,r=>r.Document+"|"+r["Fee Name"],null).filter(r=>eq(r.Document,d)&&(num(r["Page Tier From"])==null||pg>=num(r["Page Tier From"]))&&(num(r["Page Tier To"])==null||pg<=num(r["Page Tier To"])));
   if(!rows.length){W.push(`No recording fee found for ${d} in ${i.county||"(county)"}, ${i.state}.`);continue}
   let amt=0,payer=rows[0]["Paid By"];for(const r of rows){const inc=num(r["Pages Included"]);amt+=(num(r["Flat Fee ($)"])||0)+(inc!=null?Math.max(0,pg-inc)*(num(r["Per Add'l Page ($)"])||0):0)}
-  add(SEC.E,`Recording fees – ${d}${n>1?" ×"+n:""}`,...split(payer,amt*n))}
+  // Maryland (RP 3-601(a)(2)(iv)): an instrument of 10+ pages that does not solely involve a principal residence records for $115 (instead of $60); occ is the "principal residence" answer
+  let big=false;if(i.state==="MD"&&i.occ===false&&MD_BIG_INSTR[d]&&pg>=10){const base=rows.filter(r=>/^Recording fee/i.test(r["Fee Name"])).reduce((a,r)=>a+(num(r["Flat Fee ($)"])||0),0);if(base>0){amt+=MD_BIG_INSTR[d]-base;big=true}}
+  add(SEC.E,`Recording fees – ${d}${n>1?" ×"+n:""}${big?" (10+ pages, not a principal residence)":""}`,...split(payer,amt*n))}
  // transfer and recordation taxes
  const taxes=pick(R.Transfer_Taxes,i.state,i.county,i.type,r=>r["Tax Name"]+"|"+r.Transaction);let anyTax=false;const agg={};
  for(const t of taxes){const x=taxAmount(t,i);if(!x)continue;anyTax=true;const k=t["Tax Name"];(agg[k]=agg[k]||{amt:0,payer:x.payer,fthb:x.fthb}).amt+=x.amt}
@@ -496,7 +500,7 @@ function inputs(){return{type,state:$("state").value,county:$("county").value,uw
  buyerPaysSellerTax:$("bpst").checked,
  docs:Object.fromEntries([...document.querySelectorAll("#docs tr[data-doc]")].map(r=>[r.dataset.doc,[+r.querySelectorAll("input")[0].value||0,+r.querySelectorAll("input")[1].value||1]]))}}
 const TN={purchase:"Purchase (financed)",cash:"Cash purchase",refi:"Refinance"};
-function run(){const i=inputs();$("cntyNote").textContent=!i.county?"Enter a ZIP or choose a county to include county taxes.":usesDefaults(R,i.state,i.county)?"Using state default rates for this county":"";const res=calc(R,i);last={i,res};
+function run(){const i=inputs();$("occNote").textContent=i.state==="MD"&&!i.occ?"Maryland: if this is not a principal residence, a deed or deed of trust of 10 or more pages records for $115 instead of $60 (RP 3-601).":"";$("cntyNote").textContent=!i.county?"Enter a ZIP or choose a county to include county taxes.":usesDefaults(R,i.state,i.county)?"Using state default rates for this county":"";const res=calc(R,i);last={i,res};
  $("summary").innerHTML=`${TN[type]} · ${i.county||"(no county)"}, ${i.state} · ${i.uw} ${src==="snapshot"?'<span class="flag">BUILT-IN SNAPSHOT</span>':""}`;
  $("tB").textContent=fmt(res.buyer);$("tS").textContent=fmt(res.seller);$("tA").textContent=fmt(res.total);const bl=type==="refi"?"Borrower":"Buyer",groups=[];let g=null;
  for(const l of res.lines){if(!g||l.sec!==g.sec){g={sec:l.sec,rows:"",b:0,s:0};groups.push(g)}g.b+=l.b||0;g.s+=l.s||0;
@@ -602,7 +606,7 @@ load(SNAP,"Built-in snapshot","snapshot");$("status").textContent="Loading fees 
 // Guided tour: "Take the tour" (header) and a small first-visit chip. Works for everyone, signed in or not. The engine is portal/js/tour.js + portal/tour.css,
 // downloaded only when someone starts the tour. The chip shows once; dismissing it (x), starting the tour, or finishing it hides it for good (localStorage).
 (function(){
- var V="20261026b",KEY="cla_calc_tour_chip",link=document.getElementById("claCalcTourLink"),chip=document.getElementById("claTourChip"),loading=null;
+ var V="20261026c",KEY="cla_calc_tour_chip",link=document.getElementById("claCalcTourLink"),chip=document.getElementById("claTourChip"),loading=null;
  function seen(){try{return window.localStorage.getItem(KEY)==="1"}catch(e){return true}} // no storage: never show the chip (it could not remember "no thanks")
  function dismiss(){try{window.localStorage.setItem(KEY,"1")}catch(e){}if(chip)chip.hidden=true}
  function add(tag,attrs){return new Promise(function(res){var e=document.createElement(tag);for(var k in attrs)e[k]=attrs[k];e.onload=e.onerror=function(){res()};document.head.appendChild(e)})}
@@ -616,4 +620,4 @@ load(SNAP,"Built-in snapshot","snapshot");$("status").textContent="Loading fees 
   document.getElementById("claTourChipX").onclick=function(){dismiss();if(link)link.focus()}}
 })();
 </script>
-<script src="portal/js/portal-hook.js?v=20261026b" defer></script></body></html>
+<script src="portal/js/portal-hook.js?v=20261026c" defer></script></body></html>

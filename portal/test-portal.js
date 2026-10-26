@@ -645,6 +645,18 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     const stepNext = async (C, n) => { for (let k = 0; k < n; k++) { C.d.getElementById("claTourNext").click(); await tick2(130); } };
     const CHIP = "cla_calc_tour_chip";
 
+    // Maryland principal-residence question (the existing "Owner-occupied principal residence" checkbox): unchecked in MD -> $115 deed of trust (30 pages) and a hint under the box
+    {const P = await mkCalc(); assert.strictEqual(P.errs.length, 0, P.errs.join());
+      const vis = () => { const b = P.d.body.cloneNode(true); b.querySelectorAll("script,style").forEach((n) => n.remove()); return b.textContent; };
+      const st = P.d.getElementById("state"), occ = P.d.getElementById("occ"), note = P.d.getElementById("occNote"), fire = (el, t) => el.dispatchEvent(new P.win.Event(t, { bubbles: true }));
+      st.value = "MD"; fire(st, "change"); await tick2(80);
+      assert.ok(occ.checked && note.textContent === "" && !/not a principal residence/.test(vis()), "MD default: principal residence, no hint, no $115 label");
+      occ.checked = false; fire(occ, "change"); await tick2(80);
+      assert.ok(/\$115 instead of \$60/.test(note.textContent) && /Recording fees – Deed of Trust \(10\+ pages, not a principal residence\)/.test(vis()), "MD unchecked: hint + labelled $115 deed of trust line");
+      st.value = "VA"; fire(st, "change"); await tick2(80);
+      assert.ok(note.textContent === "" && !/not a principal residence\)/.test(vis()), "VA: Maryland rule and hint not shown");
+      ok("calculator: MD principal-residence checkbox -> $115 recording for 10+ pages (hint + labelled line); not shown for VA"); }
+
     // link present: a visible "Take the tour" button in the header, next to Reload (works with no login and no portal config)
     const G = await mkCalc(); assert.strictEqual(G.errs.length, 0, G.errs.join());
     const lk = G.d.getElementById("claCalcTourLink"); assert.ok(lk && lk.tagName === "BUTTON" && lk.textContent === "Take the tour" && lk.closest("header .hr") && !lk.hidden && lk.previousElementSibling.id === "btnReload"); ok("calculator tour: a 'Take the tour' button sits in the header (guest, no login needed)");
@@ -706,7 +718,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
 
     // cache-bust: every ?v= in index.html and TOUR_V agree
     const vs = [...idx.matchAll(/\?v=(\d{8}[a-z])/g)].map((m) => m[1]), pu = fs.readFileSync(path.join(__dirname, "js", "portal-ui.js"), "utf8");
-    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261026b" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261026b");
+    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261026c" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261026c");
     // the new elements are inert in print and add no external requests
     assert.ok(/@media print\{\s*@page\{margin:14mm\}\s*\.claChip\{display:none!important\}/.test(idx) && !/https?:\/\//.test(tj2)); ok("calculator tour: the chip is not printed; tour.js has no external libraries or CDN");
   }

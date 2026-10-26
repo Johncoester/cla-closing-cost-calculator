@@ -39,23 +39,48 @@ ok(near(line(fl,/Recording fees – Deed$/),10+2*8.5),"FL recording $10 + $8.50/
 ok(!X.calc(R,inp({})).warnings.some(w=>/premium rates for MD/.test(w)),"MD premiums loaded: no MD premium-rate warning");
 ok(!X.calc(R,inp({state:"VA",county:"Fairfax"})).warnings.some(w=>/premium rates for VA/.test(w)),"VA premiums loaded: no VA premium-rate warning");
 {const pm=(o)=>X.premiums(R,inp(Object.assign({fees:[],pres:"actual"},o)));
- // hand calcs from the FNTIC manuals (basic/reissue/loan bands, $275 MD / $150 DC simultaneous, homeowner's = 120% of basic rounded up to whole $)
+ // hand calcs from the FNTIC manuals (basic/reissue/loan bands, $275 MD / $150 DC simultaneous, homeowner's = 120% of basic, to the cent)
  const mdS=pm({price:400000,loan:320000,pol:"standard"}),mdH=pm({price:400000,loan:320000}),mdR=pm({price:400000,loan:320000,pol:"standard",rate:"reissue"}),mdF=pm({type:"refi",loan:360000,payoff:300000});
  ok(near(mdS.owner,2045.5)&&near(mdS.lenderFull,1104)&&near(mdS.lenderActual,275),"MD $400k/$320k standard: owner 2,045.50, loan 1,104.00, simultaneous 275");
- ok(near(mdH.owner,2455),"MD $400k homeowner's = 120% of 2,045.50 rounded up = 2,455");ok(near(mdR.owner,1224.5),"MD $400k reissue owner's = 1,224.50");ok(near(mdF.lenderFull,757.5),"MD refi $360k residential refinance = 757.50");
+ ok(near(mdH.owner,2454.6),"MD $400k homeowner's = 120% of 2,045.50 = 2,454.60 (cents, not rounded up)");ok(near(mdR.owner,1224.5),"MD $400k reissue owner's = 1,224.50");ok(near(mdF.lenderFull,757.5),"MD refi $360k residential refinance = 757.50");
  ok(near(pm({price:400000,loan:450000,pol:"standard"}).lenderActual,435),"MD loan > price: 275 + 160 excess at basic loan rates");ok(near(pm({type:"refi",loan:50000,payoff:40000}).lenderFull,300),"MD loan minimum $300");
  const dS=pm({state:"DC",county:"District of Columbia",price:360000,loan:288000,pol:"standard"}),dH=pm({state:"DC",county:"District of Columbia",price:360000,loan:288000}),dF=pm({state:"DC",county:"District of Columbia",type:"refi",loan:288000,payoff:250000});
  ok(near(dS.owner,1986)&&near(dS.lenderFull,1273.2)&&near(dS.lenderActual,150),"DC $360k/$288k standard: owner 1,986.00, loan 1,273.20, simultaneous 150");
- ok(near(dH.owner,2384),"DC homeowner's = 120% of 1,986 rounded up = 2,384");ok(near(dF.lenderFull,763.92),"DC refi $288k residential refinance = 763.92");
+ ok(near(dH.owner,2383.2),"DC homeowner's = 120% of 1,986 = 2,383.20 (cents, not rounded up)");ok(near(dF.lenderFull,763.92),"DC refi $288k residential refinance = 763.92");
  ok(near(pm({state:"DC",county:"District of Columbia",price:360000,loan:288000,pol:"standard",rate:"reissue"}).owner,1191.6),"DC owner's reissue $360k = 1,191.60")}
 {const vp=(o)=>X.premiums(R,inp(Object.assign({state:"VA",county:"Fairfax",fees:[],pres:"actual"},o)));
- // hand calcs from the FNTIC VA manual eff. 11/6/2024: owner 4.31/4.08/3.75/2.49/2.21/1.93/1.79, loan 3.20/2.98/2.54/2.05/1.66/1.32/1.16, reissue + refinance = 70%, homeowner's = 120% (rounded up to whole $), simultaneous $200, minimums $250 (homeowner's $300)
+ // hand calcs from the FNTIC VA manual eff. 11/6/2024: owner 4.31/4.08/3.75/2.49/2.21/1.93/1.79, loan 3.20/2.98/2.54/2.05/1.66/1.32/1.16, reissue + refinance = 70%, homeowner's = 120% (to the cent to whole $), simultaneous $200, minimums $250 (homeowner's $300)
  const vS=vp({price:500000,loan:400000,pol:"standard"}),vH=vp({price:500000,loan:400000}),vR=vp({price:500000,loan:400000,pol:"standard",rate:"reissue"}),vF=vp({type:"refi",loan:400000,payoff:350000}),vBig=vp({price:1500000,loan:1200000,pol:"standard"});
  ok(near(vS.owner,2097.5)&&near(vS.lenderFull,1247)&&near(vS.lenderActual,200),"VA $500k/$400k standard: owner 2,097.50, loan 1,247.00, simultaneous 200");
  ok(near(vH.owner,2517),"VA $500k homeowner's = 120% of 2,097.50 = 2,517");ok(near(vR.owner,1468.25),"VA owner's reissue $500k = 70% = 1,468.25");ok(near(vF.lenderFull,872.9),"VA refi $400k residential refinance = 70% of 1,247 = 872.90");
  ok(near(vBig.owner,5217.5)&&near(vBig.lenderFull,3225),"VA $1.5M/$1.2M standard: owner 5,217.50 (1M+ bands), loan 3,225.00");
  ok(near(vp({price:400000,loan:450000,pol:"standard"}).lenderActual,349),"VA loan > price: 200 + 149 excess at loan rates");
  ok(near(vp({price:50000,loan:40000,pol:"standard"}).owner,250)&&near(vp({price:50000,loan:40000}).owner,300)&&near(vp({type:"refi",loan:50000,payoff:40000}).lenderFull,250),"VA minimums: owner 250, homeowner's 300, loan 250")}
+// ---------- Melissa Gamble (CLA) 2026-10-26: MD lien certificates, VA paper-filing and open-space fees, MD principal residence ----------
+{const rf=(o,re)=>line(X.calc(R,inp(Object.assign({fees:[]},o))),re);
+ // MD lien/tax certificate (county treasurer; paid at recording, shown in the deed's recording line): only these counties charge; Anne Arundel is not ordered by CLA
+ for(const[co,add]of[["Frederick",25],["Charles",25],["Howard",50],["Harford",50],["Baltimore",55],["Baltimore City",55],["Carroll",40],["Anne Arundel",0],["Montgomery",0],["Prince George's",0],["Calvert",0],["Washington",0]])
+  ok(near(rf({county:co},/Recording fees – Deed$/),60+add),`MD ${co}: deed recording = $60 + lien certificate $${add}`);
+ // VA $5 clerk paper-filing fee only in the paper-filing localities; $3 open-space fee in the localities she listed (and, for now, everywhere else in the sheet)
+ const vaD=co=>rf({state:"VA",county:co},/Recording fees – Deed$/),vaT=co=>rf({state:"VA",county:co},/Recording fees – Deed of Trust/);
+ for(const co of["Appomattox","Amelia","Amherst","Alleghany","Bath","Bland","Buchanan","Charlotte","Cumberland","Highland","Lee","Lunenburg","Mathews","Nelson","Patrick","Rappahannock","Russell","Surry"])
+  ok(near(vaD(co),26+20+3+1+5)&&near(vaT(co),40+20+3+5),`VA ${co} (paper-filing): deed $55 and deed of trust $68 include the $5`);
+ for(const co of["Fairfax","Loudoun","Prince William","Albemarle","Hanover","Henrico","Chesterfield","Fauquier","Culpeper","Rockingham","Augusta","Roanoke","Rockbridge","Frederick","Richmond City","Lynchburg City","Virginia Beach City"])
+  ok(near(vaD(co),26+20+3+1)&&near(vaT(co),40+20+3),`VA ${co} (e-recorded, $3 open-space): deed $50 and deed of trust $63, no $5`);
+ // Maryland principal residence: an instrument of 10+ pages that is not solely a principal residence records for $115 instead of $60
+ const D=(dp,tp)=>({Deed:[1,dp],"Deed of Trust":[1,tp],Release:[0,3],"Power of Attorney":[0,3]});
+ const md=(o)=>X.calc(R,inp(Object.assign({fees:[]},o)));
+ let r=md({docs:D(3,30)});ok(near(line(r,/Recording fees – Deed$/),60)&&near(line(r,/Recording fees – Deed of Trust/),60),"MD principal residence (default): deed $60, deed of trust (30 pp) $60");
+ r=md({occ:false,docs:D(3,30)});ok(near(line(r,/Recording fees – Deed$/),60)&&near(line(r,/Recording fees – Deed of Trust/),115)&&r.lines.some(l=>/10\+ pages, not a principal residence/.test(l.item)),"MD not a principal residence: 3-page deed stays $60; 30-page deed of trust $115, labelled");
+ r=md({occ:false,docs:D(9,9)});ok(near(line(r,/Recording fees – Deed$/),60)&&near(line(r,/Recording fees – Deed of Trust/),60),"MD not a principal residence, 9 pages: $60 (the $115 starts at 10 pages)");
+ r=md({occ:false,docs:D(10,10)});ok(near(line(r,/Recording fees – Deed( \(|$)/),115)&&near(line(r,/Recording fees – Deed of Trust/),115),"MD not a principal residence, 10 pages: deed $115 and deed of trust $115");
+ r=md({occ:true,docs:D(12,40)});ok(near(line(r,/Recording fees – Deed$/),60)&&near(line(r,/Recording fees – Deed of Trust/),60),"MD principal residence stays $60 at any length");
+ r=md({county:"Frederick",occ:false,docs:D(12,30)});ok(near(line(r,/Recording fees – Deed( \(|$)/),115+25),"MD Frederick not a principal residence, 12-page deed: $115 + $25 lien certificate");
+ r=md({type:"refi",occ:false,docs:X.DOC_DEFAULTS.refi});ok(near(line(r,/Recording fees – Deed of Trust/),115)&&near(line(r,/Recording fees – Release/),50),"MD refinance not a principal residence: deed of trust $115; release unchanged $50");
+ r=md({type:"refi",docs:X.DOC_DEFAULTS.refi});ok(near(line(r,/Recording fees – Deed of Trust/),60),"MD refinance of a principal residence: deed of trust $60");
+ r=md({occ:false,docs:D(12,30),state:"VA",county:"Fairfax"});ok(!r.lines.some(l=>/not a principal residence/.test(l.item)),"principal-residence rule is Maryland only (VA unchanged)");
+ r=md({occ:false,docs:D(12,30),state:"DC",county:"District of Columbia"});ok(!r.lines.some(l=>/not a principal residence/.test(l.item)),"principal-residence rule is Maryland only (DC unchanged)");
+}
 // ---------- Lodestar regression (CLA quotes on clatitle.com, Rounded on; deed 3 pages, DOT 30 pages) ----------
 // Each quote uses the default-on CLA fees and endorsements, exactly as the page loads them. ±$1 for Lodestar rounding.
 const dflt=(st,type)=>X.claFees(R,st,type).filter(f=>f["Default On"]!=="N").map(f=>({name:f["Fee Name"],payer:f["Paid By"],tx:f.Transaction,sec:f["LE Section"],amt:+f.Amount}));
@@ -82,11 +107,11 @@ ok(q4.lines.filter(l=>/Qualia/.test(l.item)&&l.b>0).length===1&&q4.lines.filter(
 const q4r=Q({type:"refi",state:"DC",county:"District of Columbia",loan:360000,payoff:300000});ok(q4r.lines.filter(l=>/Qualia/.test(l.item)).length===1&&near(bs(q4r,/Qualia/,"b"),59),"DC refi: Qualia once to borrower");
 // Q5 MD Frederick purchase $500k/$400k
 const q5=Q({state:"MD",county:"Frederick",price:500000,loan:400000});
-expect("Q5",q5,[...CLA_BUYER(50),[/Recording fees – Deed$/,"b",81],[/Recording fees – Deed of Trust/,"b",60],[/County recordation/,"b",3500],[/State transfer/,"b",1250],[/County recordation/,"s",3500],[/State transfer/,"s",1250],...CLA_SELLER]);
+expect("Q5",q5,[...CLA_BUYER(50),[/Recording fees – Deed$/,"b",85],[/Recording fees – Deed of Trust/,"b",60],[/County recordation/,"b",3500],[/State transfer/,"b",1250],[/County recordation/,"s",3500],[/State transfer/,"s",1250],...CLA_SELLER]);
 absent("Q5",q5,/County transfer/);
 // Q6 VA Fairfax purchase $500k/$400k
 const q6=Q({state:"VA",county:"Fairfax",price:500000,loan:400000});
-expect("Q6",q6,[...CLA_BUYER(35),[/Recording fees – Deed$/,"b",55],[/Recording fees – Deed of Trust/,"b",68],[/State grantee/,"b",1250],[/Local grantee/,"b",417],[/State recordation tax \(deed of trust\)/,"b",1000],[/Local recordation tax \(deed of trust\)/,"b",333],[/Grantor tax/,"s",500],[/congestion|WMATA/,"s",1000],...CLA_SELLER]);
+expect("Q6",q6,[...CLA_BUYER(35),[/Recording fees – Deed$/,"b",50],[/Recording fees – Deed of Trust/,"b",63],[/State grantee/,"b",1250],[/Local grantee/,"b",417],[/State recordation tax \(deed of trust\)/,"b",1000],[/Local recordation tax \(deed of trust\)/,"b",333],[/Grantor tax/,"s",500],[/congestion|WMATA/,"s",1000],...CLA_SELLER]);
 // Q7 FL Orange purchase $400k/$320k
 const q7=Q({state:"FL",county:"Orange",price:400000,loan:320000});
 expect("Q7",q7,[[/ALTA 8\.1/,"b",25],[/Lender's Title/,"b",1675],[/Notary/,"b",200],[/Qualia/,"b",59],[/Settlement Fee/,"b",1100],[/Title Search/,"b",200],[/Recording fees – Deed$/,"b",27],[/Recording fees – Deed of Trust/,"b",257],[/Doc stamps on note/,"b",1120],[/Intangible/,"b",640],[/Doc stamps on deed/,"s",2800],[/Notary/,"s",200],[/Qualia/,"s",59],[/Settlement Fee/,"s",950]]);
