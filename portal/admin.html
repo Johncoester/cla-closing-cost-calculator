@@ -5,7 +5,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="portal.css">
 <script src="config.js"></script>
-<script src="../fee-snapshot.js?v=20261027b"></script>
+<script src="../fee-snapshot.js?v=20261027c"></script>
 <script src="js/mock-data.js"></script><script src="js/mock-adapter.js"></script><script src="js/supabase-adapter.js"></script><script src="js/auth-adapter.js"></script><script src="js/portal-ui.js"></script>
 </head><body>
 <main class="pg">
@@ -45,13 +45,13 @@
  <div id="ptListView" class="stack">
   <div id="ptLoadErr" class="msg err" role="alert"></div>
   <section class="card"><div style="display:flex;gap:16px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap"><div style="flex:1;min-width:260px"><h2>Pricing tables: CLA settlement fee only</h2>
-   <p class="sub" style="margin:0">A pricing table is a named set of lower <b>Settlement Fee to CLA Title &amp; Escrow</b> amounts, for example "Marvin's Pricing". Add a rep's email to a table and that rep's quotes, and the quotes of the clients (realtors) assigned to that rep, use the table's fees. Title insurance premiums, recording fees, taxes and every other fee never change. Anyone not in a table pays the standard fees.</p></div>
+   <p class="sub" style="margin:0">A pricing table is a named set of lower <b>Settlement Fee to CLA Title &amp; Escrow</b> amounts, for example "Marvin's Pricing". Add a rep's email to a table and that rep's quotes, and the quotes of the clients (realtors) assigned to that rep, use the table's fees. You can also add an individual <b>client's</b> email: a client in a table uses it even if their rep uses another table (or none). Title insurance premiums, recording fees, taxes and every other fee never change. Anyone not in a table, and without a rep in a table, pays the standard fees.</p></div>
    <button class="btn" id="ptNew" type="button">New pricing table</button></div>
    <form id="ptNewForm" hidden novalidate style="margin-top:16px"><div id="ptNewErr" class="msg err" role="alert"></div>
     <div class="row" style="grid-template-columns:minmax(0,1fr) auto auto;align-items:end;margin-bottom:0"><div><label for="ptNewName">Pricing name</label><input type="text" id="ptNewName" maxlength="80" autocomplete="off" placeholder="Marvin's Pricing"></div>
      <button class="btn" type="submit">Create table</button><button class="btn o" id="ptNewCancel" type="button">Cancel</button></div></form></section>
   <section class="card flush"><div class="sh"><h2>Your pricing tables</h2><div class="grow"><span class="sum" id="ptCount"></span></div></div>
-   <div class="tablewrap"><table><thead><tr><th>Pricing table</th><th>Settlement fees set</th><th>Members (rep emails)</th><th></th></tr></thead><tbody id="ptRows"></tbody></table></div></section>
+   <div class="tablewrap"><table><thead><tr><th>Pricing table</th><th>Settlement fees set</th><th>Members (rep and client emails)</th><th></th></tr></thead><tbody id="ptRows"></tbody></table></div></section>
  </div>
  <div id="ptDetailView" class="stack" hidden>
   <section class="card"><div style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap">
@@ -69,12 +69,12 @@
    <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap"><button class="btn" id="pSave" type="button">Save fees</button><button class="btn o" id="pClear" type="button">Back to standard for this selection</button></div>
    <h3 style="margin:22px 0 8px;font-size:15px">Fees set in this table</h3>
    <div class="tablewrap"><table><thead><tr><th>Applies to</th><th>Settlement fee</th><th class="num">Standard</th><th class="num">This table</th><th></th></tr></thead><tbody id="pRows"></tbody></table></div></section>
-  <section class="card"><h2>Members: reps who use this table</h2>
-   <p class="sub">Add a rep by email. One email can be in only one pricing table. You can add an email before the rep has a portal account: the fees apply as soon as they sign in with it.</p>
+  <section class="card"><h2>Members: reps and clients who use this table</h2>
+   <p class="sub">Add a rep or an individual client by email (any email address). A rep's assigned clients follow the rep's table unless the client is in a table of their own. One email can be in only one pricing table. You can add an email before the person has a portal account: the fees apply as soon as they sign in with it.</p>
    <div id="mErr" class="msg err" role="alert"></div><div id="mOk" class="msg ok" role="status"></div>
    <div id="mMove" class="msg err" hidden role="alert" style="display:none"><span id="mMoveTxt"></span> <button class="btn" id="mMoveBtn" type="button" style="min-height:32px;padding:4px 12px;margin-left:8px">Move to this table</button> <button class="btn o" id="mMoveNo" type="button" style="min-height:32px;padding:4px 12px">Cancel</button></div>
-   <form id="mForm" novalidate class="row" style="grid-template-columns:minmax(0,1fr) auto;align-items:end;margin-bottom:12px"><div><label for="mEmail">Rep email</label><input type="email" id="mEmail" autocomplete="off" placeholder="name@clatitle.com"></div><button class="btn" id="mAdd" type="submit">Add</button></form>
-   <div class="tablewrap"><table><thead><tr><th>Email</th><th>Portal account</th><th>Role</th><th></th></tr></thead><tbody id="mRows"></tbody></table></div></section>
+   <form id="mForm" novalidate class="row" style="grid-template-columns:minmax(0,1fr) auto;align-items:end;margin-bottom:12px"><div><label for="mEmail">Rep or client email</label><input type="email" id="mEmail" autocomplete="off" placeholder="rep@clatitle.com, or a client's email, e.g. agent@example.com"></div><button class="btn" id="mAdd" type="submit">Add</button></form>
+   <div class="tablewrap"><table><thead><tr><th>Email</th><th>Portal account</th><th>Role, rep and pricing</th><th></th></tr></thead><tbody id="mRows"></tbody></table></div></section>
  </div>
 </div>
 <section class="card flush" id="pFeedback" data-tour="a-feedback" hidden><div class="sh"><h2>Staff feedback</h2><div class="grow" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;align-items:center">
@@ -237,6 +237,7 @@
   const slotLabel = (tx, side) => (SLOTS.find((x) => x[0] === tx && x[1] === side) || [, , tx + " / " + side])[2];
   async function loadPricing() {
     if (!users.length) users = await A.adminListUsers();
+    try { asg = await A.adminListAssignments(); } catch (ex) { /* the client / rep note is optional */ }
     try { PT = await A.adminListPricingTables(); } catch (ex) { PT = { tables: [], fees: [], members: [] }; $("ptLoadErr").textContent = "Pricing tables could not be loaded (" + ex.message + "). If migration 16 has not been applied to the database yet, that is why."; }
     if (openId && !tbl(openId)) openId = null;
     drawList(); if (openId) drawDetail(); showView();
@@ -244,7 +245,7 @@
   function showView() { $("ptListView").hidden = !!openId; $("ptDetailView").hidden = !openId; }
   function drawList() {
     const rows = PT.tables.slice().sort((a, b) => a.name.localeCompare(b.name));
-    $("ptCount").textContent = rows.length + " table" + (rows.length === 1 ? "" : "s") + " · " + PT.members.length + " rep email" + (PT.members.length === 1 ? "" : "s") + " assigned";
+    $("ptCount").textContent = rows.length + " table" + (rows.length === 1 ? "" : "s") + " · " + PT.members.length + " rep or client email" + (PT.members.length === 1 ? "" : "s") + " assigned";
     $("ptRows").innerHTML = rows.length ? rows.map((t) => { const f = tFees(t.id), m = tMembers(t.id);
       return '<tr><td><b>' + esc(t.name) + "</b></td><td>" + (f.length ? f.length + " fee" + (f.length === 1 ? "" : "s") : '<span class="sum">None yet (standard fees)</span>') + "</td><td>" +
         (m.length ? m.map((x) => esc(x.email)).join("<br>") : '<span class="sum">No members yet</span>') + '</td><td style="text-align:right"><button type="button" class="btn o" data-open="' + esc(t.id) + '" style="min-height:34px;padding:4px 14px">Open</button></td></tr>'; }).join("")
@@ -267,13 +268,24 @@
       '</b></td><td style="text-align:right"><button type="button" class="btn o" data-clearfee="' + esc(o.id) + '" style="min-height:32px;padding:4px 12px">Clear</button></td></tr>').join("")
       : '<tr><td colspan="5" class="sum">No fees set yet: members of this table pay the standard fees.</td></tr>';
   }
+  // the pricing table a rep or client uses by being listed themselves (null = none)
+  const tableOfEmail = (email) => { const m = email && PT.members.find((x) => x.email === email.toLowerCase()); return m ? tbl(m.tableId) : null; };
   function drawMembers() {
-    const rows = tMembers(openId).sort((a, b) => a.email.localeCompare(b.email));
+    const rows = tMembers(openId).sort((a, b) => a.email.localeCompare(b.email)), here = tbl(openId);
     $("mRows").innerHTML = rows.length ? rows.map((m) => { const u = users.find((x) => x.email === m.email);
       const acct = !u ? '<span class="badge warn">No portal account yet</span> <span class="sum">Pricing applies once they sign in with this email.</span>' : (u.status !== "active" ? '<span class="badge off">Disabled</span> ' : '<span class="badge">Has an account</span> ') + esc(CLA.fullName(u));
-      const role = !u ? '<span class="sum">—</span>' : esc(CLA.roleLabel(u.role)) + (adminRole(u.role) && !u.isRep ? ' <span class="sum">(not set to work as a rep: no pricing until a super admin turns that on)</span>' : "");
+      let role = '<span class="sum">Role not known until they have an account</span>';
+      if (u) {
+        role = esc(CLA.roleLabel(u.role)) + (adminRole(u.role) && !u.isRep ? ' <span class="sum">(not set to work as a rep: no pricing until a super admin turns that on)</span>' : "");
+        if (u.role === "client") {
+          const a = asg.find((x) => x.active && x.clientUserId === u.id), rp = a && uById(a.repId), rt = rp && tableOfEmail(rp.email);
+          role += a && rp ? "<br>" + (rt && rt.id === here.id ? '<span class="sum">Rep ' + esc(CLA.fullName(rp)) + " is in this table too: same pricing as their rep.</span>"
+              : '<span class="note" style="color:#8a5a00;font-weight:600">Uses ' + esc(here.name) + " instead of their rep " + esc(CLA.fullName(rp)) + "'s " + (rt ? "table (" + esc(rt.name) + ")" : "standard fees (their rep is in no table)") + ".</span>")
+            : '<br><span class="sum">No assigned rep: uses this table on their own.</span>';
+        }
+      }
       return "<tr><td>" + esc(m.email) + "</td><td>" + acct + "</td><td>" + role + '</td><td style="text-align:right"><button type="button" class="btn o" data-rm="' + esc(m.email) + '" style="min-height:32px;padding:4px 12px">Remove</button></td></tr>'; }).join("")
-      : '<tr><td colspan="4" class="sum">No members yet. Type a rep\'s email above and click Add.</td></tr>';
+      : '<tr><td colspan="4" class="sum">No members yet. Type a rep\'s or a client\'s email above and click Add.</td></tr>';
   }
   function openTable(id) { openId = id; $("pState").value = "*"; $("ptRenameForm").hidden = true; clearMsgs(); drawDetail(); showView(); window.scrollTo(0, 0); }
   $("ptRows").onclick = (e) => { const b = e.target.closest("[data-open]"); if (b) openTable(b.dataset.open); };
@@ -290,7 +302,7 @@
   $("ptRenameForm").onsubmit = async (e) => { e.preventDefault(); clearMsgs();
     try { await A.adminRenamePricingTable(openId, $("ptRenameName").value); $("ptRenameForm").hidden = true; await loadPricing(); $("pOk").textContent = "Renamed."; } catch (ex) { $("pErr").textContent = ex.message; } };
   $("ptDelete").onclick = async () => { const t = tbl(openId), m = tMembers(openId).length; clearMsgs();
-    if (!confirm('Delete the pricing table "' + t.name + '"?\n\n' + (m ? m + " rep email" + (m === 1 ? "" : "s") + " will go back to the standard fees. " : "") + "This cannot be undone.")) return;
+    if (!confirm('Delete the pricing table "' + t.name + '"?\n\n' + (m ? m + " email" + (m === 1 ? "" : "s") + " will go back to the standard fees (a client goes back to their rep's table, if the rep has one). " : "") + "This cannot be undone.")) return;
     try { await A.adminDeletePricingTable(openId); openId = null; await loadPricing(); } catch (ex) { $("pErr").textContent = ex.message; } };
   // fees
   $("pState").onchange = () => { clearMsgs(); drawSlots(); };

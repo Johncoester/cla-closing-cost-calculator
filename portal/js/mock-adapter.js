@@ -10,7 +10,7 @@
 
   CLA.createMockAdapter = function () {
     const load = () => {
-      try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.version === 7) return s; } catch (e) {}
+      try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.version === 8) return s; } catch (e) {}
       const s = CLA.MOCK_SEED(); localStorage.setItem(KEY, JSON.stringify(s)); return s;
     };
     const save = (s) => localStorage.setItem(KEY, JSON.stringify(s));
@@ -233,11 +233,13 @@
       },
       // ---- named PRICING TABLES for the settlement fee (migration 16: pricing_tables, pricing_table_fees, pricing_table_members) ----
       // Same rules as the RLS, the admin RPCs, private.pricing_rep_for() / pricing_table_for() and get_my_fee_overrides().
-      // The ONE rule for whose pricing a person gets: a rep (or an admin who also reps) -> their own; a client -> their active rep's; anyone else -> standard.
-      // (To make clients pay standard fees, change the `repUser` line in getMyFeeOverrides below, and private.pricing_rep_for() in the database.)
+      // Precedence (private.pricing_table_for() in the database): 1) the person's OWN email is a member of a table (a rep, an admin who also reps, or a client),
+      // 2) else the table of their assigned rep (a rep is their own rep; a client's rep is their active assignment), 3) else standard fees.
+      // (To make clients pay standard fees, change the `repUser` line below, and private.pricing_rep_for() in the database.)
       async getMyFeeOverrides() {
-        const s = load(), u = need(s), repUser = isRep(u) ? u : u.role === "client" ? repOf(s, u.id) : null;
-        const m = repUser && (s.pricingMembers || []).find((x) => x.email === lc(repUser.email));
+        const s = load(), u = need(s), members = s.pricingMembers || [], byEmail = (p) => p && members.find((x) => x.email === lc(p.email));
+        const repUser = isRep(u) ? u : u.role === "client" ? repOf(s, u.id) : null;
+        const m = (u.status === "active" && (isRep(u) || u.role === "client") && byEmail(u)) || byEmail(repUser);
         return clone((s.pricingFees || []).filter((f) => m && f.tableId === m.tableId)).map((f) => ({ state: f.state, transaction: f.transaction, paidBy: f.paidBy, amount: f.amount }));
       },
       async adminListPricingTables() { const s = load(); needAdmin(s); return clone({ tables: s.pricingTables || [], fees: s.pricingFees || [], members: s.pricingMembers || [] }); },
@@ -284,13 +286,12 @@
         const old = s.pricingFees[i].amount; s.pricingFees.splice(i, 1);
         log(s, u.id, "pricing_table_changed", "pricing_table", t.id, { op: "fee_clear", table: t.name, fee: "settlement", state: st, transaction: tx, paid_by: pb, before: old, after: null }); save(s);
       },
-      // Members are EMAILS (lower-cased, trimmed, @clatitle.com), one email in at most ONE table; the person need not have an account yet.
+      // Members are EMAILS (lower-cased, trimmed, ANY domain: reps or individual clients), one email in at most ONE table; the person need not have an account yet.
       // Returns "added" | "moved" | "already". An email that is in ANOTHER table is refused with a message naming it, unless opts.move.
       async adminAddPricingMember(tableId, email, opts) {
         const s = load(), u = needAdmin(s), t = pricingTable(s, tableId), e = lc(email); s.pricingMembers = s.pricingMembers || [];
         if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) err("Enter a valid email address.");
-        if (!/^[^@\s]+@clatitle\.com$/.test(e)) err("Reps use an @clatitle.com email address.");
-        const acct = s.users.find((x) => x.email === e); if (acct && acct.role === "client") err("That email belongs to a client (realtor) account: add their rep instead.");
+        if (e.length > 254) err("That email address is too long.");
         const cur = s.pricingMembers.find((m) => m.email === e);
         if (cur) {
           if (cur.tableId === t.id) return "already";

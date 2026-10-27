@@ -1497,16 +1497,15 @@ select tests.is('pricing tables: same refusal for a different spelling (UPPER-CA
   tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('$$ || (select id from pt where k = 'jane') || $$', 'Sample.Rep.Marcus@clatitle.com')$$) || '/' ||
   tests.p($$insert into public.pricing_table_members (table_id, email) values ('$$ || (select id from pt where k = 'jane') || $$', 'sample.rep.marcus@clatitle.com')$$) || '/' ||
   tests.p($$insert into public.pricing_table_members (table_id, email) values ('$$ || (select id from pt where k = 'jane') || $$', 'Upper.Case@clatitle.com')$$), 'ERR:23505/ERR:23505/ERR:23514');
-select tests.is('pricing tables: bad emails refused (22023): not an email, not @clatitle.com, empty, null',
+select tests.is('pricing tables: bad emails refused (22023): not an email, no dot in the domain, empty, null',
   tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('$$ || (select id from pt where k = 'jane') || $$', 'not-an-email')$$) || '/' ||
-  tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('$$ || (select id from pt where k = 'jane') || $$', 'someone@example.com')$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('$$ || (select id from pt where k = 'jane') || $$', 'someone@localhost')$$) || '/' ||
   tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('$$ || (select id from pt where k = 'jane') || $$', '')$$) || '/' ||
   tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('$$ || (select id from pt where k = 'jane') || $$', null)$$) || '/' ||
   tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('00000000-0000-4000-8000-00000000ffff', 'x@clatitle.com')$$), 'ERR:22023/ERR:22023/ERR:22023/ERR:22023/ERR:P0002');
 insert into public.invitations (email, role, is_rep) values ('client.cla@clatitle.com', 'client', false);
 insert into auth.users (id, email) values (tests.id('e8'), 'client.cla@clatitle.com');
-select tests.is('pricing tables: the email of an existing CLIENT account is refused (add their rep instead)',
-  tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('$$ || (select id from pt where k = 'jane') || $$', 'client.cla@clatitle.com')$$), 'ERR:22023');
+-- (an existing client account, e8, is created above: its email is a valid member since members may be ANY email; used in the "client in own table" section below)
 select tests.is('pricing tables: a rep, a client, a disabled user and a signed-out call cannot add or remove a member',
   tests.rpc(tests.id('b1'), $$public.admin_add_pricing_member('$$ || (select id from pt where k = 'jane') || $$', 'x@clatitle.com')$$) || '/' ||
   tests.rpc(tests.id('b2'), $$public.admin_remove_pricing_member('$$ || (select id from pt where k = 'marvin') || $$', 'sample.rep.marcus@clatitle.com')$$) || '/' ||
@@ -1610,6 +1609,62 @@ select tests.is('pricing tables: privileges: anon cannot run any of the pricing 
   (select count(*)::text from pg_proc where pronamespace = 'public'::regnamespace and proname in ('admin_create_pricing_table', 'admin_rename_pricing_table', 'admin_delete_pricing_table', 'admin_set_pricing_fee', 'admin_clear_pricing_fee', 'admin_add_pricing_member', 'admin_remove_pricing_member', 'get_my_fee_overrides')), 'true/8');
 select tests.is('pricing tables: the fee rows follow the table out (fee and member foreign keys are ON DELETE CASCADE)',
   (select string_agg(confdeltype::text, ',' order by conrelid::regclass::text) from pg_constraint where contype = 'f' and confrelid = 'public.pricing_tables'::regclass), 'c,c');
+
+-- ---- INDIVIDUAL CLIENTS in a table: own email first, else the assigned rep's table, else standard (John, confirmed) ----
+-- state here: no pricing tables left. Marcus (b2) is a rep; Omar (c5) and Sam (c1) are his clients; Lee (c2) is Jane's (b1) client; e8 is an unassigned client with a clatitle.com address.
+create temp table pt2 (k text, id uuid);
+insert into pt2 select 'rep', nullif(tests.v(tests.id('a1'), $$select public.admin_create_pricing_table('Marcus Rep Pricing')::text$$), '')::uuid;
+insert into pt2 select 'own', nullif(tests.v(tests.id('a2'), $$select public.admin_create_pricing_table('Omar Own Pricing')::text$$), '')::uuid;
+select tests.is('client pricing: set up two tables: "Marcus Rep Pricing" (all-states purchase buyer 950) with Marcus in it, and "Omar Own Pricing" (800) still empty',
+  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('$$ || (select id from pt2 where k = 'rep') || $$', '*', 'purchase', 'buyer', 950)$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('$$ || (select id from pt2 where k = 'own') || $$', '*', 'purchase', 'buyer', 800)$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('$$ || (select id from pt2 where k = 'rep') || $$', 'sample.rep.marcus@clatitle.com')$$), '//added');
+select tests.is('client pricing: a client NOT in any table follows the assigned rep''s table: Marcus, Omar and Sam all get 950; Jane (no table) and Lee (her client) get standard; e8 (no rep) gets standard',
+  tests.ov(tests.id('b2')) || ' ' || tests.ov(tests.id('c5')) || ' ' || tests.ov(tests.id('c1')) || ' [' || tests.ov(tests.id('b1')) || '] [' || tests.ov(tests.id('c2')) || '] [' || tests.ov(tests.id('e8')) || ']',
+  '*:purchase:buyer:950.00 *:purchase:buyer:950.00 *:purchase:buyer:950.00 [] [] []');
+select tests.is('client pricing: ANY email is accepted: a non-clatitle.com address of an existing client (Omar, any letter case) joins "Omar Own Pricing"; a client email with no account yet; a clatitle.com client (e8)',
+  tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('$$ || (select id from pt2 where k = 'own') || $$', ' Omar.Broker@Example.COM ')$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('$$ || (select id from pt2 where k = 'own') || $$', 'future.agent@gmail.com')$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('$$ || (select id from pt2 where k = 'own') || $$', 'client.cla@clatitle.com')$$) || '/' ||
+  tests.sq($q$select string_agg(email, ',' order by email) from public.pricing_table_members where table_id = (select id from pt2 where k = 'own')$q$),
+  'added/added/added/client.cla@clatitle.com,future.agent@gmail.com,omar.broker@example.com');
+select tests.is('client pricing: the client''s OWN table beats the rep''s: Omar (his rep Marcus is in the 950 table) now gets 800; Marcus still 950; Omar''s ex-colleague Sam still follows Marcus (950)',
+  tests.ov(tests.id('c5')) || ' ' || tests.ov(tests.id('b2')) || ' ' || tests.ov(tests.id('c1')), '*:purchase:buyer:800.00 *:purchase:buyer:950.00 *:purchase:buyer:950.00');
+select tests.is('client pricing: a client with no rep at all (e8) gets his own table''s fee (800); a client whose rep is in no table (Lee) gets standard until his own email is added, then 950 while Jane stays standard',
+  tests.ov(tests.id('e8')) || ' [' || tests.ov(tests.id('c2')) || '] ' ||
+  tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('$$ || (select id from pt2 where k = 'rep') || $$', 'lee.lender@example.com')$$) || ' ' ||
+  tests.ov(tests.id('c2')) || ' [' || tests.ov(tests.id('b1')) || ']', '*:purchase:buyer:800.00 [] added *:purchase:buyer:950.00 []');
+select tests.is('client pricing: one email, one table still holds for clients: Omar cannot be added to the other table (23505, naming "Omar Own Pricing"); with p_move he moves and follows that table (950)',
+  tests.msg(tests.id('a1'), $$select public.admin_add_pricing_member('$$ || (select id from pt2 where k = 'rep') || $$', 'OMAR.broker@example.com')::text$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('$$ || (select id from pt2 where k = 'rep') || $$', 'omar.broker@example.com', true)$$) || '/' ||
+  tests.ov(tests.id('c5')), 'ERR:23505:omar.broker@example.com is already in pricing table "Omar Own Pricing"/moved/*:purchase:buyer:950.00');
+select tests.is('client pricing: an admin who is not a rep (Pia) and a signed-out call get nothing even if their own email were a member; a plain admin''s email can be stored but pays standard',
+  tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('$$ || (select id from pt2 where k = 'own') || $$', '$$ || (select email from public.profiles where id = tests.id('d1')) || $$')$$) || '/' ||
+  tests.ov(tests.id('d1')) || '/' || tests.ov(null), 'added//');
+select tests.is('client pricing: reads follow the same resolution: Omar (now in the 950 table) reads only that table and no member list; Lee reads only the 950 table; e8 reads only "Omar Own Pricing"',
+  tests.v(tests.id('c5'), $q$select (select count(*) from public.pricing_tables)::text || ':' || (select name from public.pricing_tables) || ':' || (select count(*) from public.pricing_table_members)::text$q$) || ' ' ||
+  tests.v(tests.id('c2'), $q$select (select name from public.pricing_tables) || ':' || (select amount::text from public.pricing_table_fees)$q$) || ' ' ||
+  tests.v(tests.id('e8'), $q$select (select name from public.pricing_tables) || ':' || (select amount::text from public.pricing_table_fees)$q$),
+  '1:Marcus Rep Pricing:0 Marcus Rep Pricing:950.00 Omar Own Pricing:800.00');
+select tests.is('client pricing: nobody but an admin / super admin can put an email in a table: a client (for himself), a rep, a disabled user and signed-out calls are all refused (42501); nothing changed',
+  tests.rpc(tests.id('c5'), $$public.admin_add_pricing_member('$$ || (select id from pt2 where k = 'own') || $$', 'omar.broker@example.com', true)$$) || '/' ||
+  tests.rpc(tests.id('b2'), $$public.admin_add_pricing_member('$$ || (select id from pt2 where k = 'own') || $$', 'sample.rep.marcus@clatitle.com', true)$$) || '/' ||
+  tests.rpc(tests.id('c4'), $$public.admin_remove_pricing_member('$$ || (select id from pt2 where k = 'own') || $$', 'future.agent@gmail.com')$$) || '/' ||
+  tests.rpc(null, $$public.admin_add_pricing_member('$$ || (select id from pt2 where k = 'own') || $$', 'a@b.co')$$) || '/' ||
+  tests.ov(tests.id('c5')) || '/' || tests.sq('select count(*)::text from public.pricing_table_members'),
+  'ERR:42501/ERR:42501/ERR:42501/ERR:42501/*:purchase:buyer:950.00/6');
+select tests.is('client pricing: removing the client''s own email puts him back on his rep''s table (e8 has no rep: standard); deleting a table releases everyone in it',
+  tests.rpc(tests.id('a1'), $$public.admin_remove_pricing_member('$$ || (select id from pt2 where k = 'rep') || $$', 'omar.broker@example.com')$$) || '/' ||
+  tests.ov(tests.id('c5')) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_delete_pricing_table('$$ || (select id from pt2 where k = 'own') || $$')$$) || '/' || tests.ov(tests.id('e8')) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_delete_pricing_table('$$ || (select id from pt2 where k = 'rep') || $$')$$) || '/' ||
+  tests.ov(tests.id('b2')) || tests.ov(tests.id('c5')) || tests.ov(tests.id('c2')) || '/' ||
+  tests.sq('select (select count(*) from public.pricing_tables)::text || (select count(*) from public.pricing_table_fees)::text || (select count(*) from public.pricing_table_members)::text'),
+  '/*:purchase:buyer:950.00/////000');
+select tests.is('client pricing: the settlement-only rule still holds for these tables: a premium, recording or other fee_key row is refused by the CHECK',
+  tests.p($$insert into public.pricing_table_fees (table_id, fee_key, transaction, paid_by, amount) values (gen_random_uuid(), 'premium', 'purchase', 'buyer', 1)$$) || '/' ||
+  tests.p($$insert into public.pricing_table_fees (table_id, fee_key, transaction, paid_by, amount) values (gen_random_uuid(), 'recording', 'purchase', 'buyer', 1)$$), 'ERR:23514/ERR:23514');
+
 
 -- ---------------- privileges ----------------
 select tests.is('function privileges: anon cannot run the admin RPCs, authenticated can',

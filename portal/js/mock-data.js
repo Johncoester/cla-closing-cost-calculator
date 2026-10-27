@@ -98,7 +98,8 @@
     const pricingFees = [PF(1, 1, "*", "purchase", "buyer", 950), PF(2, 1, "*", "purchase", "seller", 600), PF(3, 1, "*", "refi", "buyer", 350),
       PF(4, 2, "MD", "purchase", "buyer", 900), PF(5, 2, "MD", "purchase", "seller", 500)];
     const PM = (n, t, email) => ({ id: "pm" + n, tableId: "pt" + t, email, addedBy: id("a1"), addedAt: iso(2) });
-    const pricingMembers = [PM(1, 1, "sample.rep.marcus@clatitle.com"), PM(2, 1, "marvin.newhire@clatitle.com"), PM(3, 2, "sample.rep.jane@clatitle.com")];
-    return { version: 7, users, assignments, quotes, audit, photos, invitations, feedback, pricingTables, pricingFees, pricingMembers };
+    // Omar is Marcus's client but is listed in Jane's Pricing himself: his own email beats his rep's table
+    const pricingMembers = [PM(1, 1, "sample.rep.marcus@clatitle.com"), PM(2, 1, "marvin.newhire@clatitle.com"), PM(3, 2, "sample.rep.jane@clatitle.com"), PM(4, 2, "omar.broker@example.com")];
+    return { version: 8, users, assignments, quotes, audit, photos, invitations, feedback, pricingTables, pricingFees, pricingMembers };
   };
 })();

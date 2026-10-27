@@ -465,13 +465,13 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
       const JANE = "MD/purchase/buyer/900,MD/purchase/seller/500", MARV = "*/purchase/buyer/950,*/purchase/seller/600,*/refi/buyer/350", FEE = (tableId, state, transaction, paidBy, amount) => ({ tableId, state, transaction, paidBy, amount });
       // starter data: two fake tables
       await M.as("sample.robin.admin@clatitle.com"); let L = await M.Ax.adminListPricingTables();
-      assert.strictEqual(JSON.stringify(L.tables.map((t) => t.name)), JSON.stringify(["Marvin's Pricing", "Jane's Pricing"])); assert.strictEqual(L.fees.length, 5); assert.strictEqual(L.members.length, 3);
-      assert.ok(L.members.every((m) => m.email === m.email.toLowerCase() && /@clatitle\.com$/.test(m.email)) && !JSON.stringify(L).includes("feeKey"));
+      assert.strictEqual(JSON.stringify(L.tables.map((t) => t.name)), JSON.stringify(["Marvin's Pricing", "Jane's Pricing"])); assert.strictEqual(L.fees.length, 5); assert.strictEqual(L.members.length, 4);
+      assert.ok(L.members.every((m) => m.email === m.email.toLowerCase()) && L.members.some((m) => m.email === "omar.broker@example.com") && !JSON.stringify(L).includes("feeKey"));
       ok("pricing tables (mock): fake starter data: Marvin's Pricing (Marcus + an email with no account) and Jane's Pricing (Jane)");
       // who sees what: the rep in a table, the rep's clients, nobody else
       assert.strictEqual(await mine("sample.rep.jane@clatitle.com"), JANE); assert.strictEqual(await mine("sam.agent@example.com"), JANE); assert.strictEqual(await mine("lee.lender@example.com"), JANE);
-      assert.strictEqual(await mine("sample.rep.marcus@clatitle.com"), MARV); assert.strictEqual(await mine("omar.broker@example.com"), MARV);
-      ok("pricing tables (mock): a rep gets their table's fees, and their assigned clients (Sam, Lee, Omar) get the same: the assumption");
+      assert.strictEqual(await mine("sample.rep.marcus@clatitle.com"), MARV); assert.strictEqual(await mine("omar.broker@example.com"), JANE);
+      ok("pricing tables (mock): a rep gets their table's fees, and their assigned clients (Sam, Lee) follow the rep; Omar (Marcus's client) is listed in Jane's Pricing himself, so his own email wins: Jane's fees");
       for (const e of ["pat.homes@example.com", "quinn.buyer@example.com", "sample.admin@clatitle.com", "sample.robin.admin@clatitle.com", "sample.new.rep@clatitle.com"]) assert.strictEqual(await mine(e), "", e);
       ok("pricing tables (mock): an unassigned client, the admin's client, the admin who reps, a plain admin and a rep in no table all pay standard fees");
       // writes: admins and super admins only
@@ -511,9 +511,9 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
       assert.strictEqual(await mine("sample.rep.marcus@clatitle.com"), MARV);
       await M.as("sample.admin@clatitle.com"); assert.strictEqual(await M.Ax.adminAddPricingMember(T.id, "SAMPLE.REP.MARCUS@clatitle.com", { move: true }), "moved");
       L = await M.Ax.adminListPricingTables(); assert.strictEqual(L.members.filter((m) => m.email === "sample.rep.marcus@clatitle.com").length, 1); assert.strictEqual(L.members.find((m) => m.email === "sample.rep.marcus@clatitle.com").tableId, T.id);
-      assert.strictEqual(await mine("omar.broker@example.com"), "*/refi/buyer/0,MD/purchase/buyer/900,MD/purchase/seller/500"); ok("pricing tables (mock): moving an email takes it out of the other table (still only one table); Marcus and Omar now get this table's fees");
+      assert.strictEqual(await mine("sample.rep.marcus@clatitle.com"), "*/refi/buyer/0,MD/purchase/buyer/900,MD/purchase/seller/500"); assert.strictEqual(await mine("omar.broker@example.com"), JANE); await M.as("sample.admin@clatitle.com"); ok("pricing tables (mock): moving an email takes it out of the other table (still only one table); Marcus now gets this table's fees, while Omar (listed himself in Jane's Pricing) keeps Jane's");
       await M.as("sample.admin@clatitle.com");
-      for (const [e, re, n] of [["", /valid email/, "empty"], ["not an email", /valid email/, "no @"], ["a@b", /valid email/, "no domain dot"], ["someone@gmail.com", /@clatitle\.com/, "not a CLA address"]]) await rej(M.Ax.adminAddPricingMember(T.id, e), re, "pricing tables: member email refused: " + n);
+      for (const [e, re, n] of [["", /valid email/, "empty"], ["not an email", /valid email/, "no @"], ["a@b", /valid email/, "no domain dot"], ["x@localhost", /valid email/, "no domain dot"]]) await rej(M.Ax.adminAddPricingMember(T.id, e), re, "pricing tables: member email refused: " + n);
       await M.Ax.adminRemovePricingMember(T.id, "NOT.YET.HIRED@clatitle.com"); await M.Ax.adminRemovePricingMember(T.id, "not.yet.hired@clatitle.com"); assert.ok(!(await M.Ax.adminListPricingTables()).members.some((m) => m.email === "not.yet.hired@clatitle.com")); ok("pricing tables (mock): removing a member (any case, twice) works and is quiet");
       // admin who reps vs plain admin; reassigning a client; delete releases members
       assert.strictEqual(await M.Ax.adminAddPricingMember("pt2", "sample.admin@clatitle.com"), "added"); assert.strictEqual(await M.Ax.adminAddPricingMember("pt2", "sample.robin.admin@clatitle.com"), "added");
@@ -525,7 +525,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
       ok("pricing tables (mock): deleting a table removes its fees and members: Jane and her clients are back on standard fees");
       // audit
       await M.as("sample.admin@clatitle.com"); const au = (await M.Ax.adminAuditLog(200)).filter((r) => r.action === "pricing_table_changed"), ops = {}; au.forEach((r) => (ops[r.details.op] = (ops[r.details.op] || 0) + 1));
-      assert.ok(["create", "rename", "delete", "fee_set", "fee_clear", "member_add", "member_move", "member_remove"].every((o) => ops[o] > 0), JSON.stringify(ops)); assert.ok(au.some((r) => r.details.op === "delete" && r.details.fees_removed === 2 && r.details.members_released === 3) && au.some((r) => r.details.op === "member_move" && r.details.from_table === "Marvin's Pricing") && au.some((r) => r.details.op === "fee_set" && r.details.before === 912.51 && r.details.after === 900));
+      assert.ok(["create", "rename", "delete", "fee_set", "fee_clear", "member_add", "member_move", "member_remove"].every((o) => ops[o] > 0), JSON.stringify(ops)); assert.ok(au.some((r) => r.details.op === "delete" && r.details.fees_removed === 2 && r.details.members_released === 4) && au.some((r) => r.details.op === "member_move" && r.details.from_table === "Marvin's Pricing") && au.some((r) => r.details.op === "fee_set" && r.details.before === 912.51 && r.details.after === 900));
       ok("pricing tables (mock): every create / rename / delete / fee / member change is audited (pricing_table_changed with op, before and after)");
       // supabase adapter: the right tables / functions, mapped
       const calls = [], rowsFor = { pricing_tables: [{ id: "t1", name: "Marvin's Pricing", created_by: ids("a1"), created_at: "2026-10-27T00:00:00Z", updated_at: "2026-10-27T00:00:00Z" }],
@@ -553,9 +553,29 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
         const dom = new JSDOM(page, { url: "http://localhost/index.html", runScripts: "dangerously", pretendToBeVisual: true, virtualConsole: new VirtualConsole(), beforeParse(win) { win.fetch = async () => ({ ok: false, status: 401, text: async () => "" }); } });
         await tick(80); const dd = dom.window.document, fee = () => [...dd.querySelectorAll("#fees .fee")].filter((r) => r.children[0].dataset.name === "Settlement Fee to CLA Title & Escrow").map((r) => r.children[2].value).join(",");
         const z = dd.getElementById("zip"); z.value = "21704"; fire(dom.window, z, "input"); await tick(40); assert.strictEqual(fee(), "1075,670");
-        for (const [e, want] of [["lee.lender@example.com", "900,500"], ["omar.broker@example.com", "950,600"], ["pat.homes@example.com", "1075,670"], ["sample.rep.marcus@clatitle.com", "950,600"]]) { await M2.as(e); dom.window.CLA_QUOTE_API.setFeeOverrides(await M2.Ax.getMyFeeOverrides()); assert.strictEqual(fee(), want, e); }
-        ok("calculator + adapter: Jane's client Lee gets 900 / 500, Marcus and his client Omar 950 / 600, unassigned Pat the standard 1075 / 670"); dom.window.close();
+        for (const [e, want] of [["lee.lender@example.com", "900,500"], ["omar.broker@example.com", "900,500"], ["pat.homes@example.com", "1075,670"], ["sample.rep.marcus@clatitle.com", "950,600"]]) { await M2.as(e); dom.window.CLA_QUOTE_API.setFeeOverrides(await M2.Ax.getMyFeeOverrides()); assert.strictEqual(fee(), want, e); }
+        { const tot = () => ["tB", "tS"].map((i) => +dd.getElementById(i).textContent.replace(/[$,]/g, "")); await M2.as("pat.homes@example.com"); dom.window.CLA_QUOTE_API.setFeeOverrides(await M2.Ax.getMyFeeOverrides()); const std = tot(); await M2.as("omar.broker@example.com"); dom.window.CLA_QUOTE_API.setFeeOverrides(await M2.Ax.getMyFeeOverrides()); const sp = tot();
+          assert.strictEqual(JSON.stringify([Math.round((std[0] - sp[0]) * 100), Math.round((std[1] - sp[1]) * 100)]), JSON.stringify([17500, 17000])); }
+        ok("calculator + adapter: Omar's totals differ from the standard ones by exactly the settlement-fee difference (175 buyer, 170 seller): insurance premiums and recording fees are unchanged");
+        ok("calculator + adapter: Jane's client Lee gets 900 / 500, Marcus 950 / 600, Omar (Marcus's client, listed in Jane's Pricing himself) 900 / 500, unassigned Pat the standard 1075 / 670"); dom.window.close();
         const hook = fs.readFileSync(path.join(dir, "..", "js", "portal-hook.js"), "utf8"); assert.ok(/getMyFeeOverrides/.test(hook) && /setFeeOverrides/.test(hook) && /catch \(e\) \{ \/\* standard fees \*\/ \}/.test(hook)); ok("portal-hook: asks the adapter for the user's fee overrides and hands them to the calculator; any failure = standard fees");
+      }
+      // individual CLIENTS in a table: own email first, else the rep's table, else standard (fresh sample data)
+      {
+        const C = mock(), mineC = async (e) => { await C.as(e); return sum((await C.Ax.getMyFeeOverrides()).sort((a, b) => (a.state + a.transaction + a.paidBy).localeCompare(b.state + b.transaction + b.paidBy))); };
+        assert.strictEqual(await mineC("omar.broker@example.com"), JANE); assert.strictEqual(await mineC("sample.rep.marcus@clatitle.com"), MARV);
+        ok("client pricing (mock): the client's OWN table beats the rep's: Omar (his rep Marcus uses Marvin's Pricing) gets Jane's Pricing; Marcus still gets Marvin's");
+        assert.strictEqual(await mineC("lee.lender@example.com"), JANE); assert.strictEqual(await mineC("sam.agent@example.com"), JANE); assert.strictEqual(await mineC("pat.homes@example.com"), ""); assert.strictEqual(await mineC("quinn.buyer@example.com"), "");
+        ok("client pricing (mock): a client not in any table follows their assigned rep's table (Lee, Sam: Jane's); a client with no rep or a rep without a table pays standard (Pat, Quinn)");
+        await C.as("sample.robin.admin@clatitle.com"); await C.Ax.adminRemovePricingMember("pt2", "Omar.Broker@example.com"); assert.strictEqual(await mineC("omar.broker@example.com"), MARV); ok("client pricing (mock): take Omar out of his own table and he follows his rep Marcus again (Marvin's Pricing)");
+        await C.as("sample.robin.admin@clatitle.com");
+        assert.strictEqual(await C.Ax.adminAddPricingMember("pt1", " Lee.Lender@Example.com "), "added"); assert.strictEqual(await C.Ax.adminAddPricingMember("pt1", "pat.homes@example.com"), "added"); assert.strictEqual(await C.Ax.adminAddPricingMember("pt1", "future.agent@gmail.com"), "added"); assert.strictEqual(await C.Ax.adminAddPricingMember("pt1", "sample.robin.admin@clatitle.com"), "added");
+        ok("client pricing (mock): any email is accepted: a client (any case), an unassigned client, a gmail address with no account yet, and an admin's email (no @clatitle.com rule, no 'add their rep instead')");
+        assert.strictEqual(await mineC("lee.lender@example.com"), MARV); assert.strictEqual(await mineC("sam.agent@example.com"), JANE); assert.strictEqual(await mineC("pat.homes@example.com"), MARV); assert.strictEqual(await mineC("sample.robin.admin@clatitle.com"), "");
+        ok("client pricing (mock): Lee (Jane's client) now gets Marvin's Pricing instead of his rep's; Sam still follows Jane; Pat (no rep) gets Marvin's on his own; a plain admin gets nothing");
+        await C.as("sample.robin.admin@clatitle.com"); await rej(C.Ax.adminAddPricingMember("pt2", "pat.homes@example.com"), /already in pricing table "Marvin's Pricing"/, "client pricing: one email, one table still holds for clients"); assert.strictEqual(await C.Ax.adminAddPricingMember("pt2", "pat.homes@example.com", { move: true }), "moved"); assert.strictEqual(await mineC("pat.homes@example.com"), JANE); ok("client pricing (mock): a client can be moved between tables");
+        for (const [who, label] of [["omar.broker@example.com", "a client (even for himself)"], ["sample.rep.marcus@clatitle.com", "a rep"]]) { await C.as(who); await rej(C.Ax.adminAddPricingMember("pt1", "omar.broker@example.com", { move: true }), /Admins only/, "client pricing: " + label + " cannot put an email in a table"); await rej(C.Ax.adminRemovePricingMember("pt2", "pat.homes@example.com"), /Admins only/, "client pricing: " + label + " cannot remove one"); }
+        assert.strictEqual(await mineC("omar.broker@example.com"), MARV);
       }
       // the admin screen
       {
@@ -563,8 +583,17 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
         const tabs = [...RP.d.querySelectorAll("#tabs button")]; assert.strictEqual(tabs.length, 6); assert.strictEqual(tabs[5].textContent, "Rep pricing"); assert.strictEqual(tabs[4].textContent, "Feedback"); assert.ok($("pPricing").hidden);
         tabs[5].click(); await tick(80);
         assert.ok(!$("pPricing").hidden && $("pUsers").hidden && !$("ptListView").hidden && $("ptDetailView").hidden); assert.match($("pPricing").textContent, /Settlement Fee to CLA Title/); assert.match($("pPricing").textContent, /Title insurance premiums, recording fees, taxes and every other fee never change/);
-        const rows = () => [...RP.d.querySelectorAll("#ptRows tr")].map((r) => r.textContent); assert.strictEqual(rows().length, 2); assert.ok(/Marvin's Pricing/.test(rows()[1] || rows()[0]) && rows().join().includes("sample.rep.marcus@clatitle.com") && rows().join().includes("sample.rep.jane@clatitle.com")); assert.match($("ptCount").textContent, /2 tables · 3 rep emails/);
+        const rows = () => [...RP.d.querySelectorAll("#ptRows tr")].map((r) => r.textContent); assert.strictEqual(rows().length, 2); assert.ok(/Marvin's Pricing/.test(rows()[1] || rows()[0]) && rows().join().includes("sample.rep.marcus@clatitle.com") && rows().join().includes("sample.rep.jane@clatitle.com")); assert.match($("ptCount").textContent, /2 tables · 4 rep or client emails/);
         ok("pricing screen: the 'Rep pricing' tab lists the pricing tables with fee counts and member emails; says settlement fee only");
+        // member rows: role, and for a client who the rep is and a note when the table differs
+        RP.d.querySelector('#ptRows [data-open="pt2"]').click(); await tick(60); const jr = () => [...RP.d.querySelectorAll("#mRows tr")].map((r) => r.textContent);
+        const omarRow = jr().find((t) => /omar\.broker@example\.com/.test(t)); assert.ok(omarRow && /Client/.test(omarRow) && /Uses Jane's Pricing instead of their rep Marcus Rep's table \(Marvin's Pricing\)/.test(omarRow), omarRow); assert.ok(/Has an account/.test(omarRow) && /Omar Broker/.test(omarRow));
+        ok("pricing screen: a client row shows the role, their rep and the note 'Uses Jane's Pricing instead of their rep Marcus Rep's table (Marvin's Pricing)'");
+        assert.match($("mEmail").placeholder, /client/i); assert.match($("pPricing").textContent, /individual client/i);
+        for (const e of ["sam.agent@example.com", "pat.homes@example.com", "agent.new@gmail.com"]) { $("mEmail").value = e; await submit("mForm"); assert.strictEqual($("mErr").textContent, "", e); }
+        const t2 = jr(); assert.ok(/Sam/.test(t2.find((t) => /sam\.agent/.test(t))) && /same pricing as their rep/.test(t2.find((t) => /sam\.agent/.test(t))), "sam"); assert.match(t2.find((t) => /pat\.homes/.test(t)), /No assigned rep: uses this table on their own/); assert.match(t2.find((t) => /agent\.new/.test(t)), /No portal account yet/);
+        ok("pricing screen: any email is accepted (client, no-rep client, gmail address); a client in the same table as their rep says so; a client without a rep says that");
+        for (const e of ["sam.agent@example.com", "pat.homes@example.com", "agent.new@gmail.com"]) { RP.d.querySelector('#mRows [data-rm="' + e + '"]').click(); await tick(80); } assert.strictEqual(jr().length, 2); await click("ptBack");
         // new pricing table asks for a name
         assert.ok($("ptNewForm").hidden); await click("ptNew"); assert.ok(!$("ptNewForm").hidden); await submit("ptNewForm"); assert.match($("ptNewErr").textContent, /needs a name/);
         $("ptNewName").value = "Jane's pricing"; await submit("ptNewForm"); assert.match($("ptNewErr").textContent, /already exists/);
@@ -589,7 +618,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
         $("mEmail").value = " New.Hire@ClaTitle.com "; await submit("mForm"); assert.match($("mOk").textContent, /Added new\.hire@clatitle\.com\. They have no portal account yet/); assert.match($("mRows").textContent, /new\.hire@clatitle\.com/); assert.match($("mRows").textContent, /No portal account yet/);
         $("mEmail").value = "SAMPLE.new.rep@clatitle.com"; await submit("mForm"); assert.match($("mOk").textContent, /right away/); const riley = [...RP.d.querySelectorAll("#mRows tr")].find((r) => /sample\.new\.rep/.test(r.textContent)); assert.ok(/Has an account/.test(riley.textContent) && /CLA rep/.test(riley.textContent));
         $("mEmail").value = "sample.new.rep@clatitle.com"; await submit("mForm"); assert.match($("mOk").textContent, /already in this table/);
-        $("mEmail").value = "nonsense"; await submit("mForm"); assert.match($("mErr").textContent, /valid email/); $("mEmail").value = "x@gmail.com"; await submit("mForm"); assert.match($("mErr").textContent, /@clatitle\.com/); $("mEmail").value = ""; await submit("mForm"); assert.match($("mErr").textContent, /Enter the rep's email/);
+        $("mEmail").value = "nonsense"; await submit("mForm"); assert.match($("mErr").textContent, /valid email/); $("mEmail").value = "x@localhost"; await submit("mForm"); assert.match($("mErr").textContent, /valid email/); $("mEmail").value = ""; await submit("mForm"); assert.match($("mErr").textContent, /Enter the rep's email/);
         $("mEmail").value = "sample.robin.admin@clatitle.com"; await submit("mForm"); assert.match($("mRows").textContent, /not set to work as a rep/);
         ok("pricing screen: members are added by email (any case); no-account emails are flagged; accounts show role; duplicates and bad emails get clear messages; an admin who does not rep is flagged");
         $("mEmail").value = "sample.rep.marcus@clatitle.com"; await submit("mForm"); assert.ok(!$("mMove").hidden); assert.match($("mMoveTxt").textContent, /already in pricing table "Marvin's Pricing"/); assert.ok(!/sample\.rep\.marcus/.test($("mRows").textContent));
@@ -908,7 +937,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
 
     // cache-bust: every ?v= in index.html and TOUR_V agree
     const vs = [...idx.matchAll(/\?v=(\d{8}[a-z])/g)].map((m) => m[1]), pu = fs.readFileSync(path.join(__dirname, "js", "portal-ui.js"), "utf8");
-    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261027b" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261027b");
+    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261027c" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261027c");
     // the new elements are inert in print and add no external requests
     assert.ok(/@media print\{\s*@page\{margin:14mm\}\s*\.claChip\{display:none!important\}/.test(idx) && !/https?:\/\//.test(tj2)); ok("calculator tour: the chip is not printed; tour.js has no external libraries or CDN");
   }

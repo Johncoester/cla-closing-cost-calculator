@@ -15,9 +15,9 @@
 --   public.pricing_table_fees     the settlement fees of one table: state ('*' = every state, a state row beats it), purchase | refi,
 --                                 buyer | seller (a refinance borrower is 'buyer'), amount. fee_key is CHECK-constrained to 'settlement':
 --                                 a premium, a recording fee or any other fee cannot be stored, by anyone. No row = the standard fee.
---   public.pricing_table_members  EMAIL addresses (lower-cased, trimmed, @clatitle.com) that use a table. One email belongs to at most ONE
---                                 table (unique). The email may be added BEFORE the rep has a portal account: pricing applies as soon as
---                                 they sign in with that email. Matching is case-insensitive (emails are stored lower-case, profiles too).
+--   public.pricing_table_members  EMAIL addresses (lower-cased, trimmed, ANY domain) that use a table: a rep's, or an individual CLIENT's.
+--                                 One email belongs to at most ONE table (unique). The email may be added BEFORE the person has a portal
+--                                 account: pricing applies as soon as they sign in with that email. Matching is case-insensitive (emails are stored lower-case, profiles too).
 --   Deleting a table deletes its fees and its members (ON DELETE CASCADE): those people are back on standard fees.
 --   Standard pricing is untouched: the standard fees stay in the fee sheet / snapshot. Nobody in a table = nobody notices anything.
 --
@@ -28,16 +28,19 @@
 --          Nobody has an insert / update / delete grant or policy on the three tables (direct API writes fail with 42501).
 --          Every change is audited ('pricing_table_changed', details.op says which).
 --   READ   admin and super admin: everything. A rep (or an admin who also reps): only THEIR OWN table's name and fees.
---          A client (realtor): only the table of their assigned rep, fees only. The members list (other reps' emails) is admin-only.
+--          A client (realtor): only the fees of the table they resolve to (their own email's table, else their assigned rep's). The members list is admin-only.
 --          The calculator uses public.get_my_fee_overrides() (same name and shape as the earlier draft).
 --
 -- THE ONE RULE FOR "WHOSE PRICING DOES THIS PERSON GET?"  ->  private.pricing_rep_for(user)
---   a rep (or an admin who also works as a rep) -> themselves          (their own quotes)
---   a client                                    -> their active, assigned rep (the realtor's quotes use the rep's table)
---   anyone else (a plain admin, a disabled user, nobody) -> null = standard fees
---   private.pricing_table_for(user) then looks up the table that rep's EMAIL is a member of.
---   To change that policy (e.g. rep's own quotes only, clients pay standard) edit ONLY pricing_rep_for: the RLS policies, the
---   get_my_fee_overrides() RPC and the portal all follow it.
+--   PRECEDENCE (John, confirmed), implemented by private.pricing_table_for(user):
+--     1) the person's OWN email is a member of a table (a rep, an admin who also reps, or a client)  -> that table
+--        (so an individual client can have different pricing even while working with a rep who is in another table)
+--     2) else the table of their ASSIGNED REP's email, where private.pricing_rep_for(user) is
+--          a rep (or an admin who also works as a rep) -> themselves, a client -> their active, assigned rep,
+--          anyone else (a plain admin, a disabled user, nobody) -> null
+--     3) else no table = standard fees.
+--   To change the policy (e.g. clients never follow their rep) edit ONLY pricing_rep_for (return null for clients) or the
+--   first branch of pricing_table_for: the RLS policies, get_my_fee_overrides() and the portal all follow them.
 -- =====================================================================
 
 -- ---------- 1. the tables ----------
@@ -78,7 +81,7 @@ create table if not exists public.pricing_table_members (
   email    text not null,
   added_by uuid references public.profiles (id) on delete set null,
   added_at timestamptz not null default now(),
-  constraint pricing_member_email_clean check (email = lower(btrim(email)) and email ~ '^[^@\s]+@clatitle\.com$' and length(email) <= 254),
+  constraint pricing_member_email_clean check (email = lower(btrim(email)) and email ~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' and length(email) <= 254),
   constraint pricing_member_email_once  unique (email)                       -- one email, at most ONE pricing table
 );
 create index if not exists pricing_table_members_table_idx on public.pricing_table_members (table_id);
@@ -118,13 +121,19 @@ $$;
 revoke execute on function private.pricing_rep_for(uuid) from public, anon, authenticated;
 grant  execute on function private.pricing_rep_for(uuid) to authenticated;      -- called from RLS policies, which run as the logged-in user
 
--- the pricing table that person's rep belongs to, by EMAIL (null = standard fees)
+-- the pricing table a person uses, by EMAIL (null = standard fees): their own email first, else their assigned rep's (see PRECEDENCE above)
 create or replace function private.pricing_table_for(p_user uuid) returns uuid
 language sql stable security definer set search_path = '' as $$
-  select m.table_id
-    from public.profiles r
-    join public.pricing_table_members m on m.email = lower(btrim(r.email))
-   where r.id = private.pricing_rep_for(p_user)
+  select coalesce(
+    -- 1) the person's own email (reps, admins who rep, and clients; a plain admin has no pricing)
+    (select m.table_id from public.profiles p
+       join public.pricing_table_members m on m.email = lower(btrim(p.email))
+      where p.id = p_user and p.status = 'active'
+        and (p.role in ('rep', 'client') or (p.role in ('super_admin', 'admin') and p.is_rep))),
+    -- 2) else the table of their assigned rep (a rep is their own rep; a client's rep is the active assignment)
+    (select m.table_id from public.profiles r
+       join public.pricing_table_members m on m.email = lower(btrim(r.email))
+      where r.id = private.pricing_rep_for(p_user)))
 $$;
 revoke execute on function private.pricing_table_for(uuid) from public, anon, authenticated;
 grant  execute on function private.pricing_table_for(uuid) to authenticated;
@@ -250,18 +259,16 @@ end $$;
 
 -- ---------- 7. members: add (optionally move from another table) / remove ----------
 -- Returns 'added', 'moved' or 'already' (the email is already in THIS table). An email that is in ANOTHER table is refused (23505, message
--- says which table) unless p_move is true, which moves it. The email need not have an account yet; an existing CLIENT account is refused.
+-- says which table) unless p_move is true, which moves it. Any email is allowed (rep or client), and it need not have an account yet.
 create or replace function public.admin_add_pricing_member(p_table uuid, p_email text, p_move boolean default false)
 returns text language plpgsql security definer set search_path = '' as $$
-declare e text := lower(regexp_replace(coalesce(p_email, ''), '^\s+|\s+$', '', 'g')); tname text; cur record; role_now public.user_role;
+declare e text := lower(regexp_replace(coalesce(p_email, ''), '^\s+|\s+$', '', 'g')); tname text; cur record;
 begin
   if not private.is_admin() then raise exception 'not allowed' using errcode = '42501'; end if;
   select name into tname from public.pricing_tables where id = p_table;
   if not found then raise exception 'no such pricing table' using errcode = 'P0002'; end if;
   if e = '' or e !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then raise exception 'enter a valid email address' using errcode = '22023'; end if;
-  if e !~ '^[^@\s]+@clatitle\.com$' then raise exception 'reps use an @clatitle.com email address' using errcode = '22023'; end if;
-  select role into role_now from public.profiles where email = e;
-  if role_now = 'client' then raise exception 'that email belongs to a client (realtor) account: add their rep instead' using errcode = '22023'; end if;
+  if length(e) > 254 then raise exception 'that email address is too long' using errcode = '22023'; end if;
   select m.id, m.table_id, t.name into cur from public.pricing_table_members m join public.pricing_tables t on t.id = m.table_id where m.email = e;
   if found then
     if cur.table_id = p_table then return 'already'; end if;
@@ -292,8 +299,7 @@ begin
 end $$;
 
 -- ---------- 8. what the calculator should apply for the CURRENT user ----------
--- Follows private.pricing_rep_for() + the email lookup: a member rep gets their table's fees, a client their rep's table's fees,
--- anyone else gets no rows (standard fees). Same name and shape as the earlier draft, so the calculator hook is unchanged.
+-- Follows private.pricing_table_for(): the person's own email's table, else their assigned rep's table, else no rows (standard fees). Same name and shape as the earlier draft, so the calculator hook is unchanged.
 create or replace function public.get_my_fee_overrides()
 returns table (state text, transaction text, paid_by text, amount numeric)
 language sql stable security definer set search_path = '' as $$
@@ -314,4 +320,4 @@ grant  execute on function public.admin_create_pricing_table(text), public.admin
                            public.get_my_fee_overrides() to authenticated;
 comment on table public.pricing_tables is 'Named pricing tables ("Marvin''s Pricing") for the CLA settlement fee. Writes: admin RPCs only.';
 comment on table public.pricing_table_fees is 'Settlement fee amounts of a pricing table (CHECK fee_key = settlement): premiums and recording fees can never be stored here.';
-comment on table public.pricing_table_members is 'Rep emails (lower-case, @clatitle.com) that use a pricing table; one email, one table. May be added before the rep has an account.';
+comment on table public.pricing_table_members is 'Emails (lower-case, any domain: reps or individual clients) that use a pricing table; one email, one table. May be added before the person has an account.';
