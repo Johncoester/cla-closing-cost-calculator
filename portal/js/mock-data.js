@@ -22,7 +22,7 @@
       P("a3", "admin", "sample.casey.admin@clatitle.com", "Casey", "Admin", "301-555-0106", "C.L.A. Title & Escrow", { companyAddress: "Rockville, MD", avatarPath: id("a3") + "/avatar" }),
       P("b1", "rep", "sample.rep.jane@clatitle.com", "Jane", "Rep", "301-555-0111", "C.L.A. Title & Escrow", { companyAddress: "Rockville, MD", avatarPath: id("b1") + "/avatar" }),
       P("b2", "rep", "sample.rep.marcus@clatitle.com", "Marcus", "Rep", "703-555-0122", "C.L.A. Title & Escrow", { companyAddress: "Arlington, VA", avatarPath: id("b2") + "/avatar" }),
-      P("c1", "client", "sam.agent@example.com", "Sam", "Agent", "240-555-0131", "Acme Realty", { companyPhone: "240-555-0130", companyAddress: "12 Elm St, Bethesda, MD", licenseOrNmls: "MD-SAMPLE-1001", avatarPath: id("c1") + "/avatar" }),
+      P("c1", "client", "sam.agent@example.com", "Sam", "Agent", "240-555-0131", "Acme Realty", { companyPhone: "240-555-0130", companyAddress: "12 Elm St, Bethesda, MD", companyWebsite: "https://www.acme-realty.example", licenseOrNmls: "MD-SAMPLE-1001", avatarPath: id("c1") + "/avatar" }),
       P("c2", "client", "lee.lender@example.com", "Lee", "Lender", "202-555-0141", "Capital Home Loans", { companyAddress: "500 K St NW, Washington, DC", licenseOrNmls: "NMLS-SAMPLE-2002" }),
       P("c3", "client", "pat.homes@example.com", "Pat", "Homes", "757-555-0151", "Homes by Pat"),
       P("c4", "client", "dee.disabled@example.com", "Dee", "Disabled", "703-555-0161", "Old Dominion Realty", { status: "disabled" }),
@@ -103,6 +103,6 @@
     const PM = (n, t, email) => ({ id: "pm" + n, tableId: "pt" + t, email, addedBy: id("a1"), addedAt: iso(2) });
     // Omar is Marcus's client but is listed in Jane's Pricing himself: his own email beats his rep's table
     const pricingMembers = [PM(1, 1, "sample.rep.marcus@clatitle.com"), PM(2, 1, "marvin.newhire@clatitle.com"), PM(3, 2, "sample.rep.jane@clatitle.com"), PM(4, 2, "omar.broker@example.com")];
-    return { version: 9, users, assignments, quotes, audit, photos, invitations, feedback, pricingTables, pricingFees, pricingMembers };
+    return { version: 10, users, assignments, quotes, audit, photos, invitations, feedback, pricingTables, pricingFees, pricingMembers };
   };
 })();

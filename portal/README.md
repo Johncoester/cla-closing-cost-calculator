@@ -59,6 +59,7 @@ supabase/
 | Clients/agents: matched to reps by email, name + company info | `assignments.client_email` works before the client has an account; links on sign-up |
 | Guest quoting undecided | The calculator is unchanged for guests. Without `portal/config.js` the hook does nothing at all. With config, guests only see a "Log in to save" button |
 | Headshots on quotes and logins | co-branded header in the calculator and `quote.html` (client + rep); avatar chip in every signed-in header and on dashboards |
+| Client contact details on printed / PDF quotes | the client side of the co-branded header (calculator screen + print, seller net sheet, `quote.html`) shows photo, name, company, phone, cell, company phone, company address, website and license / NMLS, only the ones filled in. One shared helper, `CLA.clientContactLines` (escapes every value; `CLA.safeWebsite` allows only absolute http/https, shown as text). Print CSS runs the details together as a letterhead line and keeps the bar on one page. Rep side unchanged |
 
 Access rules in one table (details and comments in migration 2):
 
@@ -214,7 +215,7 @@ The same engine also runs on the public calculator, for **anyone** (guest or sig
 - **Tabs:** the Seller Net Sheet step opens that tab and puts the person's own tab back afterwards (also if they skip or press Esc). The tour never clicks Purchase / Cash / Refinance, because switching those rebuilds the documents and endorsements and would discard edits; it only points at them. No fee or number is changed.
 - **The chip:** shown only to someone who has not dismissed it. The x, starting the tour from the chip or from the header link all store `cla_calc_tour_chip = "1"` in `localStorage`, so it never comes back. If browser storage is blocked the chip is not shown at all. It does not print.
 - **Phones:** the box is a bottom sheet (also for the centred welcome note); on desktop a tall target (the breakdown) gets the box beside it instead of on top of it.
-- **Cache-bust:** `?v=20261027g` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
+- **Cache-bust:** `?v=20261027h` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
 - **Tests:** the "calculator tour" block in `portal/test-portal.js` (link, step counts, targets, skipping, tab restore, chip persistence, phone sheet, versions). Screenshots: `portal/tools/screenshots_calculator_tour.py`.
 
 ## What is mocked, what is real
@@ -269,7 +270,7 @@ Must be written: (a) an **API layer** (API Gateway + Lambda), because browsers c
 
 ## Rep pricing tables: settlement fee only (migration 16, local branch `rep-pricing`, not applied live)
 Named **pricing tables** (e.g. "Marvin's Pricing") hold lower **settlement fees**, as **fee sets** that cover any selection of states (MD+VA, FL, all states...) (`Settlement Fee to CLA Title & Escrow` only; premiums and recording fees can never change); admins and super admins add a rep's or an individual client's **email** to a table on the admin page's **Rep pricing** tab. One email, one table.
-Design, the one rule for whose fee a person gets (own email's table first, else the assigned rep's table, else standard), tests, and how to apply: see [`REP-PRICING.md`](REP-PRICING.md). Cache-bust `?v=20261027g`.
+Design, the one rule for whose fee a person gets (own email's table first, else the assigned rep's table, else standard), tests, and how to apply: see [`REP-PRICING.md`](REP-PRICING.md). Cache-bust `?v=20261027h`.
 
 ## In-portal Help: client guide and staff manual (local branch `help-manual`, not pushed)
 Two pages, both **generated** by `node portal/tools/build-help.js` (do not edit the HTML by hand):
@@ -278,4 +279,4 @@ Two pages, both **generated** by `node portal/tools/build-help.js` (do not edit 
 - **Header Help link** (`CLA.helpHref` in `portal-ui.js`; the calculator header link in `portal-hook.js` uses the same function): clients go to `help.html`, reps, admins and super admins to `staff-help.html`. Signed-in users only.
 - **Guards:** both pages use `CLA.boot(null)` (signed-out visitors go to `login.html?next=...`) and stay hidden until then. `staff-help.html` sends a client to `help.html`. **Be honest about what that is:** static pages can be fetched by anyone who knows the URL; the guard decides what a signed-in person sees on screen, it is not access control. Neither page has a key, a secret or customer data (the pictures use made-up sample people).
 - **Pictures:** `python3 portal/tools/screenshots_help.py` (serves this repo on a local port with the mock config forced, hides the demo banner), then `python3 portal/tools/optimize_help_images.py`, which sorts them into `help/client/` (used by the client guide) and `help/staff/` (everything else the staff manual uses) and removes anything unused.
-- Cache-bust letter: `20261027g` (see above).
+- Cache-bust letter: `20261027h` (see above).

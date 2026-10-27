@@ -108,7 +108,7 @@ tr.click{cursor:pointer}tr.click:hover td{background:#fafcf6}
 /* co-branded header (screen + print) */
 .cobrand{background:#fff;border-radius:18px;box-shadow:0 1px 2px rgba(16,24,8,.05),0 8px 24px rgba(16,24,8,.07);padding:18px 24px;display:flex;gap:28px;align-items:center;flex-wrap:wrap;border-top:4px solid var(--g)}
 .cobrand .party{display:flex;align-items:center;gap:14px;min-width:0}
-.cobrand .party b{display:block;font-size:15px}.cobrand .party span{display:block;color:var(--mut);font-size:12.5px}
+.cobrand .party b{display:block;font-size:15px}.cobrand .party span{display:block;color:var(--mut);font-size:12.5px}.cobrand .party>div{min-width:0}.cobrand .party span{overflow-wrap:anywhere}.cobrand .party a{color:inherit;text-decoration:none}@media print{.cobrand .party.client{flex:1 1 62%}.cobrand .party.client span{display:inline;font-size:8.5pt;line-height:1.25}.cobrand .party.client span:not(:last-child)::after{content:"\00a0\00b7\00a0"}}
 .cobrand .divider{width:1px;align-self:stretch;background:var(--line)}
 .cobrand .meta{margin-left:auto;text-align:right;color:var(--mut);font-size:12.5px}
 .hero{background:#000;color:#fff;border-radius:18px;padding:26px 28px}

@@ -828,6 +828,38 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
       const idsOf = (h) => [...h.matchAll(/ id="([\w-]+)"/g)].map((m) => m[1]), tocOf = (h) => [...h.matchAll(/<a href="#([\w-]+)">/g)].map((m) => m[1]).filter((x) => x !== "top");
       for (const h of [cg, sg]) { const ids = idsOf(h); assert.ok(tocOf(h).length >= 9 && tocOf(h).every((x) => ids.includes(x)) && new Set(ids).size === ids.length); } ok("help: every contents link points at a section on both pages; ids are unique");
     }
+    // ---- a client's contact details on the co-branded quote header (calculator print + portal quote view) ----
+    { const FQ = "?id=00000000-0000-4000-8000-0000000000f01";
+      const G = await renderPage("login.html", null, "header"), W = G.win, L = (p) => Array.from(W.CLA.clientContactLines(p)), strip = (h) => h.replace(/<[^>]+>/g, "");
+      // only fields with a value appear, in a fixed order
+      assert.deepStrictEqual(L({}), []); assert.deepStrictEqual(L(null), []); assert.deepStrictEqual(L({ companyName: "  ", phone: "", companyAddress: null, companyWebsite: "", licenseOrNmls: " " }), []);
+      assert.deepStrictEqual(L({ companyAddress: "9 Main St, Alexandria, VA" }), ["9 Main St, Alexandria, VA"]); assert.deepStrictEqual(L({ licenseOrNmls: "NMLS-1" }), ["License / NMLS NMLS-1"]);
+      const full = L({ companyName: "Acme Realty", phone: "240-555-0131", cellPhone: "+12405550132", companyPhone: "240-555-0130", companyAddress: "12 Elm St, Bethesda, MD", companyWebsite: "https://www.acme.example/about", licenseOrNmls: "MD-1001" });
+      assert.strictEqual(full.length, 5); assert.strictEqual(full[0], "Acme Realty"); assert.strictEqual(full[1], "Phone 240-555-0131 · Cell (240) 555-0132 · Company 240-555-0130"); assert.strictEqual(full[2], "12 Elm St, Bethesda, MD");
+      assert.ok(/^<a href="https:\/\/www\.acme\.example\/about" target="_blank" rel="noopener noreferrer">www\.acme\.example\/about<\/a>$/.test(full[3])); assert.strictEqual(full[4], "License / NMLS MD-1001");
+      assert.deepStrictEqual(L({ phone: "240-555-0131", companyPhone: "240-555-0131" }), ["Phone 240-555-0131"]);   // the same number is not printed twice
+      ok("contact header: only fields with a value appear (company, phones, address, website, license), in a fixed order; empty / blank fields leave nothing");
+      // escaping: nothing from a profile can add markup
+      const evil = L({ companyName: '<img src=x onerror=alert(1)>', phone: '"><script>alert(2)</script>', companyAddress: "<b>1 St</b> & Co", companyWebsite: "https://ok.example/<x>", licenseOrNmls: "<svg onload=1>" });
+      assert.ok(evil.every((h) => !/<(img|script|b|svg)\b/i.test(h)) && evil.join("").includes("&lt;img src=x onerror=alert(1)&gt;") && evil.join("").includes("&amp; Co") && !evil.some((h) => /<a /.test(h))); ok("contact header: every value is escaped (no tag from a profile survives); a website with markup is dropped");
+      // website: http / https only, shown as text
+      const sw = (v) => W.CLA.safeWebsite(v);
+      for (const bad of ["javascript:alert(1)", "JaVaScRiPt:alert(1)", "data:text/html,<b>", "ftp://x.example", "//evil.example", "www.nope.example", "https://a.example/ b", 'https://a.example/"onmouseover="x', "https://a.example/'x", "https://", "", null, undefined, "https://" + "a".repeat(250) + ".example", "vbscript:x", "file:///etc/passwd"]) assert.strictEqual(sw(bad), null, "should refuse: " + bad);
+      assert.deepStrictEqual(JSON.parse(JSON.stringify(sw("HTTPS://Good.Example/Path/?q=1"))), { href: "https://good.example/Path/?q=1", text: "good.example/Path?q=1" }); assert.strictEqual(sw("http://plain.example/").text, "plain.example"); assert.strictEqual(sw("https://plain.example").href, "https://plain.example/");
+      const wl = L({ companyWebsite: "javascript:alert(1)" }); assert.deepStrictEqual(wl, []); ok("contact header: the website must be an absolute http(s) address; javascript:, data:, ftp:, protocol-relative, spaces, quotes and bare words are refused; it shows without the scheme"); G.dom.window.close();
+      // portal quote view as the client: all fields appear, with the website as a safe link; and a bare profile falls back to name + company only
+      const Q1 = await renderPage("quote.html", "sam.agent@example.com", "#body:not([hidden])", null, null, FQ), cb = Q1.d.getElementById("cobrand"), left = cb.querySelector(".party");
+      const sp = [...left.querySelectorAll("span")].map((x) => x.textContent); assert.deepStrictEqual(sp.slice(0, 1), ["Acme Realty"]); assert.ok(sp.some((t) => /^Phone 240-555-0131/.test(t) && /Cell \(240\) 555-0132/.test(t) && /Company 240-555-0130/.test(t)) && sp.includes("12 Elm St, Bethesda, MD") && sp.includes("www.acme-realty.example") && sp.includes("License / NMLS MD-SAMPLE-1001"));
+      const a1 = left.querySelector("a"); assert.ok(a1 && a1.getAttribute("href") === "https://www.acme-realty.example/" && a1.target === "_blank" && /noopener/.test(a1.rel)); assert.strictEqual(cb.querySelectorAll(".party").length, 2); assert.ok(/C\.L\.A\. Title & Escrow/.test(cb.querySelectorAll(".party")[1].textContent)); Q1.dom.window.close();
+      const Q2 = await renderPage("quote.html", "sam.agent@example.com", "#body:not([hidden])", null, (st) => { const u = st.users.find((x) => x.email === "sam.agent@example.com"); Object.assign(u, { phone: null, cellPhone: null, companyPhone: null, companyAddress: null, companyWebsite: null, licenseOrNmls: null }); }, FQ);
+      const sp2 = [...Q2.d.getElementById("cobrand").querySelector(".party").querySelectorAll("span")].map((x) => x.textContent); assert.deepStrictEqual(sp2, ["Acme Realty"]); assert.strictEqual(Q2.d.getElementById("cobrand").querySelector(".party").querySelector("a"), null); Q2.dom.window.close();
+      const Q3 = await renderPage("quote.html", "sam.agent@example.com", "#body:not([hidden])", null, (st) => { const u = st.users.find((x) => x.email === "sam.agent@example.com"); Object.assign(u, { companyName: "<img src=x onerror=window.__x=1>Evil", companyAddress: '"><script>window.__y=1</script>', companyWebsite: "javascript:window.__z=1" }); }, FQ);
+      assert.ok(!Q3.d.getElementById("cobrand").querySelector("img[onerror],script") && !Q3.win.__x && !Q3.win.__y && !Q3.win.__z && !Q3.d.getElementById("cobrand").querySelector('a[href^="javascript"]') && /Evil/.test(Q3.d.getElementById("cobrand").textContent)); Q3.dom.window.close();
+      ok("contact header on the saved-quote page: all of a client's fields show (website as a safe link); a bare profile shows just name and company; markup and javascript: in a profile do nothing");
+      // the calculator header uses the same helper; the rep side is untouched; print CSS keeps the block on one page
+      const hk = fs.readFileSync(path.join(__dirname, "js", "portal-hook.js"), "utf8");
+      assert.ok(/me\.role === "client" \? await clientParty\(me\)/.test(hk) && /CLA\.clientContactLines\(p\)/.test(hk) && /party\(rep, "C\.L\.A\. Title & Escrow", rep\.cellPhone \? "Cell " \+ CLA\.displayPhone\(rep\.cellPhone\) : rep\.phone\)/.test(hk) && /@media print\{\.claBrand\{break-inside:avoid/.test(hk)); ok("contact header: the calculator bar (screen and print) uses the same escaped helper for the client, the rep side is unchanged, and the print rules keep it together");
+      const qh = fs.readFileSync(path.join(__dirname, "quote.html"), "utf8"); assert.ok(/CLA\.clientContactLines\(p\)/.test(qh) && !/innerHTML = .*companyWebsite/.test(qh)); ok("contact header: quote.html uses the helper too"); }
     // files: no external libraries / CDN; motion respects prefers-reduced-motion
     const tj = fs.readFileSync(path.join(__dirname, "js", "tour.js"), "utf8"), tc = fs.readFileSync(path.join(__dirname, "tour.css"), "utf8");
     assert.ok(!/https?:\/\/|import\s|require\(/.test(tj) && !/https?:\/\/|@import/.test(tc)); assert.ok(/prefers-reduced-motion:no-preference/.test(tc) && !/(^|\})\s*\.[^{]*\{[^}]*transition/.test(tc.replace(/@media[^{]*\{(?:[^{}]*\{[^}]*\})+\s*\}/g, ""))); ok("tour: no external libraries or CDN; animation only when the person has not asked for reduced motion");
@@ -1050,7 +1082,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
 
     // cache-bust: every ?v= in index.html and TOUR_V agree
     const vs = [...idx.matchAll(/\?v=(\d{8}[a-z])/g)].map((m) => m[1]), pu = fs.readFileSync(path.join(__dirname, "js", "portal-ui.js"), "utf8");
-    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261027g" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261027g");
+    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261027h" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261027h");
     // the new elements are inert in print and add no external requests
     assert.ok(/@media print\{\s*@page\{margin:14mm\}\s*\.claChip\{display:none!important\}/.test(idx) && !/https?:\/\//.test(tj2)); ok("calculator tour: the chip is not printed; tour.js has no external libraries or CDN");
   }

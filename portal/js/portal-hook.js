@@ -33,6 +33,10 @@
       ".claBrand .party{display:flex;align-items:center;gap:12px;min-width:0}.claBrand .party b{display:block;font-size:14px}.claBrand .party span{display:block;color:var(--mut);font-size:12.5px}" +
       ".claBrand img{width:52px;height:52px;border-radius:50%;object-fit:cover;border:2px solid #fff;box-shadow:0 0 0 2px var(--g);flex:none}.claBrand .dv{width:1px;align-self:stretch;background:var(--line)}" +
       ".claBrand .claTag{margin-left:auto;font-size:12px;color:var(--mut)}" +
+      ".claBrand .party>div{min-width:0}.claBrand .party span{overflow-wrap:anywhere}.claBrand .party a{color:inherit;text-decoration:none}" +
+      // a client's details run together like a letterhead (company · phones · address · website · license) so a full profile stays about three lines tall
+      ".claBrand .party.client{flex:1 1 56%}.claBrand .party.client span{display:inline}.claBrand .party.client span:not(:last-child)::after{content:\"\\00a0\\00b7\\00a0\";color:var(--mut)}" +
+      "@media print{.claBrand{break-inside:avoid;border-bottom:1px solid #999}.claBrand .wrap{padding-top:4px;padding-bottom:4px;gap:12px}.claBrand .party{flex:1 1 30%}.claBrand .party.client{flex:1 1 62%}.claBrand .party span{color:#222;font-size:8.5pt;line-height:1.25}.claBrand .party b{font-size:10pt}.claBrand img{width:42px;height:42px;box-shadow:0 0 0 1.5px #8dc63f}.claBrand .claTag{flex-basis:100%;text-align:right;color:#444}}" +
       ".claHdr{display:inline-flex;align-items:center;gap:9px;color:#fff;text-decoration:none;font-size:13px}.claHdr img{width:30px;height:30px;border-radius:50%;object-fit:cover;box-shadow:0 0 0 2px var(--g)}" +
       ".claSaveNote{flex:0 0 100%;margin:-4px 0 0;font-size:13px;color:var(--mut)}.claSaveNote a{color:var(--gdd);font-weight:600}.claSaveNote.err{color:#b3261e}" +
       "@media print{.claBrand{border:0;border-bottom:1px solid #bbb}.claBrand .claTag{display:none}}";
@@ -63,7 +67,9 @@
     if (me && (!CLA.isAdmin(me) || me.isRep)) {
       try { rep = me.role === "client" ? await A.getMyRep() : me; } catch (e) {}
       const party = async (p, line2, line3) => '<div class="party">' + ((await A.getAvatarUrl(p)) ? '<img src="' + esc(await A.getAvatarUrl(p)) + '" alt="Photo of ' + esc(CLA.fullName(p)) + '">' : '<img src="' + esc(CLA.silhouette("#e4e9da", "#9aa38a")) + '" alt="">') + "<div><b>" + esc(CLA.fullName(p)) + "</b><span>" + esc(line2 || "") + "</span><span>" + esc(line3 || "") + "</span></div></div>";
-      const left = me.role === "client" ? await party(me, me.companyName, me.phone) : "";
+      // a client's block carries their contact details (company, phones, address, website, license); only fields they filled in; all escaped in CLA.clientContactLines
+      const clientParty = async (p) => '<div class="party client">' + ((await A.getAvatarUrl(p)) ? '<img src="' + esc(await A.getAvatarUrl(p)) + '" alt="Photo of ' + esc(CLA.fullName(p)) + '">' : '<img src="' + esc(CLA.silhouette("#e4e9da", "#9aa38a")) + '" alt="">') + "<div><b>" + esc(CLA.fullName(p)) + "</b>" + CLA.clientContactLines(p).map((l) => "<span>" + l + "</span>").join("") + "</div></div>";
+      const left = me.role === "client" ? await clientParty(me) : "";
       const right = rep ? await party(rep, "C.L.A. Title & Escrow", rep.cellPhone ? "Cell " + CLA.displayPhone(rep.cellPhone) : rep.phone) : "";
       const html = left + (left && right ? '<div class="dv"></div>' : "") + right;
       const bar = document.querySelector(".modebar") || document.querySelector("header");

@@ -94,7 +94,7 @@ with sync_playwright() as p:
     # change something so the quote auto-saves, then show the saved note
     pg.fill("#price", "525000"); pg.wait_for_timeout(3600)
     snap(pg, "rep-calc-saved", clip=union(pg, [".foot"], pad=20))
-    snap(pg, "rep-calc-cobrand", clip={"x": 0, "y": 0, "width": 1280, "height": 270}, fixed=True)
+    snap(pg, "rep-calc-cobrand", clip={"x": 0, "y": 0, "width": 1280, "height": 292}, fixed=True)
     # feedback bubble: closed and open
     pg.evaluate("window.scrollTo(0,0)"); snap(pg, "feedback-bubble", clip={"x": 780, "y": 540, "width": 500, "height": 360}, fixed=True)
     pg.click("#claFeedbackLink"); pg.wait_for_timeout(700); pg.fill("#claFbMsg", "Example: the print view cuts off the footer on my laptop."); 
@@ -120,7 +120,7 @@ with sync_playwright() as p:
     calc(pg); pg.wait_for_selector("#claSave_quote")
     pg.fill("#price", "525000"); pg.wait_for_timeout(3600)
     snap(pg, "calc-saved", clip=union(pg, [".foot"], pad=20))
-    snap(pg, "calc-cobrand", clip={"x": 0, "y": 0, "width": 1280, "height": 270}, fixed=True)
+    snap(pg, "calc-cobrand", clip={"x": 0, "y": 0, "width": 1280, "height": 292}, fixed=True)
     pg.goto(B + "portal/quote.html?id=00000000-0000-4000-8000-0000000000f01"); pg.wait_for_selector("#body:not([hidden])"); pg.wait_for_timeout(500)
     snap(pg, "quote-view", clip=mainclip(pg, 900))
     pg.goto(B + "portal/profile.html"); pg.wait_for_selector("#firstName"); pg.wait_for_timeout(500)

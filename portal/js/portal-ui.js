@@ -14,6 +14,20 @@
     return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
   };
   // tappable phone number: <a href="tel:+12405550142">(240) 555-0142</a>; empty string when there is none
+  // Website for a printed contact block: only an absolute http(s) URL passes (anything else, such as javascript:, is dropped). Returns {href, text} or null.
+  CLA.safeWebsite = (v) => { const t = String(v == null ? "" : v).trim(); if (!t || t.length > 200 || /[\s\u0000-\u001f"'<>`\\]/.test(t) || !/^https?:\/\//i.test(t)) return null;
+    try { const u = new URL(t); if (u.protocol !== "http:" && u.protocol !== "https:") return null; return { href: u.href, text: (u.host + (u.pathname === "/" ? "" : u.pathname)).replace(/\/$/, "") + u.search }; } catch (e) { return null; } };
+  // The contact lines under a CLIENT's name on a co-branded quote header (screen and print): company, phones, address, website, license. Only fields with a value appear.
+  // Every value is escaped here; each entry is a ready-to-insert HTML string for one <span>.
+  CLA.clientContactLines = (p) => { const e = CLA.esc, t = (v) => String(v == null ? "" : v).trim(), ph = (v) => e(CLA.displayPhone(t(v))), out = [];
+    if (!p) return out;
+    if (t(p.companyName)) out.push(e(t(p.companyName)));
+    const nums = []; if (t(p.phone)) nums.push("Phone " + ph(p.phone)); if (t(p.cellPhone)) nums.push("Cell " + ph(p.cellPhone)); if (t(p.companyPhone) && t(p.companyPhone) !== t(p.phone)) nums.push("Company " + ph(p.companyPhone));
+    if (nums.length) out.push(nums.join(" · "));
+    if (t(p.companyAddress)) out.push(e(t(p.companyAddress)));
+    const w = CLA.safeWebsite(p.companyWebsite); if (w) out.push('<a href="' + e(w.href) + '" target="_blank" rel="noopener noreferrer">' + e(w.text) + "</a>");
+    if (t(p.licenseOrNmls)) out.push("License / NMLS " + e(t(p.licenseOrNmls)));
+    return out; };
   CLA.telLink = (v) => { const h = CLA.telHref(v); return h ? '<a class="tel" href="' + CLA.esc(h) + '">' + CLA.esc(CLA.displayPhone(CLA.normalizePhone(v))) + "</a>" : ""; };
   // attach live formatting + a validation message to a phone <input>; `errEl` shows CLA.PHONE_MSG when invalid
   CLA.bindPhoneInput = function (input, errEl) {
@@ -58,7 +72,7 @@
   };
   // ---- guided tour (js/tour.js + tour.css; loaded only when someone is about to see it) ----
   // Each tour lives on the person's own dashboard: admin.html (admin / super admin), rep.html (rep), client.html (client / realtor).
-  CLA.TOUR_V = "20261027g";   // cache-bust for tour.js / tour.css; bump with the ?v= in index.html
+  CLA.TOUR_V = "20261027h";   // cache-bust for tour.js / tour.css; bump with the ?v= in index.html
   CLA.tourKind = (me) => { const f = location.pathname.split("/").pop(); return !me ? null : f === "admin.html" && CLA.isAdmin(me) ? "admin" : f === "rep.html" && CLA.isRep(me) ? "rep" : f === "client.html" && me.role === "client" ? "client" : null; };
   CLA.loadTour = () => CLA.startTour ? Promise.resolve() : new Promise((res, rej) => { const s = document.createElement("script"); s.src = "js/tour.js?v=" + CLA.TOUR_V; s.onload = res; s.onerror = () => rej(new Error("load")); document.head.appendChild(s); });
   // Called by each dashboard once it has drawn itself. Starts the tour on its own ONLY for a person who has never seen it (profiles.tour_seen_at is NULL,

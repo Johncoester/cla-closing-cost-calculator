@@ -153,6 +153,7 @@ sec("quotes-page", 6, "Opening and using your saved quotes", "Choose Dashboard i
   { t: "h3", x: "What you see on a quote" },
   { t: "table", cols: ["On the quote", "What it means"], rows: [
     ["Label (for example \"Buyer quote, 123 Main St\")", "A name the system gives the quote from its type and the address you entered, so you can tell quotes apart in your list. With no address it says \"no address\"."],
+    ["Your details and your rep's", "At the top: your photo, name and the contact details from your profile (company, phones, address, website, license / NMLS number), then your CLA rep's photo, name and phone, so whoever you give the quote to knows who prepared it."],
     ["Address and \"Prepared\" date", "The property you entered and the day the quote was first saved."],
     ["\"Fees:\" line", "Which version of CLA's fee list the estimate used, with its date."],
     ["Headline total", "The buyer total (borrower total on a refinance), or the net proceeds on a seller net sheet."],
@@ -182,14 +183,14 @@ sec("new-quotes", 7, "Starting a new quote and comparing", "Run as many quotes a
 sec("profile", 8, "Your profile and photo", "Open your name in the top bar, or choose Edit profile and photo on your quotes page.", [
   { t: "ul", items: [
     "First and last name are required. Add your company so quotes carry your details.",
-    "Phone, company phone, company address, website and license / NMLS number are optional and print on your quotes.",
-    "Your cell phone is optional. It must be a US number, for example (240) 555-0142, and your CLA rep can see it.",
+    "Phone, cell phone, company phone, company address, website and license / NMLS number are optional. The ones you fill in print under your name at the top of your quotes, next to your photo and your CLA rep's details. Leave a box empty and it simply does not appear.",
+    "Your cell phone is optional. It must be a US number, for example (240) 555-0142, your CLA rep can see it, and it prints on your quotes.",
     "To change the email you sign in with, contact CLA.",
   ] },
   { t: "p", x: "A photo is optional. Use a JPEG or PNG up to 2 MB. The portal crops it to a centered square and shrinks it to 512 pixels. iPhone HEIC photos are not accepted yet: take a screenshot of the photo or save it as a JPEG first. Choose Choose photo, then Upload this photo. Choose Remove photo to go back to the placeholder." },
   { t: "img", f: "profile.png", cap: "The photo box on your profile page.", alt: "Profile photo box" },
   { t: "img", f: "profile-company.png", cap: "The company details on your profile page.", alt: "Profile company details" },
-  { t: "img", f: "calc-cobrand.png", cap: "Your photo and your rep's show at the top of the calculator when you are signed in, and on printed quotes.", alt: "Calculator header with client and rep photo bar" },
+  { t: "img", f: "calc-cobrand.png", cap: "Your photo and contact details, and your rep's, show at the top of the calculator when you are signed in, and on printed quotes.", alt: "Calculator header with client and rep photo bar" },
 ]);
 
 sec("your-rep", 9, "Your CLA rep", "The rep CLA has matched you with is your first call for any question about a quote.", [
