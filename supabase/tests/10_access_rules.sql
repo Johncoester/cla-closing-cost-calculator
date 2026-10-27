@@ -1391,6 +1391,130 @@ select tests.is('tour: privileges: anon cannot run mark_tour_seen, authenticated
   (select count(*)::text from pg_proc where pronamespace = 'public'::regnamespace and proname = 'mark_tour_seen'), 'true/1');
 drop table tour_before;
 
+-- =====================================================================
+-- Migration 16: per-rep special SETTLEMENT fee (rep_fee_overrides). Settlement fee ONLY; premiums / recording can never be stored.
+-- Jane b1 and Marcus b2 are reps, Sam c1 is Jane's client, Omar c5 is Marcus's, Pat c3 / Dee c4 are other clients, Alex a1 is a super admin
+-- who also reps, Robin a2 and Pia d1 are admins (Pia is not a rep), a9 is disabled.
+-- =====================================================================
+select tests.is('fee overrides: precondition: Sam is an active client of Jane, Omar of Marcus',
+  (select (exists (select 1 from public.assignments where active and client_user_id = tests.id('c1') and rep_id = tests.id('b1'))
+       and exists (select 1 from public.assignments where active and client_user_id = tests.id('c5') and rep_id = tests.id('b2')))::text), 'true');
+select tests.is('fee overrides: the table starts empty (standard pricing for everyone)', (select count(*)::text from public.rep_fee_overrides), '0');
+select tests.is('fee overrides: nobody has a direct write grant; only select; anon nothing',
+  (select (not has_table_privilege('authenticated', 'public.rep_fee_overrides', 'insert') and not has_table_privilege('authenticated', 'public.rep_fee_overrides', 'update')
+       and not has_table_privilege('authenticated', 'public.rep_fee_overrides', 'delete') and has_table_privilege('authenticated', 'public.rep_fee_overrides', 'select')
+       and not has_table_privilege('anon', 'public.rep_fee_overrides', 'select'))::text), 'true');
+-- who may WRITE: admin + super admin yes; rep, client, disabled, signed-out no
+select tests.is('fee overrides: a super admin sets Jane''s MD purchase buyer settlement fee to 900',
+  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'buyer', 900)::text$$), '');
+select tests.is('fee overrides: a plain admin may set one too (Jane, MD purchase seller 500)',
+  tests.v(tests.id('d1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'md', 'Purchase', 'SELLER', 500)::text$$), '');
+select tests.is('fee overrides: stored normalised (state upper-case, others lower-case), amount to the cent',
+  (select string_agg(state || '/' || transaction || '/' || paid_by || '/' || amount::text, ',' order by paid_by) from public.rep_fee_overrides where rep_id = tests.id('b1')),
+  'MD/purchase/buyer/900.00,MD/purchase/seller/500.00');
+select tests.is('fee overrides: a rep cannot write for themselves or anyone else; nor a client, a disabled user, or a signed-out call',
+  tests.v(tests.id('b1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'buyer', 1)::text$$) || '/' ||
+  tests.v(tests.id('b2'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'buyer', 1)::text$$) || '/' ||
+  tests.v(tests.id('c1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'buyer', 1)::text$$) || '/' ||
+  tests.v(tests.id('a9'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'buyer', 1)::text$$) || '/' ||
+  tests.v(null, $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'buyer', 1)::text$$), 'ERR:42501/ERR:42501/ERR:42501/ERR:42501/ERR:42501');
+select tests.is('fee overrides: ...and nobody changed (still 900 / 500)',
+  (select string_agg(amount::text, ',' order by paid_by) from public.rep_fee_overrides where rep_id = tests.id('b1')), '900.00,500.00');
+select tests.is('fee overrides: no direct insert / update / delete through the API, as a rep, an admin or a super admin',
+  tests.x(tests.id('b1'), $$insert into public.rep_fee_overrides (rep_id, transaction, paid_by, amount) values ('$$ || tests.id('b1') || $$', 'refi', 'buyer', 1)$$) || '/' ||
+  tests.x(tests.id('a1'), $$insert into public.rep_fee_overrides (rep_id, transaction, paid_by, amount) values ('$$ || tests.id('b1') || $$', 'refi', 'buyer', 1)$$) || '/' ||
+  tests.x(tests.id('a1'), 'update public.rep_fee_overrides set amount = 0') || '/' ||
+  tests.x(tests.id('b1'), 'update public.rep_fee_overrides set amount = 0') || '/' ||
+  tests.x(tests.id('a1'), 'delete from public.rep_fee_overrides') || '/' ||
+  tests.x(tests.id('b1'), 'delete from public.rep_fee_overrides'), 'ERR:42501/ERR:42501/ERR:42501/ERR:42501/ERR:42501/ERR:42501');
+-- validation: only the settlement fee, only sane values, only for reps
+select tests.is('fee overrides: the table can only hold the settlement fee (CHECK): a premium, recording or any other fee_key is refused, even for the owner role',
+  tests.p($$insert into public.rep_fee_overrides (rep_id, fee_key, transaction, paid_by, amount) values ('$$ || tests.id('b1') || $$', 'premium', 'purchase', 'buyer', 1)$$) || '/' ||
+  tests.p($$insert into public.rep_fee_overrides (rep_id, fee_key, transaction, paid_by, amount) values ('$$ || tests.id('b1') || $$', 'recording', 'purchase', 'buyer', 1)$$) || '/' ||
+  tests.p($$insert into public.rep_fee_overrides (rep_id, fee_key, transaction, paid_by, amount) values ('$$ || tests.id('b1') || $$', 'notary', 'purchase', 'buyer', 1)$$), 'ERR:23514/ERR:23514/ERR:23514');
+select tests.is('fee overrides: bad state / transaction / side / amount are refused by the RPC (22023) and by the CHECKs',
+  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'TX', 'purchase', 'buyer', 100)::text$$) || '/' ||
+  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'sale', 'buyer', 100)::text$$) || '/' ||
+  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'lender', 100)::text$$) || '/' ||
+  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'refi', 'seller', 100)::text$$) || '/' ||
+  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'buyer', -1)::text$$) || '/' ||
+  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'buyer', 100000)::text$$) || '/' ||
+  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'buyer', null)::text$$) || '/' ||
+  tests.p($$insert into public.rep_fee_overrides (rep_id, state, transaction, paid_by, amount) values ('$$ || tests.id('b1') || $$', 'TX', 'purchase', 'buyer', 1)$$) || '/' ||
+  tests.p($$insert into public.rep_fee_overrides (rep_id, transaction, paid_by, amount) values ('$$ || tests.id('b1') || $$', 'refi', 'seller', 1)$$) || '/' ||
+  tests.p($$insert into public.rep_fee_overrides (rep_id, transaction, paid_by, amount) values ('$$ || tests.id('b1') || $$', 'purchase', 'buyer', -5)$$),
+  'ERR:22023/ERR:22023/ERR:22023/ERR:22023/ERR:22023/ERR:22023/ERR:22023/ERR:23514/ERR:23514/ERR:23514');
+select tests.is('fee overrides: only for reps (or an admin who also reps): a client, a plain admin and an unknown id are refused',
+  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('c1') || $$', 'MD', 'purchase', 'buyer', 100)::text$$) || '/' ||
+  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('d1') || $$', 'MD', 'purchase', 'buyer', 100)::text$$) || '/' ||
+  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('00000000-0000-4000-8000-00000000ffff', 'MD', 'purchase', 'buyer', 100)::text$$), 'ERR:23514/ERR:23514/ERR:P0002');
+select tests.is('fee overrides: a super admin who also works as a rep (Alex) can have one',
+  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('a1') || $$', '*', 'refi', 'buyer', 300)::text$$), '');
+select tests.is('fee overrides: zero (a waived fee) and a half cent (912.505 rounds to 912.51) are accepted',
+  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b2') || $$', '*', 'refi', 'buyer', 0)::text$$) ||
+  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b2') || $$', '*', 'purchase', 'buyer', 912.505)::text$$), '');
+select tests.is('fee overrides: ...stored as 0.00 and 912.51',
+  (select string_agg(transaction || '=' || amount::text, ',' order by transaction) from public.rep_fee_overrides where rep_id = tests.id('b2')), 'purchase=912.51,refi=0.00');
+select tests.is('fee overrides: an upsert replaces the amount: still one row per slot',
+  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b2') || $$', '*', 'purchase', 'buyer', 899.5)::text$$), '');
+select tests.is('fee overrides: ...899.50 now, 2 rows for Marcus',
+  (select string_agg(transaction || '=' || amount::text, ',' order by transaction) from public.rep_fee_overrides where rep_id = tests.id('b2')) || '/' ||
+  (select count(*)::text from public.rep_fee_overrides where rep_id = tests.id('b2')), 'purchase=899.50,refi=0.00/2');
+-- who may READ: admin all; a rep only their own; a client only their rep's; others nothing
+select tests.is('fee overrides: admins read every row (b1 x2, a1 x1, b2 x2 = 5)',
+  tests.v(tests.id('a1'), 'select count(*)::text from public.rep_fee_overrides') || '/' || tests.v(tests.id('d1'), 'select count(*)::text from public.rep_fee_overrides'), '5/5');
+select tests.is('fee overrides: Jane reads only her own two rows, Marcus only his two, admin Robin all five',
+  tests.v(tests.id('b1'), 'select count(*)::text from public.rep_fee_overrides') || '/' || tests.v(tests.id('b2'), 'select count(*)::text from public.rep_fee_overrides') || '/' ||
+  tests.v(tests.id('a2'), 'select count(*)::text from public.rep_fee_overrides'), '2/2/5');
+select tests.is('fee overrides: Sam (Jane''s client) reads exactly Jane''s rows; Omar (Marcus''s) exactly Marcus''s',
+  tests.v(tests.id('c1'), $$select count(*)::text || ':' || count(*) filter (where rep_id = '$$ || tests.id('b1') || $$')::text from public.rep_fee_overrides$$) || '/' ||
+  tests.v(tests.id('c5'), $$select count(*)::text || ':' || count(*) filter (where rep_id = '$$ || tests.id('b2') || $$')::text from public.rep_fee_overrides$$), '2:2/2:2');
+select tests.is('fee overrides: a client with no rep, a disabled client, a disabled admin read nothing, and a signed-out (anon) call is refused',
+  tests.v(tests.id('c3'), 'select count(*)::text from public.rep_fee_overrides') || '/' || tests.v(tests.id('c4'), 'select count(*)::text from public.rep_fee_overrides') || '/' ||
+  tests.v(tests.id('a9'), 'select count(*)::text from public.rep_fee_overrides') || '/' || tests.q(null, 'select * from public.rep_fee_overrides'), '0/0/0/ERR:42501');
+select tests.is('fee overrides: get_my_fee_overrides(): Jane gets her own, Sam gets Jane''s (same rows), Omar gets Marcus''s',
+  tests.v(tests.id('b1'), $$select string_agg(state || transaction || paid_by || amount, ',') from public.get_my_fee_overrides()$$) || '|' ||
+  tests.v(tests.id('c1'), $$select string_agg(state || transaction || paid_by || amount, ',') from public.get_my_fee_overrides()$$) || '|' ||
+  tests.v(tests.id('c5'), $$select string_agg(state || transaction || paid_by || amount, ',') from public.get_my_fee_overrides()$$),
+  'MDpurchasebuyer900.00,MDpurchaseseller500.00|MDpurchasebuyer900.00,MDpurchaseseller500.00|*purchasebuyer899.50,*refibuyer0.00');
+select tests.is('fee overrides: get_my_fee_overrides(): a plain admin (not a rep), a client with no rep and a disabled user get nothing; Alex (admin who reps) gets only her own row',
+  tests.v(tests.id('d1'), 'select count(*)::text from public.get_my_fee_overrides()') || '/' || tests.v(tests.id('c3'), 'select count(*)::text from public.get_my_fee_overrides()') || '/' ||
+  tests.v(tests.id('a9'), 'select count(*)::text from public.get_my_fee_overrides()') || '/' ||
+  tests.v(tests.id('a1'), 'select string_agg(state || transaction || paid_by || amount, $$,$$) from public.get_my_fee_overrides()'), '0/0/0/*refibuyer300.00');
+select tests.is('fee overrides: the people without an override see the standard fee (Pat has no rep; Dee is disabled)',
+  tests.v(tests.id('c4'), 'select count(*)::text from public.get_my_fee_overrides()'), '0');
+-- audit
+select tests.is('fee overrides: every change is audited with before / after (set 900, set 500, set 300, 0, 912.51 -> 899.50: 6 rows, upsert logged once per change)',
+  (select count(*)::text from public.audit_log where action = 'rep_fee_changed'), '6');
+select tests.is('fee overrides: the audit row of an upsert carries before and after',
+  (select (details ->> 'before') || '>' || (details ->> 'after') from public.audit_log where action = 'rep_fee_changed' and target_id = tests.id('b2') and details ->> 'transaction' = 'purchase' order by at desc, id desc limit 1), '912.51>899.50');
+-- clear
+select tests.is('fee overrides: a rep, a client and a signed-out call cannot clear; a plain admin can',
+  tests.v(tests.id('b1'), $$select public.admin_clear_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'seller')::text$$) || '/' ||
+  tests.v(tests.id('c1'), $$select public.admin_clear_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'seller')::text$$) || '/' ||
+  tests.v(null, $$select public.admin_clear_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'seller')::text$$) || '/' ||
+  tests.v(tests.id('d1'), $$select public.admin_clear_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'seller')::text$$), 'ERR:42501/ERR:42501/ERR:42501/');
+select tests.is('fee overrides: after clearing, Jane''s seller slot is the standard fee again (no row); the buyer one stays; clearing a missing row is a quiet no-op',
+  tests.v(tests.id('b1'), $$select string_agg(state || transaction || paid_by || amount, ',') from public.get_my_fee_overrides()$$) || '/' ||
+  tests.v(tests.id('a1'), $$select public.admin_clear_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'seller')::text$$) || '/' ||
+  (select count(*)::text from public.audit_log where action = 'rep_fee_changed'), 'MDpurchasebuyer900.00//7');
+-- the one rule: change of assignment / role moves or silences the fee
+select tests.is('fee overrides: when Sam is reassigned from Jane to Marcus, Sam now gets Marcus''s fee; unassigned = standard',
+  tests.p($$update public.assignments set active = false where client_user_id = '$$ || tests.id('c1') || $$' and active$$) || '/' ||
+  tests.v(tests.id('c1'), 'select count(*)::text from public.get_my_fee_overrides()') || '/' ||
+  tests.p($$insert into public.assignments (client_email, rep_id) select email, '$$ || tests.id('b2') || $$' from public.profiles where id = '$$ || tests.id('c1') || $$'$$) || '/' ||
+  tests.v(tests.id('c1'), 'select count(*)::text from public.get_my_fee_overrides()'), 'ok/0/ok/2');
+select tests.is('fee overrides: rows follow the rep out of the system: the rep_id foreign key is ON DELETE CASCADE',
+  (select confdeltype::text from pg_constraint where conrelid = 'public.rep_fee_overrides'::regclass and contype = 'f' and confrelid = 'public.profiles'::regclass
+     and conkey = (select array_agg(attnum) from pg_attribute where attrelid = 'public.rep_fee_overrides'::regclass and attname = 'rep_id')), 'c');
+select tests.is('fee overrides: privileges: anon cannot run any of the three functions; authenticated can; one overload each',
+  (not has_function_privilege('anon', 'public.admin_set_rep_fee_override(uuid, text, text, text, numeric)', 'execute')
+   and not has_function_privilege('anon', 'public.admin_clear_rep_fee_override(uuid, text, text, text)', 'execute')
+   and not has_function_privilege('anon', 'public.get_my_fee_overrides()', 'execute')
+   and has_function_privilege('authenticated', 'public.admin_set_rep_fee_override(uuid, text, text, text, numeric)', 'execute')
+   and has_function_privilege('authenticated', 'public.get_my_fee_overrides()', 'execute'))::text || '/' ||
+  (select count(*)::text from pg_proc where pronamespace = 'public'::regnamespace and proname in ('admin_set_rep_fee_override', 'admin_clear_rep_fee_override', 'get_my_fee_overrides')), 'true/3');
+
 -- ---------------- privileges ----------------
 select tests.is('function privileges: anon cannot run the admin RPCs, authenticated can',
   (select (not has_function_privilege('anon', 'public.admin_set_role(uuid, public.user_role, uuid)', 'execute')

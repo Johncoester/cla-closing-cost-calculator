@@ -269,6 +269,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     const store = { cla_portal_mock_v1: w0.localStorage.getItem("cla_portal_mock_v1"), cla_portal_mock_session: w0.localStorage.getItem("cla_portal_mock_session") };
     const html = fs.readFileSync(path.join(pdir, "admin.html"), "utf8")
       .replace(/<link[^>]*fonts\.googleapis[^>]*>/, "").replace(/<script src="config\.js"><\/script>/, "<script>window.CLA_PORTAL_CONFIG={mode:'mock'}</script>")
+        .replace(/<script src="\.\.\/fee-snapshot\.js[^"]*"><\/script>/, () => "<script>" + fs.readFileSync(path.join(pdir, "..", "fee-snapshot.js"), "utf8") + "</script>")
       .replace(/<script src="(js\/[\w-]+\.js)"><\/script>/g, (m, f) => "<script>" + fs.readFileSync(path.join(pdir, f), "utf8") + "</script>" + (f === "js/portal-ui.js" ? WIDGET + TOURJS : ""));
     const errs = [];
     const dom = new JSDOM(html, { url: "http://localhost/portal/admin.html", runScripts: "dangerously", pretendToBeVisual: true, virtualConsole: new VirtualConsole(),
@@ -400,6 +401,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
       const store = { cla_portal_mock_v1: w0.localStorage.getItem("cla_portal_mock_v1"), cla_portal_mock_session: w0.localStorage.getItem("cla_portal_mock_session") };
       if (mod) { const st = JSON.parse(store.cla_portal_mock_v1); mod(st); store.cla_portal_mock_v1 = JSON.stringify(st); }
       const html = fs.readFileSync(path.join(pdir, file), "utf8").replace(/<link[^>]*fonts\.googleapis[^>]*>/, "").replace(/<script src="config\.js"><\/script>/, "<script>window.CLA_PORTAL_CONFIG={mode:'mock'}</script>")
+        .replace(/<script src="\.\.\/fee-snapshot\.js[^"]*"><\/script>/, () => "<script>" + fs.readFileSync(path.join(pdir, "..", "fee-snapshot.js"), "utf8") + "</script>")
         .replace(/<script src="(js\/[\w-]+\.js)"><\/script>/g, (m, f) => "<script>" + fs.readFileSync(path.join(pdir, f), "utf8") + "</script>" + (f === "js/portal-ui.js" ? WIDGET + TOURJS : ""));
       const errs = [], dom = new JSDOM(html, { url: "http://localhost/portal/" + file + (qs || "?secret=1") + "#frag", runScripts: "dangerously", pretendToBeVisual: true, virtualConsole: new VirtualConsole(),
         beforeParse(win) { win.crypto.randomUUID = require("crypto").randomUUID; win.confirm = () => true; win.addEventListener("error", (e) => errs.push(e.message)); for (const k in store) win.localStorage.setItem(k, store[k]); } });
@@ -453,6 +455,115 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     RS.d.querySelector('#fbRows input[data-note="fb1"]').value = "Thanks, fixed"; btn.click(); await tick(80);
     const st = JSON.parse(RS.win.localStorage.getItem("cla_portal_mock_v1")).feedback.find((f) => f.id === "fb1"); assert.deepStrictEqual([st.status, st.decidedNote], ["approved", "Thanks, fixed"]); assert.match(RS.d.querySelector('#fbRows input[data-note="fb1"]').closest("tr").textContent, /Approved/); ok("feedback panel: a super admin approves with a note");
     assert.strictEqual(RS.errs.length, 0, RS.errs.join()); RS.dom.window.close();
+
+    // ================= rep special SETTLEMENT fee (migration 16) =================
+    {
+      const mock = () => { const wx = boot(), Ax = wx.CLA.createMockAdapter({}); return { wx, Ax, as: async (email) => { wx.localStorage.removeItem("cla_portal_mock_session"); await Ax.signIn(email, "x"); } }; };
+      const M = mock(), ids = (k) => "00000000-0000-4000-8000-0000000000" + k, rej = async (p, re, name) => { try { await p; assert.fail("should have thrown: " + name); } catch (e) { assert.ok(re.test(e.message), name + " -> " + e.message); ok(name); } };
+      // nobody has an override to start with
+      for (const e of ["sample.rep.jane@clatitle.com", "sam.agent@example.com", "sample.admin@clatitle.com", "sample.robin.admin@clatitle.com", "pat.homes@example.com"]) { await M.as(e); assert.strictEqual(JSON.stringify(await M.Ax.getMyFeeOverrides()), "[]"); }
+      ok("fee overrides (mock): everyone starts on standard pricing (no rows for a rep, a client, an admin who reps, a plain admin, an unassigned client)");
+      // writes: admins and super admins only
+      await M.as("sample.rep.jane@clatitle.com");
+      await rej(M.Ax.adminSetRepFeeOverride({ repId: ids("b1"), state: "*", transaction: "purchase", paidBy: "buyer", amount: 1 }), /Admins only/, "fee overrides: a rep cannot set their own special fee");
+      await rej(M.Ax.adminClearRepFeeOverride({ repId: ids("b1"), state: "*", transaction: "purchase", paidBy: "buyer" }), /Admins only/, "fee overrides: a rep cannot clear one");
+      await rej(M.Ax.adminListRepFeeOverrides(), /Admins only/, "fee overrides: a rep cannot list everybody's special fees");
+      await M.as("sam.agent@example.com"); await rej(M.Ax.adminSetRepFeeOverride({ repId: ids("b1"), state: "*", transaction: "purchase", paidBy: "buyer", amount: 1 }), /Admins only/, "fee overrides: a client cannot set one");
+      // an Admin (Robin) and a Super admin (Alex) can
+      await M.as("sample.robin.admin@clatitle.com");
+      await M.Ax.adminSetRepFeeOverride({ repId: ids("b1"), state: "md", transaction: "Purchase", paidBy: "BUYER", amount: "$900" });
+      await M.as("sample.admin@clatitle.com");
+      await M.Ax.adminSetRepFeeOverride({ repId: ids("b1"), state: "MD", transaction: "purchase", paidBy: "seller", amount: 500 });
+      await M.Ax.adminSetRepFeeOverride({ repId: ids("b1"), state: "*", transaction: "refi", paidBy: "buyer", amount: 0 });
+      let all = await M.Ax.adminListRepFeeOverrides(); assert.strictEqual(all.length, 3); assert.ok(all.every((o) => o.repId === ids("b1") && typeof o.amount === "number")); assert.ok(all.some((o) => o.state === "MD" && o.transaction === "purchase" && o.paidBy === "buyer" && o.amount === 900));
+      ok("fee overrides (mock): an admin and a super admin can set; values are normalised (state upper-case, '$900' read as 900, 0 allowed)");
+      // upsert: one row per slot
+      await M.Ax.adminSetRepFeeOverride({ repId: ids("b1"), state: "MD", transaction: "purchase", paidBy: "buyer", amount: 912.505 });
+      all = await M.Ax.adminListRepFeeOverrides(); assert.strictEqual(all.length, 3); assert.strictEqual(all.find((o) => o.state === "MD" && o.paidBy === "buyer").amount, 912.51); ok("fee overrides (mock): setting the same slot again replaces it (one row per slot), rounded to the cent");
+      await M.Ax.adminSetRepFeeOverride({ repId: ids("b1"), state: "MD", transaction: "purchase", paidBy: "buyer", amount: 900 });
+      // validation
+      for (const [o, re, n] of [[{ state: "TX", transaction: "purchase", paidBy: "buyer", amount: 1 }, /State/, "unknown state"], [{ state: "*", transaction: "sale", paidBy: "buyer", amount: 1 }, /Transaction/, "unknown transaction"],
+        [{ state: "*", transaction: "purchase", paidBy: "lender", amount: 1 }, /Paid by/, "unknown payer"], [{ state: "*", transaction: "refi", paidBy: "seller", amount: 1 }, /no seller/, "refi seller"],
+        [{ state: "*", transaction: "purchase", paidBy: "buyer", amount: -1 }, /Amount/, "negative amount"], [{ state: "*", transaction: "purchase", paidBy: "buyer", amount: 100000 }, /Amount/, "too large"],
+        [{ state: "*", transaction: "purchase", paidBy: "buyer", amount: "" }, /Amount/, "blank amount"], [{ state: "*", transaction: "purchase", paidBy: "buyer", amount: "abc" }, /Amount/, "text amount"]])
+        await rej(M.Ax.adminSetRepFeeOverride(Object.assign({ repId: ids("b1") }, o)), re, "fee overrides: refused: " + n);
+      await rej(M.Ax.adminSetRepFeeOverride({ repId: ids("c1"), state: "*", transaction: "purchase", paidBy: "buyer", amount: 1 }), /only for reps/i, "fee overrides: refused for a client");
+      await rej(M.Ax.adminSetRepFeeOverride({ repId: ids("a2"), state: "*", transaction: "purchase", paidBy: "buyer", amount: 1 }), /only for reps/i, "fee overrides: refused for an admin who is not a rep");
+      await rej(M.Ax.adminSetRepFeeOverride({ repId: "nobody", state: "*", transaction: "purchase", paidBy: "buyer", amount: 1 }), /No such user/, "fee overrides: refused for an unknown id");
+      await M.Ax.adminSetRepFeeOverride({ repId: ids("b1"), state: "*", transaction: "purchase", paidBy: "buyer", amount: 700, feeKey: "premium", name: "Owner's Title Policy" });
+      assert.ok((await M.Ax.adminListRepFeeOverrides()).every((o) => !("feeKey" in o) && !("name" in o))); ok("fee overrides (mock): there is no way to say WHICH fee: extra properties are ignored, only the settlement fee exists");
+      await M.Ax.adminClearRepFeeOverride({ repId: ids("b1"), state: "*", transaction: "purchase", paidBy: "buyer" });
+      // who sees what: Jane her own, Jane's clients Jane's, everybody else nothing
+      const sum = (r) => r.map((o) => o.state + "/" + o.transaction + "/" + o.paidBy + "/" + o.amount).join(",");
+      const jane = "*/refi/buyer/0,MD/purchase/buyer/900,MD/purchase/seller/500";
+      const mine = async (e) => { await M.as(e); return sum((await M.Ax.getMyFeeOverrides()).sort((a, b) => (a.state + a.transaction + a.paidBy).localeCompare(b.state + b.transaction + b.paidBy))); };
+      assert.strictEqual(await mine("sample.rep.jane@clatitle.com"), jane); assert.strictEqual(await mine("sam.agent@example.com"), jane); assert.strictEqual(await mine("lee.lender@example.com"), jane);
+      ok("fee overrides (mock): Jane sees her own special fees; her clients Sam and Lee get the same ones (the assumption: a rep's clients use the rep's fee)");
+      for (const e of ["sample.rep.marcus@clatitle.com", "omar.broker@example.com", "pat.homes@example.com", "quinn.buyer@example.com", "sample.admin@clatitle.com", "sample.robin.admin@clatitle.com", "sample.new.rep@clatitle.com"]) assert.strictEqual(await mine(e), "", e);
+      ok("fee overrides (mock): Marcus and his client, an unassigned client, the admin's own client, the admin who reps and a plain admin all stay on the standard fee");
+      // moving a client moves the fee; admin who reps gets only their own
+      await M.as("sample.admin@clatitle.com"); await M.Ax.adminReassign("sam.agent@example.com", ids("b2")); assert.strictEqual(await mine("sam.agent@example.com"), ""); ok("fee overrides (mock): reassign Sam to Marcus and she no longer gets Jane's fee");
+      await M.as("sample.admin@clatitle.com"); await M.Ax.adminSetRepFeeOverride({ repId: ids("a1"), state: "*", transaction: "purchase", paidBy: "buyer", amount: 800 });
+      assert.strictEqual(await mine("sample.admin@clatitle.com"), "*/purchase/buyer/800"); assert.strictEqual(await mine("quinn.buyer@example.com"), "*/purchase/buyer/800"); assert.strictEqual(await mine("sample.robin.admin@clatitle.com"), "");
+      ok("fee overrides (mock): an admin who also works as a rep gets only their own row, and their clients get it; another admin gets nothing");
+      // audit
+      await M.as("sample.admin@clatitle.com"); const au = (await M.Ax.adminAuditLog(100)).filter((r) => r.action === "rep_fee_changed");
+      assert.ok(au.length >= 7 && au.every((r) => r.details.fee === "settlement") && au.some((r) => r.details.before === 912.51 && r.details.after === 900) && au.some((r) => r.details.before === 700 && r.details.after === null) && au.some((r) => r.details.before === null && r.details.after === 900));
+      ok("fee overrides (mock): every set / change / clear is audited (rep_fee_changed with before and after)");
+      // supabase adapter: the right tables / functions, mapped
+      const calls = [], fakeSb = { createClient: () => ({ auth: { getSession: async () => ({ data: { session: { user: { id: ids("a1"), email: "a@clatitle.com" } } } }) },
+        from: (t) => { calls.push(["from", t]); return { select: () => ({ order: async () => ({ data: [{ id: "o1", rep_id: ids("b1"), state: "MD", transaction: "purchase", paid_by: "buyer", amount: "900.00", updated_at: "2026-10-27T00:00:00Z", updated_by: ids("a1") }], error: null }) }) }; },
+        rpc: async (n, a) => { calls.push(["rpc", n, a]); return { data: n === "get_my_fee_overrides" ? [{ state: "*", transaction: "refi", paid_by: "buyer", amount: 300 }] : null, error: null }; } }) };
+      const SA = CLA.createSupabaseAdapter({ url: "u", anonKey: "k" }, fakeSb);
+      assert.strictEqual(JSON.stringify((await SA.getMyFeeOverrides()).map((o) => [o.state, o.transaction, o.paidBy, o.amount])), JSON.stringify([["*", "refi", "buyer", 300]]));
+      const lst = await SA.adminListRepFeeOverrides(); assert.strictEqual(JSON.stringify([lst[0].repId, lst[0].state, lst[0].paidBy, lst[0].amount]), JSON.stringify([ids("b1"), "MD", "buyer", 900])); assert.ok(calls.some((c) => c[0] === "from" && c[1] === "rep_fee_overrides"));
+      await SA.adminSetRepFeeOverride({ repId: ids("b1"), state: "MD", transaction: "purchase", paidBy: "buyer", amount: 880 }); await SA.adminClearRepFeeOverride({ repId: ids("b1"), transaction: "refi", paidBy: "buyer" });
+      const rc = calls.filter((c) => c[0] === "rpc");
+      assert.strictEqual(rc[0][1], "get_my_fee_overrides"); assert.strictEqual(rc[1][1], "admin_set_rep_fee_override"); assert.strictEqual(JSON.stringify(rc[1][2]), JSON.stringify({ p_rep: ids("b1"), p_state: "MD", p_transaction: "purchase", p_paid_by: "buyer", p_amount: 880 }));
+      assert.strictEqual(rc[2][1], "admin_clear_rep_fee_override"); assert.strictEqual(JSON.stringify(rc[2][2]), JSON.stringify({ p_rep: ids("b1"), p_state: "*", p_transaction: "refi", p_paid_by: "buyer" }));
+      ok("supabase adapter: reads get_my_fee_overrides and the rep_fee_overrides table, writes only through admin_set / admin_clear_rep_fee_override; rows and amounts mapped");
+      // integration with the calculator: Jane's other client Lee in the real page
+      {
+        const root = path.join(__dirname, ".."), idx = fs.readFileSync(path.join(root, "index.html"), "utf8");
+        const page = idx.replace(/<script src="https[^>]+><\/script>/, "").replace(/<link[^>]*fonts\.googleapis[^>]*>/, "").replace(/<script src="zip-county.js[^"]*"><\/script>/, "<script>" + fs.readFileSync(path.join(root, "zip-county.js"), "utf8") + "</script>")
+          .replace(/<script src="fee-snapshot.js[^"]*"><\/script>/, "<script>" + fs.readFileSync(path.join(root, "fee-snapshot.js"), "utf8") + "</script>").replace(/<script src="portal\/js\/portal-hook.js[^"]*" defer><\/script>/, "");
+        const dom = new JSDOM(page, { url: "http://localhost/index.html", runScripts: "dangerously", pretendToBeVisual: true, virtualConsole: new VirtualConsole(), beforeParse(win) { win.fetch = async () => ({ ok: false, status: 401, text: async () => "" }); } });
+        await tick(80); const dd = dom.window.document, fee = () => [...dd.querySelectorAll("#fees .fee")].filter((r) => r.children[0].dataset.name === "Settlement Fee to CLA Title & Escrow").map((r) => r.children[2].value).join(",");
+        const z = dd.getElementById("zip"); z.value = "21704"; fire(dom.window, z, "input"); await tick(40); assert.strictEqual(fee(), "1075,670");
+        await M.as("lee.lender@example.com"); dom.window.CLA_QUOTE_API.setFeeOverrides(await M.Ax.getMyFeeOverrides()); assert.strictEqual(fee(), "900,500");
+        await M.as("omar.broker@example.com"); dom.window.CLA_QUOTE_API.setFeeOverrides(await M.Ax.getMyFeeOverrides()); assert.strictEqual(fee(), "1075,670");
+        ok("calculator + adapter: Jane's client Lee gets 900 / 500 on the settlement lines; Marcus's client Omar gets the standard 1075 / 670"); dom.window.close();
+        const hook = fs.readFileSync(path.join(dir, "..", "js", "portal-hook.js"), "utf8"); assert.ok(/getMyFeeOverrides/.test(hook) && /setFeeOverrides/.test(hook) && /catch \(e\) \{ \/\* standard fees \*\/ \}/.test(hook)); ok("portal-hook: asks the adapter for the user's fee overrides and hands them to the calculator; any failure = standard fees");
+      }
+      // the admin screen
+      {
+        const RP = await renderPage("admin.html", "sample.robin.admin@clatitle.com", "#users tr");
+        const tabs = [...RP.d.querySelectorAll("#tabs button")]; assert.strictEqual(tabs.length, 6); assert.strictEqual(tabs[5].textContent, "Rep pricing"); assert.strictEqual(tabs[4].textContent, "Feedback"); assert.ok(RP.d.getElementById("pPricing").hidden);
+        tabs[5].click(); await tick(80);
+        assert.ok(!RP.d.getElementById("pPricing").hidden && RP.d.getElementById("pUsers").hidden); assert.match(RP.d.getElementById("pPricing").textContent, /settlement fee only/i); assert.match(RP.d.getElementById("pPricing").textContent, /Title insurance premiums, recording fees, taxes and every other fee never change/);
+        const opts = [...RP.d.querySelectorAll("#pRep option")].map((o) => o.textContent); assert.ok(opts.some((t) => /^Jane/.test(t)) && opts.some((t) => /^Marcus/.test(t)) && opts.some((t) => /^Alex.*super admin who reps/.test(t)) && !opts.some((t) => /Robin|Sam|Pat|Dee/.test(t)));
+        ok("rep pricing screen: a sixth 'Rep pricing' tab (Admin and Super admin only) lists reps and admins-who-rep, not clients or plain admins; says settlement fee only");
+        assert.strictEqual(RP.d.querySelectorAll("#pSlots tr").length, 3); assert.strictEqual(JSON.stringify([...RP.d.querySelectorAll("#pSlots tr")].map((r) => r.children[1].textContent)), JSON.stringify(["$1,075.00 / $1,100.00", "$670.00 / $950.00", "$450.00"]));
+        assert.ok([...RP.d.querySelectorAll("#pSlots input")].every((i) => i.value === "" && i.placeholder === "Standard")); assert.match(RP.d.getElementById("pRows").textContent, /No rep has special pricing/); ok("rep pricing screen: three settlement-fee lines with the standard amounts, empty = standard; no one has special pricing yet");
+        const sel = RP.d.getElementById("pRep"); sel.value = ids("b1"); fire(RP.win, sel, "change"); const st = RP.d.getElementById("pState"); st.value = "MD"; fire(RP.win, st, "change");
+        assert.strictEqual(JSON.stringify([...RP.d.querySelectorAll("#pSlots tr")].map((r) => r.children[1].textContent)), JSON.stringify(["$1,075.00", "$670.00", "$450.00"]));
+        const inp = (tx, side) => RP.d.querySelector('#pSlots input[data-tx="' + tx + '"][data-side="' + side + '"]');
+        inp("purchase", "buyer").value = "abc"; RP.d.getElementById("pSave").click(); await tick(60); assert.match(RP.d.getElementById("pErr").textContent, /dollar amount/); assert.strictEqual(JSON.parse(RP.win.localStorage.getItem("cla_portal_mock_v1")).feeOverrides, undefined); ok("rep pricing screen: a non-number is refused with a message and nothing is saved");
+        inp("purchase", "buyer").value = "900"; inp("purchase", "seller").value = "$500.50"; RP.d.getElementById("pSave").click(); await tick(100);
+        assert.match(RP.d.getElementById("pOk").textContent, /Saved\. Jane Rep \(Maryland\): 2 changes/); assert.strictEqual(RP.d.getElementById("pErr").textContent, "");
+        const rowsTxt = [...RP.d.querySelectorAll("#pRows tr")].map((r) => r.textContent); assert.strictEqual(rowsTxt.length, 2); assert.ok(rowsTxt.some((t) => /Jane Rep/.test(t) && /Maryland/.test(t) && /\$1,075\.00/.test(t) && /\$900\.00/.test(t)) && rowsTxt.some((t) => /\$500\.50/.test(t) && /\$670\.00/.test(t)));
+        assert.strictEqual(inp("purchase", "buyer").value, "900.00"); const stored = JSON.parse(RP.win.localStorage.getItem("cla_portal_mock_v1")).feeOverrides; assert.strictEqual(JSON.stringify(stored.map((o) => o.state + o.transaction + o.paidBy + o.amount).sort()), JSON.stringify(["MDpurchasebuyer900", "MDpurchaseseller500.5"]));
+        ok("rep pricing screen: saving Jane's Maryland buyer 900 and seller 500.50 writes two rows and lists them with the standard fee beside them");
+        inp("purchase", "seller").value = ""; RP.d.getElementById("pSave").click(); await tick(100); assert.strictEqual(RP.d.querySelectorAll("#pRows tr").length, 1); ok("rep pricing screen: emptying a box and saving puts that line back to standard");
+        RP.d.getElementById("pRows").querySelector("[data-clear]").click(); await tick(100); assert.match(RP.d.getElementById("pRows").textContent, /No rep has special pricing/); assert.match(RP.d.getElementById("pOk").textContent, /back to the standard fee/); ok("rep pricing screen: the Clear button on the list puts it back to standard");
+        st.value = "*"; fire(RP.win, st, "change"); inp("refi", "buyer").value = "300"; inp("purchase", "buyer").value = "950"; RP.d.getElementById("pSave").click(); await tick(100); assert.strictEqual(RP.d.querySelectorAll("#pRows tr").length, 2); assert.match(RP.d.getElementById("pRows").textContent, /All states/);
+        RP.d.getElementById("pClear").click(); await tick(100); assert.match(RP.d.getElementById("pRows").textContent, /No rep has special pricing/); assert.match(RP.d.getElementById("pOk").textContent, /back to the standard settlement fee/); ok("rep pricing screen: all-states fees, and 'Back to standard for this selection' clears the lot");
+        const aud = JSON.parse(RP.win.localStorage.getItem("cla_portal_mock_v1")).audit.filter((r) => r.action === "rep_fee_changed"); assert.ok(aud.length >= 7 && aud.every((r) => r.actorId === ids("a2"))); ok("rep pricing screen: every change is in the audit log under the admin who made it");
+        assert.strictEqual(RP.errs.length, 0, RP.errs.join()); RP.dom.window.close();
+        // Super admin sees it as well
+        const RQ = await renderPage("admin.html", "sample.admin@clatitle.com", "#users tr"); [...RQ.d.querySelectorAll("#tabs button")][5].click(); await tick(80); assert.ok(!RQ.d.getElementById("pPricing").hidden && RQ.d.querySelectorAll("#pRep option").length >= 3); ok("rep pricing screen: a Super admin has it too"); RQ.dom.window.close();
+      }
+    }
 
     // ================= guided tour (migration 14) =================
     const seenOf = (R, uid) => JSON.parse(R.win.localStorage.getItem("cla_portal_mock_v1")).users.find((u) => u.id === uid).tourSeenAt;
@@ -752,7 +863,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
 
     // cache-bust: every ?v= in index.html and TOUR_V agree
     const vs = [...idx.matchAll(/\?v=(\d{8}[a-z])/g)].map((m) => m[1]), pu = fs.readFileSync(path.join(__dirname, "js", "portal-ui.js"), "utf8");
-    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261026d" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261026d");
+    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261027a" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261027a");
     // the new elements are inert in print and add no external requests
     assert.ok(/@media print\{\s*@page\{margin:14mm\}\s*\.claChip\{display:none!important\}/.test(idx) && !/https?:\/\//.test(tj2)); ok("calculator tour: the chip is not printed; tour.js has no external libraries or CDN");
   }

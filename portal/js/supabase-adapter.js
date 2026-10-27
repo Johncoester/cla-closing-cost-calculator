@@ -39,6 +39,7 @@
       id: r.id, ownerId: r.owner_id, repId: r.rep_id, quoteType: r.quote_type, label: r.label, state: r.state, county: r.county,
       propertyAddress: r.property_address, price: r.price == null ? null : +r.price, inputs: r.inputs, results: r.results,
       feeVersion: r.fee_version, createdAt: r.created_at, expiresAt: r.expires_at, deleted: !!r.deleted_at });
+    const toFeeOverride = (r) => ({ id: r.id, repId: r.rep_id, state: r.state, transaction: r.transaction, paidBy: r.paid_by, amount: Number(r.amount), updatedAt: r.updated_at, updatedBy: r.updated_by });
     const toAssignment = (r) => ({ id: r.id, clientEmail: r.client_email, clientUserId: r.client_user_id, repId: r.rep_id, active: r.active, createdAt: r.created_at });
     const snapToRow = (s) => ({
       quote_type: s.quoteType, label: s.label || null, state: s.state || null, county: s.county || null,
@@ -202,6 +203,11 @@
       async adminSetFeedbackStatus(id, status, note) { must(await sb.rpc("admin_set_feedback_status", { p_id: id, p_status: status, p_note: note || null })); },   // super admin only
       async adminSetIsRep(id, on, reassignTo) { must(await sb.rpc("admin_set_is_rep", Object.assign({ p_user: id, p_is_rep: !!on }, reassignTo ? { p_reassign_to: reassignTo } : {}))); },   // super admins only; targets: admin or super admin ("Also works as a rep")
       async adminReassign(email, repId) { must(await sb.rpc("admin_reassign_client", { p_client_email: email, p_rep_id: repId })); },
+      // ---- rep special SETTLEMENT fee (migration 16): reads through RLS / the RPC, writes only through the two admin RPCs ----
+      async getMyFeeOverrides() { return (must(await sb.rpc("get_my_fee_overrides")) || []).map(toFeeOverride); },   // what the calculator applies for the current user (a rep: own; a client: their rep's)
+      async adminListRepFeeOverrides() { return must(await sb.from("rep_fee_overrides").select("*").order("created_at")).map(toFeeOverride); },
+      async adminSetRepFeeOverride(o) { must(await sb.rpc("admin_set_rep_fee_override", { p_rep: o.repId, p_state: o.state || "*", p_transaction: o.transaction, p_paid_by: o.paidBy, p_amount: o.amount })); },
+      async adminClearRepFeeOverride(o) { must(await sb.rpc("admin_clear_rep_fee_override", { p_rep: o.repId, p_state: o.state || "*", p_transaction: o.transaction, p_paid_by: o.paidBy })); },
       async adminAuditLog(limit) {
         return must(await sb.from("audit_log").select("*").order("at", { ascending: false }).limit(limit || 100))
           .map((r) => ({ id: r.id, at: r.at, actorId: r.actor_id, action: r.action, targetType: r.target_type, targetId: r.target_id, details: r.details }));

@@ -69,6 +69,14 @@
       if (html) bar.insertAdjacentHTML("afterend", '<div class="claBrand" id="claBrand"><div class="wrap">' + html + '<span class="claTag">Prepared with C.L.A. Title &amp; Escrow</span></div></div>');
     }
 
+    // ---- special settlement fee (migration 16) ----
+    // A rep gets their own special CLA settlement fee, a client (realtor) their rep's (the database decides which: get_my_fee_overrides()).
+    // Only that one fee line changes; premiums and recording fees are never touched. Anything wrong (migration not applied yet, network)
+    // = standard fees, silently: never break the calculator over it.
+    if (me && A.getMyFeeOverrides && window.CLA_QUOTE_API.setFeeOverrides) {
+      try { const ov = await A.getMyFeeOverrides(); if (ov && ov.length) window.CLA_QUOTE_API.setFeeOverrides(ov); } catch (e) { /* standard fees */ }
+    }
+
     // ---- save controls ----
     const ids = { quote: null, seller: null };
     const slots = [[document.getElementById("copy"), "quote"], [document.getElementById("sCopy"), "seller"]];

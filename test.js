@@ -208,6 +208,41 @@ ok(SN({fees:[]}).totals.title===0&&near(SN({fees:[{name:"Custom",payer:"Seller",
  const live=await X.loadFees(async u=>{const t=decodeURIComponent(u.match(/sheet=([^&]+)/)[1]);return{ok:true,status:200,text:async()=>toCSV(X.SNAP[t])}});
  ok(live.source==="sheet"&&X.normalize(live.raw).Transfer_Taxes.length===R.Transfer_Taxes.length,"mock live sheet parsed into same structures");
  ok(near(X.calc(X.normalize(live.raw),inp({price:800000,loan:640000,occ:false})).lines.filter(l=>/County recordation/.test(l.item)).reduce((a,l)=>a+l.b+l.s,0),9938),"CSV-loaded data gives same Montgomery result");
+ // ---- per-rep special SETTLEMENT fee (migration 16): only "Settlement Fee to CLA Title & Escrow" can change; premiums and recording stay byte-for-byte ----
+ {const ovMD=[{state:"MD",transaction:"purchase",paidBy:"buyer",amount:900},{state:"MD",transaction:"purchase",paidBy:"seller",amount:500}],ovAll=[{state:"*",transaction:"purchase",paidBy:"buyer",amount:925.5},{state:"*",transaction:"purchase",paidBy:"seller",amount:0},{state:"*",transaction:"refi",paidBy:"buyer",amount:300}];
+  const SF="Settlement Fee to CLA Title & Escrow",ro=(ov,st,ty,n,p)=>X.repFeeOverride(ov,st,ty,n,p);
+  ok(ro(ovMD,"MD","purchase",SF,"Buyer")===900&&ro(ovMD,"MD","cash",SF,"Seller")===500&&ro(ovMD,"MD","purchase",SF,"buyer")===900,"override: settlement fee matched by state / purchase-or-cash / payer (Buyer, Seller)");
+  ok(ro(ovMD,"VA","purchase",SF,"Buyer")===null&&ro(ovMD,"MD","refi",SF,"Borrower")===null&&ro([],"MD","purchase",SF,"Buyer")===null&&ro(null,"MD","purchase",SF,"Buyer")===null,"override: no row for that state / transaction, or no overrides at all = null (standard fee)");
+  ok(ro(ovAll,"FL","purchase",SF,"Buyer")===925.5&&ro(ovAll,"VA","refi",SF,"Borrower")===300&&ro(ovAll,"DC","cash",SF,"Seller")===0,"override: '*' row applies to every state; a refi 'Borrower' is the buyer side; 0 (waived) is honoured");
+  ok(ro(ovAll.concat(ovMD),"MD","purchase",SF,"Buyer")===900&&ro(ovAll.concat(ovMD),"FL","purchase",SF,"Buyer")===925.5,"override: a state row beats the all-states row (either order)");
+  for(const n of["Notary Fee to CLA Title & Escrow","Doc Preparation Fee","Processing Fee to CLA Title & Escrow","Title Search and Abstract","Secure Document Storage to Qualia","CPL (Lender)","Title – Lender's Title Policy","Owner's Title Policy","Recording fees – Deed","E-recording Fee to Simplifile","County transfer tax","Title Insurance Settlement Fee"])
+   ok(ro([{state:"*",transaction:"purchase",paidBy:"buyer",amount:1},{state:"*",transaction:"refi",paidBy:"buyer",amount:1},{state:"*",transaction:"purchase",paidBy:"seller",amount:1}],"MD","purchase",n,"Buyer")===null,"override can never touch: "+n);
+  ok(ro([{state:"*",transaction:"purchase",paidBy:"buyer",amount:-5}],"MD","purchase",SF,"Buyer")===null&&ro([{state:"*",transaction:"purchase",paidBy:"buyer",amount:"abc"}],"MD","purchase",SF,"Buyer")===null&&ro([{state:"*",transaction:"purchase",paidBy:"buyer",amount:null}],"MD","purchase",SF,"Buyer")===null&&ro([{state:"*",transaction:"purchase",paidBy:"buyer",amount:"$1,000"}],"MD","purchase",SF,"Buyer")===1000,"override: a negative / non-numeric amount is ignored (standard fee), a '$1,000' string is read");
+  ok(ro(ovAll,"MD","purchase",SF,"Split")===null&&ro(ovAll,"MD","purchase",SF,"Lender")===null,"override: only buyer / borrower / seller payers");
+  // the whole quote, every state and transaction: only the settlement lines move; everything else is identical to the character
+  const isSF=l=>/^Title – Settlement Fee to CLA Title & Escrow/.test(l.item),keep=r=>JSON.stringify(r.lines.filter(l=>!isSF(l)));
+  let combos=0;
+  for(const[st,co,ty,ov]of[["MD","Montgomery","purchase",ovMD],["MD","Montgomery","cash",ovMD],["VA","Fairfax","purchase",ovAll],["DC","District of Columbia","refi",ovAll],["FL","Orange","purchase",ovAll],["FL","Miami-Dade","refi",ovAll],["MD","Frederick","refi",ovAll],["VA","Fairfax","cash",ovAll.concat(ovMD)]]){
+   const base=fees(st,ty),over=X.applyRepFees(base,ov,st,ty),b=X.calc(R,inp({type:ty,state:st,county:co,fees:base,price:620000,loan:496000,payoff:310000,ends:[]})),a=X.calc(R,inp({type:ty,state:st,county:co,fees:over,price:620000,loan:496000,payoff:310000,ends:[]}));
+   const sfB=b.lines.filter(isSF),sfA=a.lines.filter(isSF),want=over.filter(f=>f.special).length;combos++;
+   ok(over.filter(f=>f.special).every(f=>X.isSettlementFee(f.name))&&over.length===base.length&&over.filter((f,i)=>!f.special).every(f=>JSON.stringify(f)===JSON.stringify(base[over.indexOf(f)])),`${st} ${co} ${ty}: only settlement fee rows are marked special; every other fee row is the same object content`);
+   ok(keep(a)===keep(b),`${st} ${co} ${ty}: every non-settlement line (premiums, endorsements, recording, taxes, other CLA fees) identical byte for byte`);
+   ok(JSON.stringify(a.premiums)===JSON.stringify(b.premiums)&&JSON.stringify(a.warnings)===JSON.stringify(b.warnings),`${st} ${co} ${ty}: premium amounts and warnings identical byte for byte`);
+   ok(JSON.stringify(a.lines.filter(l=>/Title Policy|Endorsement/.test(l.item)))===JSON.stringify(b.lines.filter(l=>/Title Policy|Endorsement/.test(l.item)))&&JSON.stringify(a.lines.filter(l=>/^Recording fees/.test(l.item)))===JSON.stringify(b.lines.filter(l=>/^Recording fees/.test(l.item)))&&b.lines.some(l=>/^Recording fees/.test(l.item)),`${st} ${co} ${ty}: title insurance lines and recording fee lines identical byte for byte`);
+   const dB=r2=>sfB.reduce((x,l)=>x+l.b+l.s,0)-sfA.reduce((x,l)=>x+l.b+l.s,0);
+   ok(sfA.length<=sfB.length&&want>0&&near(b.total-a.total,dB()),`${st} ${co} ${ty}: total changes by exactly the settlement-fee difference (${dB()})`);
+  }
+  ok(combos===8,"override: eight state / transaction combinations checked");
+  // default pricing is unchanged for everyone without an override: same lines as before the feature
+  const noOv=X.applyRepFees(fees("MD","purchase"),[],"MD","purchase");ok(JSON.stringify(noOv)===JSON.stringify(fees("MD","purchase"))&&X.applyRepFees(fees("MD","purchase"),null,"MD","purchase").every(f=>!f.special),"override: no overrides = the fee list comes back untouched (default pricing unchanged)");
+  const dflt=X.calc(R,inp({fees:fees("MD","purchase")}));ok(near(line(dflt,/Settlement Fee to CLA/),1745),"default MD settlement fees still 1,075 buyer + 670 seller");
+  // an override row with extra / hostile properties still only ever replaces the settlement amount
+  const hostile=[{state:"*",transaction:"purchase",paidBy:"buyer",amount:10,feeKey:"premium",name:"Owner's Title Policy",item:"Recording fees – Deed"}];
+  const hb=X.calc(R,inp({fees:fees("MD","purchase")})),ha=X.calc(R,inp({fees:X.applyRepFees(fees("MD","purchase"),hostile,"MD","purchase")}));ok(keep(ha)===keep(hb)&&near(hb.total-ha.total,1065),"override: extra properties on a row (feeKey / name) change nothing: still only the settlement fee moves");
+  // seller net sheet: the seller's settlement fee follows, nothing else
+  const sB=X.sellerNet(R,{state:"MD",county:"Montgomery",uw:"Fidelity National Title",price:500000,payoff1:300000,closing:"2026-11-20"}),sA=X.sellerNet(R,{state:"MD",county:"Montgomery",uw:"Fidelity National Title",price:500000,payoff1:300000,closing:"2026-11-20",fees:X.sellerFeeInputs(R,"MD",ovMD)});
+  const sKeep=r=>JSON.stringify([r.gov,r.commissions,r.title.filter(x=>!/Settlement Fee to CLA/.test(x.item)),r.payoffs,r.prorations,r.other]);
+  ok(sKeep(sA)===sKeep(sB)&&near(sA.net-sB.net,170)&&JSON.stringify(X.sellerFeeInputs(R,"MD"))===JSON.stringify(X.sellerFeeInputs(R,"MD",[])),"seller net sheet: seller settlement fee 670 -> 500 raises net by 170; recording, premiums, commissions, everything else identical");}
  // DOM
  const{JSDOM}=require("jsdom");const page=src.replace(/<script src="https[^>]+><\/script>/,"").replace(/<script src="zip-county.js[^"]*"><\/script>/,"<script>"+zjs+"</script>").replace(/<script src="fee-snapshot.js[^"]*"><\/script>/,"<script>"+sjs+"</script>");
  const d=new JSDOM(page,{runScripts:"dangerously",beforeParse(w){w.fetch=async()=>({ok:false,status:401,text:async()=>""})}});const errs=[];d.window.addEventListener("error",e=>errs.push(e.message));
@@ -236,5 +271,32 @@ ok(SN({fees:[]}).totals.title===0&&near(SN({fees:[{name:"Custom",payer:"Seller",
  ok(!w.getElementById("mainQ").hidden&&w.getElementById("mainS").hidden&&w.getElementById("state").value==="FL","DOM back to quote tab (state carried)");
  w.getElementById("zip").value="21704";w.getElementById("zip").dispatchEvent(ev("input"));w.getElementById("price").value="450000";w.getElementById("price").dispatchEvent(ev("input"));
  ok(["tB","tS","tA"].map(i=>w.getElementById(i).textContent).join("|")===qBefore,"DOM quote tab numbers unchanged after using the seller tab: "+qBefore);
+ // special settlement fee in the page: the fee panel and the quote show it, nothing else moves, and clearing it restores the exact default
+ {const win=d.window,API=win.CLA_QUOTE_API,ledger=()=>[...w.querySelectorAll("#ledger tr")].map(r=>r.textContent.trim()),tot=()=>["tB","tS","tA"].map(i=>w.getElementById(i).textContent).join("|"),feeRow=n=>[...w.querySelectorAll("#fees .fee")].filter(r=>r.children[0].dataset.name===n);
+  ok(typeof API.setFeeOverrides==="function"&&w.querySelectorAll("#fees input[data-special]").length===0,"DOM: setFeeOverrides exists; no special rate shown by default");
+  setv("zip","21704");w.querySelector("[data-t=purchase]").click();const t0=tot(),l0=ledger(),sf0=feeRow("Settlement Fee to CLA Title & Escrow").map(r=>r.children[2].value).join(",");
+  ok(sf0==="1075,670","DOM default MD purchase settlement fee inputs 1075 / 670");
+  API.setFeeOverrides([{state:"MD",transaction:"purchase",paidBy:"buyer",amount:900},{state:"MD",transaction:"purchase",paidBy:"seller",amount:500}]);
+  ok(feeRow("Settlement Fee to CLA Title & Escrow").map(r=>r.children[2].value).join(",")==="900,500"&&w.querySelectorAll("#fees input[data-special]").length===2&&/special rate, standard \$1,075\.00/.test(w.getElementById("fees").textContent),"DOM fee panel shows 900 / 500 with 'special rate, standard $1,075.00'");
+  ok(w.querySelectorAll("#fees .fee").length===[...w.querySelectorAll("#fees .fee")].length&&[...w.querySelectorAll("#fees .fee")].filter(r=>!/Settlement Fee to CLA/.test(r.children[0].dataset.name)).every(r=>!r.querySelector("[data-special]")&&!r.children[0].dataset.special),"DOM only the two settlement rows are flagged special");
+  const l1=ledger(),pick=a=>a.filter(x=>!/Settlement Fee to CLA|^(Section C total|Total)/.test(x)&&!/Section C total/.test(x));
+  ok(JSON.stringify(pick(l1))===JSON.stringify(pick(l0)),"DOM every other ledger row (insurance, recording, taxes, other fees) identical text");
+  ok(l1.some(x=>/Settlement Fee to CLA.*\$900\.00/.test(x))&&l1.some(x=>/Settlement Fee to CLA.*\$500\.00/.test(x))&&!l1.some(x=>/special|standard/i.test(x)),"DOM ledger shows $900.00 and $500.00 on the settlement lines with no 'special' wording on the printed quote");
+  const [b0,s0]=t0.split("|").map(x=>+x.replace(/[$,]/g,"")),[b1,s1]=tot().split("|").map(x=>+x.replace(/[$,]/g,""));ok(near(b0-b1,175)&&near(s0-s1,170),`DOM buyer total drops 175 and seller total 170 (${t0} -> ${tot()})`);
+  ok(/Settlement Fee to CLA Title & Escrow: Buyer \$900\.00/.test(API.snapshot().results.text)&&API.snapshot().inputs.fees.filter(f=>f.special).length===2&&API.snapshot().inputs.fees.filter(f=>f.special).every(f=>/^Settlement Fee to CLA/.test(f.name)&&f.std>f.amt),"DOM saved snapshot text has the special amount; inputs mark just the two settlement fees special (with the standard amount)");
+  setv("zip","32801");ok(w.getElementById("state").value==="FL"&&w.querySelectorAll("#fees input[data-special]").length===0&&feeRow("Settlement Fee to CLA Title & Escrow").map(r=>r.children[2].value).join(",")==="1100,950","DOM a Maryland-only override does not touch Florida (1100 / 950)");
+  setv("zip","21704");API.setFeeOverrides([{state:"*",transaction:"purchase",paidBy:"buyer",amount:900}]);ok(feeRow("Settlement Fee to CLA Title & Escrow").map(r=>r.children[2].value).join(",")==="900,670","DOM buyer-only override leaves the seller fee standard");
+  w.querySelector("[data-t=refi]").click();ok(feeRow("Settlement Fee to CLA Title & Escrow").map(r=>r.children[2].value).join(",")==="450"&&w.querySelectorAll("#fees input[data-special]").length===0,"DOM a purchase override does not touch the refinance fee (450)");
+  API.setFeeOverrides([{state:"*",transaction:"refi",paidBy:"buyer",amount:300}]);ok(feeRow("Settlement Fee to CLA Title & Escrow").map(r=>r.children[2].value).join(",")==="300"&&feeRow("Processing Fee to CLA Title & Escrow").map(r=>r.children[2].value).join(",")==="450","DOM refinance override: settlement 300; the separate Processing Fee stays 450");
+  w.querySelector("[data-t=purchase]").click();API.setFeeOverrides([]);ok(tot()===t0&&JSON.stringify(ledger())===JSON.stringify(l0)&&w.querySelectorAll("#fees input[data-special]").length===0,"DOM clearing the overrides restores the exact default quote: "+t0);
+  API.setFeeOverrides(null);ok(tot()===t0,"DOM setFeeOverrides(null) = standard");
+  // seller tab
+  w.querySelector("[data-mode=seller]").click();setv("s_zip","21704");setv("s_price","500000");setv("s_close","2026-10-23");const sn0=w.getElementById("sNet").textContent,sl0=[...w.querySelectorAll("#sLedger tr")].map(r=>r.textContent.trim());
+  API.setFeeOverrides([{state:"MD",transaction:"purchase",paidBy:"seller",amount:500},{state:"MD",transaction:"purchase",paidBy:"buyer",amount:1}]);
+  const sn1=w.getElementById("sNet").textContent,sl1=[...w.querySelectorAll("#sLedger tr")].map(r=>r.textContent.trim());
+  ok(near(+sn1.replace(/[$,]/g,"")-+sn0.replace(/[$,]/g,""),170)&&sl1.some(x=>/Settlement.*\$500\.00/.test(x))&&sl1.length===sl0.length&&/special rate, standard \$670\.00/.test(w.getElementById("s_fees").textContent),`DOM seller net sheet: seller settlement fee 670 -> 500 raises net by 170 (${sn0} -> ${sn1})`);
+  const pickS=a=>a.filter(x=>!/Settlement|Title & settlement fees|Net seller|Total/i.test(x));ok(JSON.stringify(pickS(sl1))===JSON.stringify(pickS(sl0)),"DOM seller net sheet: every other row identical");
+  API.setFeeOverrides([]);ok(w.getElementById("sNet").textContent===sn0,"DOM seller net sheet back to the default net "+sn0);
+  w.querySelector("[data-mode=quote]").click();w.querySelector("[data-t=purchase]").click();}
 ok(errs.length===0,"no DOM errors "+errs);
  if(fails){console.error(fails,"FAILED");process.exit(1)}console.log("ALL PASS")})();

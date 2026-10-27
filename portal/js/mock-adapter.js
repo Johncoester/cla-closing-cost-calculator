@@ -228,6 +228,43 @@
         const before = f.status; f.status = status; f.decidedAt = new Date().toISOString(); f.decidedNote = n;
         log(s, u.id, "feedback_decided", "feedback", id, { before, after: status }); save(s);
       },
+      // ---- rep special SETTLEMENT fee (migration 16). Same rules as rep_fee_overrides, private.pricing_rep_for(), the admin RPCs and get_my_fee_overrides(). ----
+      // The ONE rule for whose special fee a person gets: a rep (or an admin who also reps) -> their own; a client -> their active rep's; anyone else -> none.
+      // (To make clients pay standard fees, change the `repId` line in getMyFeeOverrides below, and private.pricing_rep_for() in the database.)
+      async getMyFeeOverrides() {
+        const s = load(), u = need(s), repId = isRep(u) ? u.id : u.role === "client" ? (repOf(s, u.id) || {}).id : null;
+        return clone((s.feeOverrides || []).filter((o) => repId && o.repId === repId)).map((o) => ({ state: o.state, transaction: o.transaction, paidBy: o.paidBy, amount: o.amount }));
+      },
+      async adminListRepFeeOverrides() { const s = load(); needAdmin(s); return clone(s.feeOverrides || []); },
+      async adminSetRepFeeOverride(o) {
+        const s = load(), u = needAdmin(s); o = o || {};
+        const st = String(o.state || "*").trim().toUpperCase() || "*", tx = String(o.transaction || "").trim().toLowerCase(), pb = String(o.paidBy || "").trim().toLowerCase();
+        const t = s.users.find((x) => x.id === o.repId) || err("No such user.");
+        if (!isRep(t)) err("Special pricing is only for reps (or an admin who also works as a rep).");
+        if (!["*", "MD", "VA", "DC", "FL"].includes(st)) err("State must be all states, MD, VA, DC or FL.");
+        if (!["purchase", "refi"].includes(tx)) err("Transaction must be purchase or refi.");
+        if (!["buyer", "seller"].includes(pb)) err("Paid by must be buyer or seller.");
+        if (tx === "refi" && pb === "seller") err("A refinance has no seller settlement fee.");
+        const raw = typeof o.amount === "string" ? o.amount.replace(/[$,\s]/g, "") : o.amount;
+        const n = raw === "" || raw === null || raw === undefined ? NaN : Number(raw);
+        if (!isFinite(n) || n < 0 || n > 99999.99) err("Amount must be between $0 and $99,999.99.");
+        const amount = Math.round(n * 100) / 100;
+        s.feeOverrides = s.feeOverrides || [];
+        const row = s.feeOverrides.find((x) => x.repId === t.id && x.state === st && x.transaction === tx && x.paidBy === pb), old = row ? row.amount : null;
+        if (row) { row.amount = amount; row.updatedAt = new Date().toISOString(); row.updatedBy = u.id; }
+        else s.feeOverrides.push({ id: uid(), repId: t.id, state: st, transaction: tx, paidBy: pb, amount, updatedAt: new Date().toISOString(), updatedBy: u.id });
+        if (old !== amount) log(s, u.id, "rep_fee_changed", "profile", t.id, { fee: "settlement", state: st, transaction: tx, paid_by: pb, before: old, after: amount });
+        save(s);
+      },
+      async adminClearRepFeeOverride(o) {
+        const s = load(), u = needAdmin(s); o = o || {};
+        const st = String(o.state || "*").trim().toUpperCase() || "*", tx = String(o.transaction || "").trim().toLowerCase(), pb = String(o.paidBy || "").trim().toLowerCase();
+        s.feeOverrides = s.feeOverrides || [];
+        const i = s.feeOverrides.findIndex((x) => x.repId === o.repId && x.state === st && x.transaction === tx && x.paidBy === pb);
+        if (i < 0) return;
+        const old = s.feeOverrides[i].amount; s.feeOverrides.splice(i, 1);
+        log(s, u.id, "rep_fee_changed", "profile", o.repId, { fee: "settlement", state: st, transaction: tx, paid_by: pb, before: old, after: null }); save(s);
+      },
       async adminAuditLog(limit) { const s = load(); needAdmin(s); return clone(s.audit.slice(0, limit || 100)); },
       async adminLogQuoteView(id) { const s = load(), u = need(s); if (!isAdminRole(u)) return; log(s, u.id, "quote_viewed_by_admin", "quote", id, {}); save(s); },
 

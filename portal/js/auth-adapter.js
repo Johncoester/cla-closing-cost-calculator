@@ -76,6 +76,14 @@
  *   adminSetFeedbackStatus(id, status, note?)   SUPER ADMIN ONLY. status: approved|dismissed; note optional (<= 1000 chars). 'new' and 'notified' are set by the assistant, not here.
  *   Feedback = {id, createdAt, userId, roleAtSubmit, category, message, pagePath, status: new|notified|approved|dismissed, notifiedAt, decidedAt, decidedNote}
  *   The message is USER CONTENT: put it on the page with textContent / CLA.esc(), never as raw HTML.
+ *  Rep special SETTLEMENT fee (migration 16; table rep_fee_overrides). ONLY CLA's "Settlement Fee to CLA Title & Escrow" line; premiums / recording fees can never be stored.
+ *   Override = {id, repId, state: "*"|"MD"|"VA"|"DC"|"FL" ("*" = every state; a state row beats it), transaction: "purchase"|"refi", paidBy: "buyer"|"seller" (a refi borrower is "buyer"; no refi/seller), amount, updatedAt, updatedBy}
+ *   getMyFeeOverrides()                   -> [{state, transaction, paidBy, amount}]  what the CALCULATOR applies for the current user: a rep (or admin who also reps) gets their own rows,
+ *                                            a client their active rep's rows, anyone else []  (the one rule: private.pricing_rep_for() in the database)
+ *   adminListRepFeeOverrides()            -> Override[]  ADMIN or SUPER ADMIN: every row
+ *   adminSetRepFeeOverride({repId, state, transaction, paidBy, amount})   ADMIN or SUPER ADMIN. Upsert (one row per rep + state + transaction + side). Target must be a rep (or admin who also reps).
+ *                                            amount 0..99999.99 (0 = waived), rounded to the cent. Audited as rep_fee_changed (before / after).
+ *   adminClearRepFeeOverride({repId, state, transaction, paidBy})         ADMIN or SUPER ADMIN. Back to the standard fee. A missing row is a quiet no-op.
  *   adminLogQuoteView(quoteId)
  *
  * Profile : {id, role, isRep, status, email, firstName, lastName, phone, cellPhone, companyName, companyPhone,

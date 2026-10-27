@@ -214,7 +214,7 @@ The same engine also runs on the public calculator, for **anyone** (guest or sig
 - **Tabs:** the Seller Net Sheet step opens that tab and puts the person's own tab back afterwards (also if they skip or press Esc). The tour never clicks Purchase / Cash / Refinance, because switching those rebuilds the documents and endorsements and would discard edits; it only points at them. No fee or number is changed.
 - **The chip:** shown only to someone who has not dismissed it. The x, starting the tour from the chip or from the header link all store `cla_calc_tour_chip = "1"` in `localStorage`, so it never comes back. If browser storage is blocked the chip is not shown at all. It does not print.
 - **Phones:** the box is a bottom sheet (also for the centred welcome note); on desktop a tall target (the breakdown) gets the box beside it instead of on top of it.
-- **Cache-bust:** `?v=20261026d` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
+- **Cache-bust:** `?v=20261027a` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
 - **Tests:** the "calculator tour" block in `portal/test-portal.js` (link, step counts, targets, skipping, tab restore, chip persistence, phone sheet, versions). Screenshots: `portal/tools/screenshots_calculator_tour.py`.
 
 ## What is mocked, what is real
@@ -266,3 +266,8 @@ Must be written: (a) an **API layer** (API Gateway + Lambda), because browsers c
 - **Badges (admin.html, Status column):** Disabled (unchanged) / **Invited, never signed in** (warn style, like "Invited, not signed up" in rep.html; tooltip with the invite date) / **Active** (tooltip: last signed in). If the migration is not applied yet the value is unknown and the page shows plain "Active" (never a wrong "Invited" label), so deploying the site before the migration is safe.
 - **Apply live (when approved):** run `20261026000015_admin_last_sign_in.sql` once in the Supabase SQL editor (idempotent, no table/policy changes), then deploy. Either order is safe; migration first shows the badge immediately.
 - **Edge:** someone who clicked the invite link but never finished setting a password has a sign-in time and shows "Active".
+
+## Rep special pricing: settlement fee only (migration 16, local branch `rep-pricing`, not applied live)
+Per-rep lower **settlement fee** (`Settlement Fee to CLA Title & Escrow` only; premiums and recording fees can never change), edited by admins and super admins on the admin page's **Rep pricing** tab.
+Design, the one rule for whose fee a person gets (a rep: own; a client: their rep's), tests, and how to apply: see [`REP-PRICING.md`](REP-PRICING.md). Cache-bust `?v=20261027a`.
+

@@ -5,6 +5,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="portal.css">
 <script src="config.js"></script>
+<script src="../fee-snapshot.js?v=20261027a"></script>
 <script src="js/mock-data.js"></script><script src="js/mock-adapter.js"></script><script src="js/supabase-adapter.js"></script><script src="js/auth-adapter.js"></script><script src="js/portal-ui.js"></script>
 </head><body>
 <main class="pg">
@@ -40,6 +41,19 @@
 </div>
 <section class="card flush" id="pAudit" hidden><div class="sh"><h2>Audit log</h2><div class="grow"><span class="sum">Read only, newest first</span></div></div>
  <div class="tablewrap"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Details</th></tr></thead><tbody id="auditRows"></tbody></table></div></section>
+<div id="pPricing" class="stack" data-tour="a-pricing" hidden>
+ <section class="card"><h2>Rep special pricing: settlement fee only</h2>
+  <p class="sub">Give one rep a lower <b>Settlement Fee to CLA Title &amp; Escrow</b>. It applies to that rep's own quotes and to the quotes of the clients (realtors) assigned to that rep. Title insurance premiums, recording fees, taxes and every other fee never change. Leave a box empty to keep the standard fee.</p>
+  <div id="pErr" class="msg err" role="alert"></div><div id="pOk" class="msg ok" role="status"></div>
+  <div class="row"><div><label for="pRep">Rep</label><select id="pRep"></select></div><div><label for="pState">Applies to</label><select id="pState"><option value="*">All states</option><option value="MD">Maryland only</option><option value="VA">Virginia only</option><option value="DC">Washington, DC only</option><option value="FL">Florida only</option></select></div></div>
+  <div class="tablewrap"><table><thead><tr><th>Settlement fee</th><th class="num">Standard fee</th><th class="num">Special fee for this rep</th></tr></thead>
+   <tbody id="pSlots"></tbody></table></div>
+  <p class="sum" id="pStdNote" style="margin:10px 0 0"></p>
+  <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap"><button class="btn" id="pSave" type="button">Save special pricing</button><button class="btn o" id="pClear" type="button">Back to standard for this selection</button></div>
+ </section>
+ <section class="card flush"><div class="sh"><h2>Reps with special pricing</h2><div class="grow"><span class="sum" id="pCount"></span></div></div>
+  <div class="tablewrap"><table><thead><tr><th>Rep</th><th>Applies to</th><th>Settlement fee</th><th class="num">Standard</th><th class="num">Special</th><th>Changed</th><th></th></tr></thead><tbody id="pRows"></tbody></table></div></section>
+</div>
 <section class="card flush" id="pFeedback" data-tour="a-feedback" hidden><div class="sh"><h2>Staff feedback</h2><div class="grow" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;align-items:center">
   <label class="vh" for="fStatus">Status</label><select id="fStatus" style="min-height:36px;width:auto"><option value="">All statuses</option><option value="new">New</option><option value="notified">Notified</option><option value="approved">Approved</option><option value="dismissed">Dismissed</option></select>
   <label class="vh" for="fCat">Category</label><select id="fCat" style="min-height:36px;width:auto"><option value="">All categories</option><option value="bug">Bug</option><option value="idea">Idea</option><option value="question">Question</option><option value="other">Other</option></select>
@@ -50,10 +64,10 @@
 <script>
 (async () => {
   const { $, esc } = CLA; const { A, me } = await CLA.boot(["super_admin", "admin"]);
-  const panels = ["pUsers", "pQuotes", "pAssign", "pAudit", "pFeedback"];
+  const panels = ["pUsers", "pQuotes", "pAssign", "pAudit", "pFeedback", "pPricing"];
   let users = [], asg = [], quotes = [];
   const uById = (id) => users.find((u) => u.id === id), nm = (id) => (id && uById(id) ? CLA.fullName(uById(id)) : id ? "(removed user)" : "System");
-  CLA.tabs($("tabs"), ["Users", "Quotes", "Assignments", "Audit log", "Feedback"], (i) => { panels.forEach((p, j) => ($(p).hidden = i !== j)); ({ 1: loadQuotes, 2: loadAsg, 3: loadAudit, 4: loadFeedback })[i] && ({ 1: loadQuotes, 2: loadAsg, 3: loadAudit, 4: loadFeedback })[i](); });
+  CLA.tabs($("tabs"), ["Users", "Quotes", "Assignments", "Audit log", "Feedback", "Rep pricing"], (i) => { panels.forEach((p, j) => ($(p).hidden = i !== j)); ({ 1: loadQuotes, 2: loadAsg, 3: loadAudit, 4: loadFeedback, 5: loadPricing })[i] && ({ 1: loadQuotes, 2: loadAsg, 3: loadAudit, 4: loadFeedback, 5: loadPricing })[i](); });
 
   // What this signed-in person may do (the database enforces the same rules; this only hides / greys out the rest):
   //   super admin: everything. admin: manage reps, clients and other admins (never a super admin, never promote; see CLA.canManage / README "Roles").
@@ -180,6 +194,64 @@
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { $("aErr").textContent = "Enter the client's email address."; return; }
     try { await A.adminReassign(em, $("aRep").value); $("aOk").textContent = "Saved. " + em + " now belongs to " + nm($("aRep").value) + "."; $("aEmail").value = ""; await loadAsg(); await loadUsers(); }
     catch (ex) { $("aErr").textContent = ex.message; } };
+
+  // ---- Rep pricing (migration 16): the settlement fee only. Admins and super admins (this whole page is admin-only; the database re-checks every write). ----
+  const SLOTS = [["purchase", "buyer", "Purchase / cash: buyer pays"], ["purchase", "seller", "Purchase / cash: seller pays"], ["refi", "buyer", "Refinance: borrower pays"]];
+  const STATE_NAME = { "*": "All states", MD: "Maryland", VA: "Virginia", DC: "Washington, DC", FL: "Florida" };
+  let ovs = [];
+  // standard settlement fee for a slot, from the built-in fee snapshot (the calculator uses the live fee sheet; they match unless the sheet changed since the snapshot)
+  const stdFees = (st, tx, side) => {
+    const rows = ((window.CLA_FEES_SNAPSHOT || {}).CLA_Fees || []).slice(1).filter((r) => String(r[0]).toUpperCase() === "Y" && /^settlement fee to cla title/i.test(r[2]) && String(r[3]).toLowerCase() === (tx === "refi" ? "refi" : "purchase") &&
+      (side === "seller" ? String(r[5]).toLowerCase() === "seller" : /^(buyer|borrower)$/i.test(r[5])) && (st === "*" || r[1] === st));
+    return [...new Set(rows.map((r) => +r[4]))];
+  };
+  const stdText = (st, tx, side) => { const v = stdFees(st, tx, side); return v.length ? v.map(CLA.money).join(" / ") : "—"; };
+  const repChoices = () => users.filter((u) => u.status === "active" && (u.role === "rep" || (adminRole(u.role) && u.isRep)));
+  function drawSlots() {
+    const rep = $("pRep").value, st = $("pState").value;
+    $("pSlots").innerHTML = SLOTS.map(([tx, side, label]) => { const o = ovs.find((x) => x.repId === rep && x.state === st && x.transaction === tx && x.paidBy === side);
+      return "<tr><td>" + esc(label) + '</td><td class="num">' + esc(stdText(st, tx, side)) + '</td><td class="num"><input type="text" inputmode="decimal" data-tx="' + tx + '" data-side="' + side + '" aria-label="Special fee, ' + esc(label) + '" placeholder="Standard" value="' + (o ? o.amount.toFixed(2) : "") + '" style="min-height:36px;width:130px;text-align:right"></td></tr>'; }).join("");
+    $("pStdNote").textContent = st === "*" ? "A fee set for one state beats the all-states fee. Standard fees shown come from the built-in fee snapshot; the calculator uses the live fee sheet." : "Applies only in " + STATE_NAME[st] + " and beats an all-states fee for the same line.";
+  }
+  function drawOverrides() {
+    const rows = ovs.slice().sort((a, b) => nm(a.repId).localeCompare(nm(b.repId)) || a.state.localeCompare(b.state) || a.transaction.localeCompare(b.transaction) || a.paidBy.localeCompare(b.paidBy));
+    $("pCount").textContent = new Set(rows.map((o) => o.repId)).size + " rep(s) · " + rows.length + " special fee" + (rows.length === 1 ? "" : "s");
+    $("pRows").innerHTML = rows.length ? rows.map((o) => { const lbl = (SLOTS.find((x) => x[0] === o.transaction && x[1] === o.paidBy) || [, , o.transaction + " / " + o.paidBy])[2];
+      return "<tr><td>" + esc(nm(o.repId)) + "</td><td>" + esc(STATE_NAME[o.state] || o.state) + "</td><td>" + esc(lbl) + '</td><td class="num">' + esc(stdText(o.state, o.transaction, o.paidBy)) + '</td><td class="num"><b>' + CLA.money(o.amount) + "</b></td><td>" + CLA.date(o.updatedAt) +
+        '</td><td><button type="button" class="btn o" data-clear="' + esc(o.id) + '" style="min-height:32px;padding:4px 12px">Clear</button></td></tr>'; }).join("")
+      : '<tr><td colspan="7" class="sum">No rep has special pricing. Everyone pays the standard settlement fee.</td></tr>';
+  }
+  async function loadPricing() {
+    if (!users.length) users = await A.adminListUsers();
+    try { ovs = await A.adminListRepFeeOverrides(); } catch (ex) { $("pErr").textContent = "Special pricing could not be loaded (" + ex.message + "). If migration 16 has not been applied to the database yet, that is why."; ovs = []; }
+    const keep = $("pRep").value, reps = repChoices();
+    $("pRep").innerHTML = reps.map((u) => '<option value="' + esc(u.id) + '">' + esc(CLA.fullName(u)) + (u.role === "rep" ? "" : " (" + (u.role === "super_admin" ? "super admin" : "admin") + " who reps)") + "</option>").join("");
+    if (keep && reps.some((u) => u.id === keep)) $("pRep").value = keep;
+    drawSlots(); drawOverrides();
+  }
+  $("pRep").onchange = $("pState").onchange = () => { $("pErr").textContent = ""; $("pOk").textContent = ""; drawSlots(); };
+  $("pSave").onclick = async () => { $("pErr").textContent = ""; $("pOk").textContent = ""; const rep = $("pRep").value, st = $("pState").value;
+    if (!rep) { $("pErr").textContent = "Choose a rep."; return; }
+    const jobs = [];
+    for (const inp of $("pSlots").querySelectorAll("input")) {
+      const tx = inp.dataset.tx, side = inp.dataset.side, v = inp.value.replace(/[$,\s]/g, ""), cur = ovs.find((x) => x.repId === rep && x.state === st && x.transaction === tx && x.paidBy === side);
+      if (v === "") { if (cur) jobs.push(["clear", { repId: rep, state: st, transaction: tx, paidBy: side }]); continue; }
+      const n = Number(v); if (!isFinite(n) || n < 0 || n > 99999.99) { $("pErr").textContent = "Enter a dollar amount from 0 to 99,999.99 (or leave the box empty for the standard fee)."; inp.focus(); return; }
+      if (!cur || Math.round(n * 100) !== Math.round(cur.amount * 100)) jobs.push(["set", { repId: rep, state: st, transaction: tx, paidBy: side, amount: Math.round(n * 100) / 100 }]);
+    }
+    if (!jobs.length) { $("pOk").textContent = "Nothing to change."; return; }
+    try { for (const [k, o] of jobs) await (k === "set" ? A.adminSetRepFeeOverride(o) : A.adminClearRepFeeOverride(o));
+      $("pOk").textContent = "Saved. " + nm(rep) + (st === "*" ? " (all states)" : " (" + STATE_NAME[st] + ")") + ": " + jobs.length + " change" + (jobs.length === 1 ? "" : "s") + ". New quotes use it right away."; }
+    catch (ex) { $("pErr").textContent = ex.message; }
+    await loadPricing(); };
+  $("pClear").onclick = async () => { $("pErr").textContent = ""; $("pOk").textContent = ""; const rep = $("pRep").value, st = $("pState").value, mine = ovs.filter((x) => x.repId === rep && x.state === st);
+    if (!mine.length) { $("pOk").textContent = "Already on standard pricing for this selection."; return; }
+    try { for (const o of mine) await A.adminClearRepFeeOverride({ repId: rep, state: st, transaction: o.transaction, paidBy: o.paidBy }); $("pOk").textContent = nm(rep) + " is back to the standard settlement fee" + (st === "*" ? " (all states)." : " in " + STATE_NAME[st] + "."); }
+    catch (ex) { $("pErr").textContent = ex.message; }
+    await loadPricing(); };
+  $("pRows").onclick = async (e) => { const b = e.target.closest("[data-clear]"); if (!b) return; const o = ovs.find((x) => x.id === b.dataset.clear); if (!o) return; $("pErr").textContent = ""; $("pOk").textContent = "";
+    try { await A.adminClearRepFeeOverride({ repId: o.repId, state: o.state, transaction: o.transaction, paidBy: o.paidBy }); $("pOk").textContent = "Cleared. " + nm(o.repId) + " is back to the standard fee for that line."; } catch (ex) { $("pErr").textContent = ex.message; }
+    await loadPricing(); };
 
   async function loadAudit() {
     const rows = await A.adminAuditLog(100);
