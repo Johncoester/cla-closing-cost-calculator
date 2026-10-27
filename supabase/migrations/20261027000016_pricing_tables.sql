@@ -12,7 +12,8 @@
 --
 -- HOW
 --   public.pricing_tables         a named table ("Marvin's Pricing"); the name is unique ignoring case and surrounding spaces.
---   public.pricing_table_fees     the settlement fees of one table: state ('*' = every state, a state row beats it), purchase | refi,
+--   public.pricing_table_fees     the settlement fees of one table, grouped into FEE SETS (set_id): one row per state per line: state ('*' = all states = the
+--                                 fallback for states with no set of their own; a state in a set beats it), purchase | refi,
 --                                 buyer | seller (a refinance borrower is 'buyer'), amount. fee_key is CHECK-constrained to 'settlement':
 --                                 a premium, a recording fee or any other fee cannot be stored, by anyone. No row = the standard fee.
 --   public.pricing_table_members  EMAIL addresses (lower-cased, trimmed, ANY domain) that use a table: a rep's, or an individual CLIENT's.
@@ -24,7 +25,7 @@
 -- WHO MAY DO WHAT
 --   WRITE  admin and super admin only (private.is_admin(), MFA-aware like every admin action), only through audited RPCs:
 --          admin_create_pricing_table / admin_rename_pricing_table / admin_delete_pricing_table /
---          admin_set_pricing_fee / admin_clear_pricing_fee / admin_add_pricing_member / admin_remove_pricing_member.
+--          admin_save_pricing_fee_set / admin_remove_pricing_fee_set / admin_add_pricing_member / admin_remove_pricing_member.
 --          Nobody has an insert / update / delete grant or policy on the three tables (direct API writes fail with 42501).
 --          Every change is audited ('pricing_table_changed', details.op says which).
 --   READ   admin and super admin: everything. A rep (or an admin who also reps): only THEIR OWN table's name and fees.
@@ -58,6 +59,7 @@ alter table public.pricing_tables enable row level security;
 create table if not exists public.pricing_table_fees (
   id          uuid primary key default gen_random_uuid(),
   table_id    uuid not null references public.pricing_tables (id) on delete cascade,
+  set_id      uuid not null default gen_random_uuid(),                         -- the FEE SET this row belongs to (one set = a selection of states + up to three amounts)
   fee_key     text not null default 'settlement',
   state       text not null default '*',
   transaction text not null,
@@ -73,7 +75,24 @@ create table if not exists public.pricing_table_fees (
   constraint pricing_fee_refi_has_no_seller  check (not (transaction = 'refi' and paid_by = 'seller')),
   constraint pricing_fee_one_per_slot        unique (table_id, fee_key, state, transaction, paid_by)
 );
+create index if not exists pricing_table_fees_set_idx on public.pricing_table_fees (table_id, set_id);
 alter table public.pricing_table_fees enable row level security;
+
+-- A fee set is stored as one row per state per fee line (so get_my_fee_overrides() and the calculator keep their shape). Two invariants,
+-- enforced here as well as in the RPC: a STATE belongs to at most ONE fee set per table, and a set belongs to one table.
+create or replace function private.pricing_fee_set_rules() returns trigger language plpgsql as $$
+begin
+  if exists (select 1 from public.pricing_table_fees f where f.table_id = new.table_id and f.state = new.state and f.set_id <> new.set_id) then
+    raise exception 'state % is already in another fee set of this pricing table', new.state using errcode = '23505';
+  end if;
+  if exists (select 1 from public.pricing_table_fees f where f.set_id = new.set_id and f.table_id <> new.table_id) then
+    raise exception 'a fee set belongs to one pricing table' using errcode = '23505';
+  end if;
+  return new;
+end $$;
+drop trigger if exists pricing_table_fees_set_rules on public.pricing_table_fees;
+create trigger pricing_table_fees_set_rules after insert or update on public.pricing_table_fees
+  for each row execute function private.pricing_fee_set_rules();
 
 create table if not exists public.pricing_table_members (
   id       uuid primary key default gen_random_uuid(),
@@ -204,56 +223,92 @@ begin
   if not private.is_admin() then raise exception 'not allowed' using errcode = '42501'; end if;
   select name into old from public.pricing_tables where id = p_table;
   if not found then raise exception 'no such pricing table' using errcode = 'P0002'; end if;
-  select count(*) into nf from public.pricing_table_fees where table_id = p_table;
+  select count(distinct set_id) into nf from public.pricing_table_fees where table_id = p_table;
   select count(*) into nm from public.pricing_table_members where table_id = p_table;
   delete from public.pricing_tables where id = p_table;
   perform private.audit('pricing_table_changed', 'pricing_table', p_table,
     jsonb_build_object('op', 'delete', 'name', old, 'fees_removed', nf, 'members_released', nm));
 end $$;
 
--- ---------- 6. fees: set (upsert) / clear ----------
-create or replace function public.admin_set_pricing_fee(p_table uuid, p_state text, p_transaction text, p_paid_by text, p_amount numeric)
-returns void language plpgsql security definer set search_path = '' as $$
+-- ---------- 6. fee sets: save (add / edit) / remove ----------
+-- A FEE SET = a selection of states + up to three settlement amounts (purchase buyer, purchase seller, refinance borrower; null = standard).
+-- States: any of MD, VA, DC, FL (e.g. MD+VA), OR the single value '*' (all states = the FALLBACK for states with no set of their own).
+-- A state may be in only ONE set of a table: picking one that is in another set is refused (23505, message names the states of that set) unless
+-- p_move, which takes the state out of the other set. p_set null = add a new set; p_set = edit that set (replaces its states and amounts).
+-- Returns the set id. Audited as one 'pricing_table_changed' row: op fee_set_add / fee_set_edit, with states, amounts, before / after and moved_states.
+create or replace function public.admin_save_pricing_fee_set(
+  p_table uuid, p_set uuid, p_states text[], p_purchase_buyer numeric, p_purchase_seller numeric, p_refi_borrower numeric, p_move boolean default false)
+returns uuid language plpgsql security definer set search_path = '' as $$
 declare
-  st text := upper(btrim(coalesce(p_state, '*'))); tx text := lower(btrim(coalesce(p_transaction, '')));
-  pb text := lower(btrim(coalesce(p_paid_by, ''))); old numeric; amt numeric; tname text;
+  tname text; sts text[]; s text; sid uuid; amts numeric[]; before_j jsonb := null; moved text[] := '{}'; clash record; k int;
+  slots text[][] := array[array['purchase', 'buyer'], array['purchase', 'seller'], array['refi', 'buyer']];
 begin
   if not private.is_admin() then raise exception 'not allowed' using errcode = '42501'; end if;
   select name into tname from public.pricing_tables where id = p_table;
   if not found then raise exception 'no such pricing table' using errcode = 'P0002'; end if;
-  if st = '' then st := '*'; end if;
-  if st not in ('*', 'MD', 'VA', 'DC', 'FL') then raise exception 'state must be * (all states), MD, VA, DC or FL' using errcode = '22023'; end if;
-  if tx not in ('purchase', 'refi') then raise exception 'transaction must be purchase or refi' using errcode = '22023'; end if;
-  if pb not in ('buyer', 'seller') then raise exception 'paid_by must be buyer or seller' using errcode = '22023'; end if;
-  if tx = 'refi' and pb = 'seller' then raise exception 'a refinance has no seller settlement fee' using errcode = '22023'; end if;
-  if p_amount is null or p_amount < 0 or p_amount > 99999.99 then raise exception 'amount must be between 0 and 99999.99' using errcode = '22023'; end if;
-  amt := round(p_amount, 2);
-  select amount into old from public.pricing_table_fees
-   where table_id = p_table and fee_key = 'settlement' and state = st and transaction = tx and paid_by = pb;
-  insert into public.pricing_table_fees (table_id, state, transaction, paid_by, amount, updated_by)
-    values (p_table, st, tx, pb, amt, auth.uid())
-    on conflict (table_id, fee_key, state, transaction, paid_by)
-    do update set amount = excluded.amount, updated_by = excluded.updated_by;
-  if old is distinct from amt then
-    perform private.audit('pricing_table_changed', 'pricing_table', p_table,
-      jsonb_build_object('op', 'fee_set', 'table', tname, 'fee', 'settlement', 'state', st, 'transaction', tx, 'paid_by', pb, 'before', old, 'after', amt));
+  select coalesce(array_agg(distinct x order by x), '{}') into sts from (select upper(btrim(u)) x from unnest(coalesce(p_states, '{}')) u) q where x <> '';
+  if cardinality(sts) = 0 then raise exception 'pick at least one state (or all states)' using errcode = '22023'; end if;
+  foreach s in array sts loop
+    if s not in ('*', 'MD', 'VA', 'DC', 'FL') then raise exception 'states must be MD, VA, DC, FL or * (all states)' using errcode = '22023'; end if;
+  end loop;
+  if '*' = any(sts) and cardinality(sts) > 1 then raise exception 'all states cannot be combined with single states (it is the fallback for states with no set of their own)' using errcode = '22023'; end if;
+  amts := array[p_purchase_buyer, p_purchase_seller, p_refi_borrower];
+  if amts[1] is null and amts[2] is null and amts[3] is null then raise exception 'enter at least one fee (empty boxes keep the standard fee)' using errcode = '22023'; end if;
+  for k in 1..3 loop
+    if amts[k] is not null and (amts[k] < 0 or amts[k] > 99999.99) then raise exception 'amount must be between 0 and 99999.99' using errcode = '22023'; end if;
+    amts[k] := round(amts[k], 2);
+  end loop;
+  if p_set is not null then
+    if not exists (select 1 from public.pricing_table_fees where table_id = p_table and set_id = p_set) then raise exception 'no such fee set' using errcode = 'P0002'; end if;
+    sid := p_set;
+    select jsonb_build_object('states', (select jsonb_agg(distinct state order by state) from public.pricing_table_fees where table_id = p_table and set_id = p_set),
+      'purchase_buyer', max(amount) filter (where transaction = 'purchase' and paid_by = 'buyer'), 'purchase_seller', max(amount) filter (where transaction = 'purchase' and paid_by = 'seller'),
+      'refi_borrower', max(amount) filter (where transaction = 'refi' and paid_by = 'buyer')) into before_j
+      from public.pricing_table_fees where table_id = p_table and set_id = p_set;
+  else
+    sid := gen_random_uuid();
   end if;
+  -- a state that is in ANOTHER set of this table: refuse, or move it
+  for clash in
+    select f.state, f.set_id from public.pricing_table_fees f where f.table_id = p_table and f.state = any(sts) and f.set_id <> sid group by f.state, f.set_id order by f.state
+  loop
+    if not coalesce(p_move, false) then
+      raise exception '% is already in another fee set of "%" (%)', clash.state, tname,
+        (select string_agg(distinct state, ', ' order by state) from public.pricing_table_fees where table_id = p_table and set_id = clash.set_id) using errcode = '23505';
+    end if;
+    moved := moved || clash.state;
+    delete from public.pricing_table_fees where table_id = p_table and state = clash.state and set_id = clash.set_id;
+  end loop;
+  delete from public.pricing_table_fees where table_id = p_table and set_id = sid;
+  foreach s in array sts loop
+    for k in 1..3 loop
+      if amts[k] is not null then
+        insert into public.pricing_table_fees (table_id, set_id, state, transaction, paid_by, amount, updated_by)
+          values (p_table, sid, s, slots[k][1], slots[k][2], amts[k], auth.uid());
+      end if;
+    end loop;
+  end loop;
+  perform private.audit('pricing_table_changed', 'pricing_table', p_table, jsonb_build_object(
+    'op', case when p_set is null then 'fee_set_add' else 'fee_set_edit' end, 'table', tname, 'fee', 'settlement', 'set_id', sid, 'states', to_jsonb(sts),
+    'before', before_j, 'after', jsonb_build_object('states', to_jsonb(sts), 'purchase_buyer', amts[1], 'purchase_seller', amts[2], 'refi_borrower', amts[3]),
+    'moved_states', to_jsonb(moved)));
+  return sid;
 end $$;
 
-create or replace function public.admin_clear_pricing_fee(p_table uuid, p_state text, p_transaction text, p_paid_by text)
-returns void language plpgsql security definer set search_path = '' as $$
-declare st text := upper(btrim(coalesce(p_state, '*'))); tx text := lower(btrim(coalesce(p_transaction, ''))); pb text := lower(btrim(coalesce(p_paid_by, ''))); old numeric; tname text;
+-- Remove a whole fee set: those states go back to the all-states set of the table if it has one, else to the standard fee. A missing set is a quiet no-op.
+create or replace function public.admin_remove_pricing_fee_set(p_table uuid, p_set uuid) returns void
+language plpgsql security definer set search_path = '' as $$
+declare tname text; before_j jsonb; n int;
 begin
   if not private.is_admin() then raise exception 'not allowed' using errcode = '42501'; end if;
   select name into tname from public.pricing_tables where id = p_table;
   if not found then raise exception 'no such pricing table' using errcode = 'P0002'; end if;
-  if st = '' then st := '*'; end if;
-  delete from public.pricing_table_fees
-   where table_id = p_table and fee_key = 'settlement' and state = st and transaction = tx and paid_by = pb
-   returning amount into old;
-  if found then
+  select jsonb_build_object('states', jsonb_agg(distinct state order by state)) into before_j from public.pricing_table_fees where table_id = p_table and set_id = p_set;
+  delete from public.pricing_table_fees where table_id = p_table and set_id = p_set;
+  get diagnostics n = row_count;
+  if n > 0 then
     perform private.audit('pricing_table_changed', 'pricing_table', p_table,
-      jsonb_build_object('op', 'fee_clear', 'table', tname, 'fee', 'settlement', 'state', st, 'transaction', tx, 'paid_by', pb, 'before', old, 'after', null));
+      jsonb_build_object('op', 'fee_set_remove', 'table', tname, 'fee', 'settlement', 'set_id', p_set, 'before', before_j, 'after', null));
   end if;
 end $$;
 
@@ -303,19 +358,28 @@ end $$;
 create or replace function public.get_my_fee_overrides()
 returns table (state text, transaction text, paid_by text, amount numeric)
 language sql stable security definer set search_path = '' as $$
-  select f.state, f.transaction, f.paid_by, f.amount
-    from public.pricing_table_fees f
-   where f.fee_key = 'settlement' and f.table_id = private.pricing_table_for(auth.uid())
-   order by f.state, f.transaction, f.paid_by
+  with f as (
+    select x.state, x.transaction, x.paid_by, x.amount, x.set_id from public.pricing_table_fees x
+     where x.fee_key = 'settlement' and x.table_id = private.pricing_table_for(auth.uid())),
+  own as (select distinct f.state, f.set_id from f where f.state <> '*')
+  select r.state, r.transaction, r.paid_by, r.amount from (
+    -- every row of the table as stored: a state's own set, and the all-states ('*') set (the calculator lets a state row beat the '*' row)
+    select f.state, f.transaction, f.paid_by, f.amount from f
+    union all
+    -- a state with its OWN set beats the all-states set as a whole: a line that its set leaves empty is the STANDARD fee, not the all-states fee.
+    -- Expressed as a row with a NULL amount for that state (the calculator reads null as "no override").
+    select o.state, a.transaction, a.paid_by, null::numeric from own o join f a on a.state = '*'
+     where not exists (select 1 from f b where b.state = o.state and b.transaction = a.transaction and b.paid_by = a.paid_by)
+  ) r order by r.state, r.transaction, r.paid_by
 $$;
 
 -- ---------- 9. privileges ----------
 revoke execute on function public.admin_create_pricing_table(text), public.admin_rename_pricing_table(uuid, text), public.admin_delete_pricing_table(uuid),
-                           public.admin_set_pricing_fee(uuid, text, text, text, numeric), public.admin_clear_pricing_fee(uuid, text, text, text),
+                           public.admin_save_pricing_fee_set(uuid, uuid, text[], numeric, numeric, numeric, boolean), public.admin_remove_pricing_fee_set(uuid, uuid),
                            public.admin_add_pricing_member(uuid, text, boolean), public.admin_remove_pricing_member(uuid, text),
                            public.get_my_fee_overrides() from public, anon;
 grant  execute on function public.admin_create_pricing_table(text), public.admin_rename_pricing_table(uuid, text), public.admin_delete_pricing_table(uuid),
-                           public.admin_set_pricing_fee(uuid, text, text, text, numeric), public.admin_clear_pricing_fee(uuid, text, text, text),
+                           public.admin_save_pricing_fee_set(uuid, uuid, text[], numeric, numeric, numeric, boolean), public.admin_remove_pricing_fee_set(uuid, uuid),
                            public.admin_add_pricing_member(uuid, text, boolean), public.admin_remove_pricing_member(uuid, text),
                            public.get_my_fee_overrides() to authenticated;
 comment on table public.pricing_tables is 'Named pricing tables ("Marvin''s Pricing") for the CLA settlement fee. Writes: admin RPCs only.';

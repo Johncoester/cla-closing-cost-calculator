@@ -1,12 +1,13 @@
 # Rep pricing tables (migration 16): design and how to apply
 
 **Status: built and tested locally only (branch `rep-pricing`, worktree `/workspace/cla-calculator-rep-pricing-wt`, based on `main` 1828dcf).
-Nothing is pushed to the real repo, no migration applied, no edge function deployed.** Cache-bust letter for this change: `20261027c`.
-(The first version of this feature, per-rep override rows, was replaced by the named pricing tables below after John's review.)
+Nothing is pushed to the real repo, no migration applied, no edge function deployed.** Cache-bust letter for this change: `20261027d`.
+(History: per-rep override rows were replaced by named pricing tables; members may be any email; and now a table holds **fee sets that cover any selection of states**.)
 
 ## What John asked for
 Some sales reps get a lower price. **Only CLA's own settlement fee**, not title insurance and not recording fees (they cannot change).
 John edits it inside the portal: **New pricing table** asks for a name (example "Marvin's Pricing"), you set the fees, then you assign reps by adding their **email** to that table.
+Fees are **fee sets**: tick any states (MD, VA, DC, FL, or the **All states** shortcut), enter the three fees, Save. One table can hold several sets (MD+VA at $900 / $500 and FL at $1,000 / $800).
 
 ## How the settlement fee works today (unchanged for everyone not in a table)
 `CLA_Fees` tab of the fee sheet (snapshot: `fee-snapshot.js`). The line is **"Settlement Fee to CLA Title & Escrow"**, one row per state x transaction x payer:
@@ -24,38 +25,45 @@ never come from that list. Other CLA fees (notary, doc prep, storage, title sear
 ## The design
 * **Database (migration 16, file only):** three tables.
   * `public.pricing_tables` (id, **name**: 1-80 characters, unique ignoring case).
-  * `public.pricing_table_fees` (table, state or `*`, `purchase`/`refi`, `buyer`/`seller`, amount 0..99,999.99). `fee_key` is CHECK-constrained to `'settlement'`, so a premium, recording fee or any other fee **cannot be stored**. Refi "borrower" = `buyer`; a refi has no seller row. A state row beats the `*` (all states) row. No row = standard fee.
+  * `public.pricing_table_fees` (table, **set_id**, state or `*`, `purchase`/`refi`, `buyer`/`seller`, amount 0..99,999.99). `fee_key` is CHECK-constrained to `'settlement'`, so a premium, recording fee or any other fee **cannot be stored**. Refi "borrower" = `buyer`; a refi has no seller row.
+    **A fee set = the rows sharing a `set_id`**: one row per chosen state per line. Rules (RPC and an AFTER trigger `pricing_table_fees_set_rules`, so direct SQL can't break them): a state belongs to **at most one set per table**; `*` (all states) is its own set and can't be mixed with single states; at most one `*` set per table.
+    No row = standard fee.
   * `public.pricing_table_members` (table, **email**). Stored lower-case and trimmed (CHECK), `unique(email)` = **one email can be in only one table**. **Any email address** is allowed (John confirmed): a rep's, or an **individual client's**, so a client can have different pricing even while working with a different rep. The person does **not** need an account yet: the match is on the email, so the pricing applies from their first sign-in with it.
 * **Who may write:** admin and super admin only, through audited RPCs (MFA-aware `private.is_admin()`); no insert/update/delete grant or policy exists on the three tables.
-  `admin_create_pricing_table`, `admin_rename_pricing_table`, `admin_delete_pricing_table` (cascades: fees and members removed, they go back to standard), `admin_set_pricing_fee`, `admin_clear_pricing_fee`, `admin_add_pricing_member(table, email, p_move)` (returns `added` / `moved` / `already`; an email in another table is error 23505 `<email> is already in pricing table "<name>"` unless `p_move`), `admin_remove_pricing_member`.
-  Every change is one audit row, `pricing_table_changed`, with `details.op` = create | rename | delete | fee_set | fee_clear | member_add | member_move | member_remove (and before / after).
-* **Who may read:** admins everything; a rep or client only the name and fees of the table they resolve to (see precedence below), never the member list. The calculator calls `get_my_fee_overrides()` (same name and shape as before: `state, transaction, paid_by, amount`).
+  `admin_create_pricing_table`, `admin_rename_pricing_table`, `admin_delete_pricing_table` (cascades: fee sets and members removed, they go back to standard), `admin_save_pricing_fee_set(table, set, states[], purchase_buyer, purchase_seller, refi_borrower, p_move)` (add when `set` is null, else edit; returns the set id; a state in another set is error 23505 `<ST> is already in another fee set of "<table>" (<states>)` unless `p_move`, which takes the state out of the other set), `admin_remove_pricing_fee_set(table, set)`, `admin_add_pricing_member(table, email, p_move)` (returns `added` / `moved` / `already`; an email in another table is error 23505 `<email> is already in pricing table "<name>"` unless `p_move`), `admin_remove_pricing_member`.
+  Every change is one audit row, `pricing_table_changed`, with `details.op` = create | rename | delete | fee_set_add | fee_set_edit | fee_set_remove | member_add | member_move | member_remove (and before / after, states, set_id, moved_states).
+* **Who may read:** admins everything; a rep or client only the name and fees of the table they resolve to (see precedence below), never the member list. The calculator calls `get_my_fee_overrides()` (same name and shape as before: `state, transaction, paid_by, amount`; see the precedence inside a table below).
 * **Precedence for whose pricing a person gets (confirmed by John):** `private.pricing_table_for(user)` (migration 16) and, mirrored, `getMyFeeOverrides()` in the mock adapter:
   1. the person's **own email** is a member of a table (a rep, an admin who also reps, or a client) -> that table;
   2. else the table of their **assigned rep** (a client's active rep; a rep is their own rep) -> a rep's assigned clients use the rep's table;
   3. else **standard fees** (guests, a plain admin, a client with no rep in a table, a rep in no table).
   Example: Omar is Marcus's client and Marcus is in "Marvin's Pricing", but Omar's own email is in "Jane's Pricing": Omar gets Jane's Pricing, Marcus and Marcus's other clients get Marvin's. Remove Omar's email and he follows Marcus again.
   To change the policy (e.g. clients never follow their rep), edit `private.pricing_rep_for()` (return null for clients) or the first branch of `pricing_table_for()` and the `repUser` / `byEmail(u)` lines in the mock adapter.
-* **Calculator (`index.html`, unchanged by the rework):** `repFeeOverride()` / `applyRepFees()` replace the amount of rows named `Settlement Fee to CLA Title & Escrow` only (buyer, borrower, seller), before `calc()` runs. `calc()` itself is untouched.
+* **Precedence inside a table (fee sets, confirmed by John):** for the quote's state, the set that contains that state wins; if no set has it, the **All states** set applies; if neither, standard.
+  The winner is taken **as a whole set**: if a state's own set leaves a line empty (say it has no seller fee) that line is **standard**, not the all-states fee. `get_my_fee_overrides()` expresses that by adding a row with `amount = null` for such lines; the calculator reads a null state row as "no override" (the only calculator change: `repFeeOverride`).
+  Example: all-states 950 / 600 / 350, plus an MD set with only a buyer fee 900: MD quotes pay 900 buyer, standard seller and refi; VA, DC and FL quotes pay 950 / 600 / 350.
+* **Calculator (`index.html`):** `repFeeOverride()` / `applyRepFees()` replace the amount of rows named `Settlement Fee to CLA Title & Escrow` only (buyer, borrower, seller), before `calc()` runs. `calc()` itself is untouched.
   The fee panel shows the special amount with "(special rate, standard $1,075.00)"; the printed / saved quote shows only the amount (no "special" wording). Seller net sheet follows (the seller's settlement fee). A fee of $0 (waived) simply drops the line.
   `portal-hook.js` calls `A.getMyFeeOverrides()` for signed-in users and `CLA_QUOTE_API.setFeeOverrides()`; any failure (migration not applied, network) = standard fees, silently. Guests always get standard fees.
 * **Admin screen (`portal/admin.html`):** sixth tab **Rep pricing** (admin and super admin; the page already refuses everyone else).
   * List of pricing tables (name, fees set, member emails) and **New pricing table** (asks for a name).
-  * Open a table: **Rename**, **Delete table** (confirm first; members go back to standard), the fee boxes (purchase buyer, purchase seller, refinance borrower; "Applies to" all states or MD/VA/DC/FL; empty = standard; a list of every fee set with Clear), and **Members**: type an email (rep or client, any address) + Add, Remove per email. Each member shows whether they have a portal account and their role, or "No portal account yet". For a **client** the row also shows their rep and a note when their table differs from the rep's ("Uses Jane's Pricing instead of their rep Marcus Rep's table (Marvin's Pricing)"), or that they follow the same table / have no rep. An email already in another table shows which one and a **Move to this table** button.
+  * Open a table: **Rename**, **Delete table** (confirm first; members go back to standard), **Fee sets**, and **Members**.
+  * **Fee sets** are shown **grouped**, one row per set (not per state): its states (e.g. "MD, VA") and its amounts, with **Edit** and **Remove** (confirm). **Add fee set** / Edit open the editor: state checkboxes (MD, VA, DC, FL), an **All states** shortcut (ticking it clears the single states and vice versa), and the three fee boxes (purchase buyer, purchase seller, refinance borrower; empty = standard; at least one required), each showing the standard amount. A state already in another set is marked "(in another set)"; saving it shows "VA is already in another fee set of "Jane's Pricing" (MD, VA)." with a **Move to this set** button.
+  * **Members**: type an email (rep or client, any address) + Add, Remove per email. Each member shows whether they have a portal account and their role, or "No portal account yet". For a **client** the row also shows their rep and a note when their table differs from the rep's ("Uses Jane's Pricing instead of their rep Marcus Rep's table (Marvin's Pricing)"), or that they follow the same table / have no rep. An email already in another table shows which one and a **Move to this table** button.
   * The standard amounts shown beside the boxes come from the built-in fee snapshot (the calculator uses the live sheet; they match unless the sheet changed since the snapshot).
-* **Public demo:** mock mode with fake data: https://johncoester.github.io/cla-calculator-rep-pricing-demo/ (sign in with any password; see the demo steps in the hand-off).
+* **Public demo:** mock mode with fake data: https://johncoester.github.io/cla-calculator-rep-pricing-demo/ (sign in with any password). Steps: sign in as admin `sample.robin.admin@clatitle.com` > Rep pricing > open **Jane's Pricing** (an MD+VA set and a separate FL set; Marvin's Pricing has one all-states set). Then sign in as Jane `sample.rep.jane@clatitle.com` (or her clients `sam.agent@example.com`, `lee.lender@example.com`) and quote zip 21704 (MD) or 22030 (VA): settlement fee 900 / 500; zip 33101 (FL): 1,000 / 800; zip 20001 (DC, in no set): standard 1,075 / 670. `quinn.buyer@example.com` always sees standard fees. The mock data resets when its seed version changes (now 9).
 
 ## Files
-`supabase/migrations/20261027000016_pricing_tables.sql` (new), `supabase/tests/10_access_rules.sql` (+ "named pricing tables" section), `supabase/tests/80_upgrade_from_15.sql` (new), `supabase/tests/run-tests.sh` (upgrade check 7),
-`index.html`, `portal/admin.html`, `portal/js/{mock-adapter,mock-data,supabase-adapter,auth-adapter,portal-hook,portal-ui}.js`, `test.js`, `portal/test-portal.js`, this file, cache-bust `20261027c`.
+`supabase/migrations/20261027000016_pricing_tables.sql` (new), `supabase/tests/10_access_rules.sql` (+ "named pricing tables" and "MULTI-STATE FEE SETS" sections), `supabase/tests/80_upgrade_from_15.sql` (new), `supabase/tests/run-tests.sh` (upgrade check 7),
+`index.html`, `portal/admin.html`, `portal/js/{mock-adapter,mock-data,supabase-adapter,auth-adapter,portal-hook,portal-ui}.js`, `test.js`, `portal/test-portal.js`, this file, cache-bust `20261027d`.
 The migration number is 16; the repo names migrations `<timestamp>NN_name.sql`, so the file is `20261027000016_...`.
 
 ## Tests (run locally)
 `node test.js` (calculator, incl. insurance / recording byte-for-byte unchanged with an override, in 8 state x transaction combinations), `node portal/test-portal.js` (adapters, admin screen, calculator integration, cache-bust),
-`PGTESTPORT=54331 bash supabase/tests/run-tests.sh` (throwaway local Postgres: RLS, RPCs, one-email-one-table, client-in-own-table precedence, second-run safety, upgrade from migrations 1-15).
+`PGTESTPORT=54331 bash supabase/tests/run-tests.sh` (throwaway local Postgres: RLS, RPCs, one-email-one-table, client-in-own-table precedence, multi-state sets (each chosen state, state-specific beats all-states, a state in only one set, move, edit, remove, empty line = standard), second-run safety, upgrade from migrations 1-15).
 
 ## How to apply later (NOT done; needs John's go-ahead)
-1. Review the branch; merge `rep-pricing` into `main` (the cache-bust `20261027c` is already in the branch).
+1. Review the branch; merge `rep-pricing` into `main` (the cache-bust `20261027d` is already in the branch).
 2. Apply `supabase/migrations/20261027000016_pricing_tables.sql` to project `zxwhlhjxfzwqhhhmeeps` (SQL editor or `supabase db push`). Plain transaction, safe to run twice. No edge function changes.
 3. Push; GitHub Pages serves it. Until step 2 the Rep pricing tab shows an error when opened and the calculator quietly uses standard fees.
 4. In the portal: Admin > Rep pricing > New pricing table > name it > enter fees > Save > add the rep's email. Test by signing in as that rep (or one of their realtors) and opening the calculator.
@@ -65,5 +73,8 @@ Migration 16 was never applied live, so nothing needs migrating from the earlier
 * (Settled) A rep's assigned clients use the rep's table; members may be any email, so individual clients can have their own table.
 * An admin / super admin who does not work as a rep gets no pricing even if their email is listed (their own quotes stay standard). OK?
 * Any other CLA fee that may be discounted later (notary $200/$150, doc prep $205, title search, "Processing Fee to CLA" on refis, ...)? Today only the settlement fee can be; adding another is one CHECK change in a new migration plus a name match in `index.html`.
-* Should a discount be limited to a floor (e.g. never below $X)? The screen supports per-state fees; there is no floor. A $0 fee waives the line.
+* Should a discount be limited to a floor (e.g. never below $X)? There is none. A $0 fee waives the line.
+* Empty line in a state's own set = **standard** (not the all-states fee). That follows "a state-specific set beats the all-states set". The alternative is to fill an empty line from the all-states set per line. OK as built?
+* "All states" is a separate fallback set (one per table) and can't be ticked together with single states. Ticking all four states one by one is a normal set, not a fallback (a state added later would need its own set). OK?
+* A state can be in only one set per table (the screen offers to move it). A second fee set for the same state in the same table is never allowed.
 * Refinances count? (Supported: refi borrower settlement fee; leave the box empty to skip.)

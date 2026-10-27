@@ -39,7 +39,8 @@
       id: r.id, ownerId: r.owner_id, repId: r.rep_id, quoteType: r.quote_type, label: r.label, state: r.state, county: r.county,
       propertyAddress: r.property_address, price: r.price == null ? null : +r.price, inputs: r.inputs, results: r.results,
       feeVersion: r.fee_version, createdAt: r.created_at, expiresAt: r.expires_at, deleted: !!r.deleted_at });
-    const toFeeOverride = (r) => ({ id: r.id, tableId: r.table_id, state: r.state, transaction: r.transaction, paidBy: r.paid_by, amount: Number(r.amount), updatedAt: r.updated_at, updatedBy: r.updated_by });
+    const toFeeOverride = (r) => ({ id: r.id, tableId: r.table_id, setId: r.set_id, state: r.state, transaction: r.transaction, paidBy: r.paid_by, amount: r.amount === null || r.amount === undefined ? null : Number(r.amount), updatedAt: r.updated_at, updatedBy: r.updated_by });
+    const nz = (v) => (v === "" || v === undefined || v === null ? null : typeof v === "string" ? Number(v.replace(/[$,\s]/g, "")) : v);
     const toPricingTable = (r) => ({ id: r.id, name: r.name, createdBy: r.created_by, createdAt: r.created_at, updatedAt: r.updated_at });
     const toPricingMember = (r) => ({ id: r.id, tableId: r.table_id, email: r.email, addedBy: r.added_by, addedAt: r.added_at });
     const toAssignment = (r) => ({ id: r.id, clientEmail: r.client_email, clientUserId: r.client_user_id, repId: r.rep_id, active: r.active, createdAt: r.created_at });
@@ -214,8 +215,9 @@
       async adminCreatePricingTable(name) { return { id: must(await sb.rpc("admin_create_pricing_table", { p_name: name })) }; },
       async adminRenamePricingTable(id, name) { must(await sb.rpc("admin_rename_pricing_table", { p_table: id, p_name: name })); },
       async adminDeletePricingTable(id) { must(await sb.rpc("admin_delete_pricing_table", { p_table: id })); },
-      async adminSetPricingFee(o) { must(await sb.rpc("admin_set_pricing_fee", { p_table: o.tableId, p_state: o.state || "*", p_transaction: o.transaction, p_paid_by: o.paidBy, p_amount: o.amount })); },
-      async adminClearPricingFee(o) { must(await sb.rpc("admin_clear_pricing_fee", { p_table: o.tableId, p_state: o.state || "*", p_transaction: o.transaction, p_paid_by: o.paidBy })); },
+      // a FEE SET = a selection of states (["MD","VA"], or ["*"] = all states) + up to three amounts; setId null = add, else edit; move = take a state out of another set
+      async adminSavePricingFeeSet(o) { return { id: must(await sb.rpc("admin_save_pricing_fee_set", { p_table: o.tableId, p_set: o.setId || null, p_states: o.states, p_purchase_buyer: nz(o.purchaseBuyer), p_purchase_seller: nz(o.purchaseSeller), p_refi_borrower: nz(o.refiBorrower), p_move: !!o.move })) }; },
+      async adminRemovePricingFeeSet(tableId, setId) { must(await sb.rpc("admin_remove_pricing_fee_set", { p_table: tableId, p_set: setId })); },
       async adminAddPricingMember(tableId, email, opts) { return must(await sb.rpc("admin_add_pricing_member", { p_table: tableId, p_email: email, p_move: !!(opts && opts.move) })); },   // "added" | "moved" | "already"
       async adminRemovePricingMember(tableId, email) { must(await sb.rpc("admin_remove_pricing_member", { p_table: tableId, p_email: email })); },
       async adminAuditLog(limit) {

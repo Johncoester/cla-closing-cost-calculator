@@ -10,7 +10,7 @@
 
   CLA.createMockAdapter = function () {
     const load = () => {
-      try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.version === 8) return s; } catch (e) {}
+      try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.version === 9) return s; } catch (e) {}
       const s = CLA.MOCK_SEED(); localStorage.setItem(KEY, JSON.stringify(s)); return s;
     };
     const save = (s) => localStorage.setItem(KEY, JSON.stringify(s));
@@ -44,6 +44,7 @@
     const LAST = "There must always be at least one active super admin."; 
     // pricing tables (migration 16)
     const pricingName = (n) => { const v = String(n == null ? "" : n).trim().replace(/\s+/g, " "); if (!v) err("A pricing table needs a name."); if (v.length > 80) err("The name is too long (80 characters at most)."); return v; };
+    const setSummary = (rows) => { const g = (tx, pb) => { const r = rows.find((f) => f.transaction === tx && f.paidBy === pb); return r ? r.amount : null; }; return { states: [...new Set(rows.map((f) => f.state))].sort(), purchase_buyer: g("purchase", "buyer"), purchase_seller: g("purchase", "seller"), refi_borrower: g("refi", "buyer") }; };
     const pricingTable = (s, id) => (s.pricingTables || []).find((t) => t.id === id) || err("No such pricing table.");
     const complete = (p) => !!(p.firstName && p.lastName && (!isRep(p) || p.phone));
 
@@ -240,7 +241,11 @@
         const s = load(), u = need(s), members = s.pricingMembers || [], byEmail = (p) => p && members.find((x) => x.email === lc(p.email));
         const repUser = isRep(u) ? u : u.role === "client" ? repOf(s, u.id) : null;
         const m = (u.status === "active" && (isRep(u) || u.role === "client") && byEmail(u)) || byEmail(repUser);
-        return clone((s.pricingFees || []).filter((f) => m && f.tableId === m.tableId)).map((f) => ({ state: f.state, transaction: f.transaction, paidBy: f.paidBy, amount: f.amount }));
+        const rows = clone((s.pricingFees || []).filter((f) => m && f.tableId === m.tableId)), out = rows.map((f) => ({ state: f.state, transaction: f.transaction, paidBy: f.paidBy, amount: f.amount }));
+        // a state with its OWN set beats the all-states set as a whole: a line its set leaves empty is the STANDARD fee (amount null = "no override"), not the all-states fee
+        for (const st of [...new Set(rows.filter((f) => f.state !== "*").map((f) => f.state))])
+          for (const a of rows.filter((f) => f.state === "*")) if (!rows.some((f) => f.state === st && f.transaction === a.transaction && f.paidBy === a.paidBy)) out.push({ state: st, transaction: a.transaction, paidBy: a.paidBy, amount: null });
+        return out;
       },
       async adminListPricingTables() { const s = load(); needAdmin(s); return clone({ tables: s.pricingTables || [], fees: s.pricingFees || [], members: s.pricingMembers || [] }); },
       async adminCreatePricingTable(name) {
@@ -258,33 +263,44 @@
       // deleting a table deletes its fees and member list: those people are back on the standard fees
       async adminDeletePricingTable(id) {
         const s = load(), u = needAdmin(s), t = pricingTable(s, id);
-        const nf = (s.pricingFees || []).filter((f) => f.tableId === id).length, nm = (s.pricingMembers || []).filter((m) => m.tableId === id).length;
+        const nf = new Set((s.pricingFees || []).filter((f) => f.tableId === id).map((f) => f.setId)).size, nm = (s.pricingMembers || []).filter((m) => m.tableId === id).length;
         s.pricingTables = s.pricingTables.filter((x) => x.id !== id); s.pricingFees = (s.pricingFees || []).filter((f) => f.tableId !== id); s.pricingMembers = (s.pricingMembers || []).filter((m) => m.tableId !== id);
         log(s, u.id, "pricing_table_changed", "pricing_table", id, { op: "delete", name: t.name, fees_removed: nf, members_released: nm }); save(s);
       },
-      async adminSetPricingFee(o) {
-        const s = load(), u = needAdmin(s); o = o || {}; const t = pricingTable(s, o.tableId);
-        const st = String(o.state || "*").trim().toUpperCase() || "*", tx = String(o.transaction || "").trim().toLowerCase(), pb = String(o.paidBy || "").trim().toLowerCase();
-        if (!["*", "MD", "VA", "DC", "FL"].includes(st)) err("State must be all states, MD, VA, DC or FL.");
-        if (!["purchase", "refi"].includes(tx)) err("Transaction must be purchase or refi.");
-        if (!["buyer", "seller"].includes(pb)) err("Paid by must be buyer or seller.");
-        if (tx === "refi" && pb === "seller") err("A refinance has no seller settlement fee.");
-        const raw = typeof o.amount === "string" ? o.amount.replace(/[$,\s]/g, "") : o.amount;
-        const n = raw === "" || raw === null || raw === undefined ? NaN : Number(raw);
-        if (!isFinite(n) || n < 0 || n > 99999.99) err("Amount must be between $0 and $99,999.99.");
-        const amount = Math.round(n * 100) / 100; s.pricingFees = s.pricingFees || [];
-        const row = s.pricingFees.find((x) => x.tableId === t.id && x.state === st && x.transaction === tx && x.paidBy === pb), old = row ? row.amount : null;
-        if (row) { row.amount = amount; row.updatedAt = new Date().toISOString(); row.updatedBy = u.id; }
-        else s.pricingFees.push({ id: uid(), tableId: t.id, state: st, transaction: tx, paidBy: pb, amount, updatedAt: new Date().toISOString(), updatedBy: u.id });
-        if (old !== amount) log(s, u.id, "pricing_table_changed", "pricing_table", t.id, { op: "fee_set", table: t.name, fee: "settlement", state: st, transaction: tx, paid_by: pb, before: old, after: amount });
-        save(s);
+      // FEE SETS: a selection of states (MD / VA / DC / FL, or "*" = all states = the fallback for states with no set of their own) + up to three settlement
+      // amounts (purchase buyer, purchase seller, refinance borrower; null / empty = standard). Stored as one row per state per line (setId groups them).
+      // o = {tableId, setId (null = add, else edit), states: ["MD","VA"], purchaseBuyer, purchaseSeller, refiBorrower, move}. Returns {id}.
+      // A state may be in only ONE set of a table: one that is in another set throws 'MD is already in another fee set of "<table>" (MD, VA)' unless o.move.
+      async adminSavePricingFeeSet(o) {
+        const s = load(), u = needAdmin(s); o = o || {}; const t = pricingTable(s, o.tableId); s.pricingFees = s.pricingFees || [];
+        const sts = [...new Set((Array.isArray(o.states) ? o.states : []).map((x) => String(x == null ? "" : x).trim().toUpperCase()).filter(Boolean))].sort();
+        if (!sts.length) err("Pick at least one state (or all states).");
+        if (sts.some((x) => !["*", "MD", "VA", "DC", "FL"].includes(x))) err("States must be MD, VA, DC, FL or all states.");
+        if (sts.includes("*") && sts.length > 1) err("All states cannot be combined with single states (it is the fallback for states with no set of their own).");
+        const amt = (v) => { if (v === "" || v === null || v === undefined) return null; const raw = typeof v === "string" ? v.replace(/[$,\s]/g, "") : v; if (raw === "") return null;
+          const n = Number(raw); if (!isFinite(n) || n < 0 || n > 99999.99) err("Amount must be between $0 and $99,999.99."); return Math.round(n * 100) / 100; };
+        const amts = [amt(o.purchaseBuyer), amt(o.purchaseSeller), amt(o.refiBorrower)];
+        if (amts.every((x) => x === null)) err("Enter at least one fee (empty boxes keep the standard fee).");
+        const mine = o.setId ? s.pricingFees.filter((f) => f.tableId === t.id && f.setId === o.setId) : [];
+        if (o.setId && !mine.length) err("No such fee set.");
+        const sid = o.setId || uid(), moved = [];
+        for (const st of sts) {
+          const other = s.pricingFees.find((f) => f.tableId === t.id && f.state === st && f.setId !== sid); if (!other) continue;
+          if (!o.move) err(st + ' is already in another fee set of "' + t.name + '" (' + [...new Set(s.pricingFees.filter((f) => f.tableId === t.id && f.setId === other.setId).map((f) => f.state))].sort().join(", ") + ").");
+          moved.push(st);
+        }
+        const before = o.setId ? setSummary(mine) : null;
+        s.pricingFees = s.pricingFees.filter((f) => !(f.tableId === t.id && ((moved.includes(f.state) && f.setId !== sid) || f.setId === sid)));
+        const slots = [["purchase", "buyer"], ["purchase", "seller"], ["refi", "buyer"]], now = new Date().toISOString();
+        for (const st of sts) slots.forEach(([tx, pb], i) => { if (amts[i] !== null) s.pricingFees.push({ id: uid(), tableId: t.id, setId: sid, state: st, transaction: tx, paidBy: pb, amount: amts[i], updatedAt: now, updatedBy: u.id }); });
+        log(s, u.id, "pricing_table_changed", "pricing_table", t.id, { op: o.setId ? "fee_set_edit" : "fee_set_add", table: t.name, fee: "settlement", set_id: sid, states: sts, before, after: { states: sts, purchase_buyer: amts[0], purchase_seller: amts[1], refi_borrower: amts[2] }, moved_states: moved });
+        save(s); return { id: sid };
       },
-      async adminClearPricingFee(o) {
-        const s = load(), u = needAdmin(s); o = o || {}; const t = pricingTable(s, o.tableId);
-        const st = String(o.state || "*").trim().toUpperCase() || "*", tx = String(o.transaction || "").trim().toLowerCase(), pb = String(o.paidBy || "").trim().toLowerCase();
-        const i = (s.pricingFees || []).findIndex((x) => x.tableId === t.id && x.state === st && x.transaction === tx && x.paidBy === pb); if (i < 0) return;
-        const old = s.pricingFees[i].amount; s.pricingFees.splice(i, 1);
-        log(s, u.id, "pricing_table_changed", "pricing_table", t.id, { op: "fee_clear", table: t.name, fee: "settlement", state: st, transaction: tx, paid_by: pb, before: old, after: null }); save(s);
+      // Remove a whole fee set: its states go back to the table's all-states set if it has one, else to the standard fee. A missing set is a quiet no-op.
+      async adminRemovePricingFeeSet(tableId, setId) {
+        const s = load(), u = needAdmin(s), t = pricingTable(s, tableId), mine = (s.pricingFees || []).filter((f) => f.tableId === t.id && f.setId === setId); if (!mine.length) return;
+        s.pricingFees = s.pricingFees.filter((f) => !(f.tableId === t.id && f.setId === setId));
+        log(s, u.id, "pricing_table_changed", "pricing_table", t.id, { op: "fee_set_remove", table: t.name, fee: "settlement", set_id: setId, before: { states: setSummary(mine).states }, after: null }); save(s);
       },
       // Members are EMAILS (lower-cased, trimmed, ANY domain: reps or individual clients), one email in at most ONE table; the person need not have an account yet.
       // Returns "added" | "moved" | "already". An email that is in ANOTHER table is refused with a message naming it, unless opts.move.

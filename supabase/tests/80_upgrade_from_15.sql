@@ -61,9 +61,9 @@ select tests.is('nobody is in a table: the old rep, the old rep''s client and th
 create temp table pt (id uuid);
 insert into pt select nullif(tests.v(tests.id('a1'), $$select public.admin_create_pricing_table('Marvin''s Pricing')::text$$), '')::uuid;
 select tests.is('a super admin creates "Marvin''s Pricing", sets a fee and adds the old rep by email (any case); the rep and the rep''s client both get it; the admin who is not a rep does not',
-  tests.v(tests.id('a1'), $$select public.admin_set_pricing_fee('$$ || (select id from pt) || $$', '*', 'purchase', 'buyer', 950)::text$$) || '/' ||
+  (tests.v(tests.id('a1'), $$select public.admin_save_pricing_fee_set('$$ || (select id from pt) || $$', null, array['*'], 950, null, null)::text$$) ~ '^[0-9a-f-]{36}$')::text || '/' ||
   tests.v(tests.id('a1'), $$select public.admin_add_pricing_member('$$ || (select id from pt) || $$', 'OLD.REP@clatitle.com')::text$$) || '/' ||
-  tests.ov(tests.id('b1')) || '/' || tests.ov(tests.id('c1')) || '/' || tests.ov(tests.id('a2')), '/added/*:purchase:buyer:950.00/*:purchase:buyer:950.00/');
+  tests.ov(tests.id('b1')) || '/' || tests.ov(tests.id('c1')) || '/' || tests.ov(tests.id('a2')), 'true/added/*:purchase:buyer:950.00/*:purchase:buyer:950.00/');
 
 -- the file run again (safe to repeat): data kept, nothing duplicated
 begin;

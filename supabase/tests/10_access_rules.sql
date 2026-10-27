@@ -1441,27 +1441,40 @@ select tests.is('pricing tables: the name is unique ignoring case and spaces (23
   tests.rpc(tests.id('a1'), $$public.admin_create_pricing_table(null)$$) || '/' || tests.rpc(tests.id('a1'), $$public.admin_create_pricing_table(repeat('x', 81))$$) || '/' ||
   tests.p($$insert into public.pricing_tables (name) values ('JANE''S PRICING')$$) || '/' || tests.p($$insert into public.pricing_tables (name) values (' padded ')$$), 'ERR:23505/ERR:22023/ERR:22023/ERR:22023/ERR:23505/ERR:23514');
 
--- ---- fees (settlement only) ----
-select tests.is('pricing tables: an admin sets Marvin''s MD purchase buyer 900 and seller 500, and an all-states refinance 300; Jane''s all-states purchase buyer 925.505',
-  tests.rpc(tests.id('a2'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'marvin') || $$', 'md', 'Purchase', 'BUYER', 900)$$) ||
-  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'marvin') || $$', 'MD', 'purchase', 'seller', 500)$$) ||
-  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'marvin') || $$', '*', 'refi', 'buyer', 300)$$) ||
-  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'jane') || $$', '*', 'purchase', 'buyer', 925.505)$$), '');
-select tests.is('pricing tables: stored normalised (state upper-case), to the cent (925.51), one row per slot',
-  (select string_agg(state || '/' || transaction || '/' || paid_by || '/' || amount::text, ',' order by state collate "C", transaction, paid_by, amount) from public.pricing_table_fees), '*/purchase/buyer/925.51,*/refi/buyer/300.00,MD/purchase/buyer/900.00,MD/purchase/seller/500.00');
-select tests.is('pricing tables: setting the same slot again replaces it',
-  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'jane') || $$', '*', 'purchase', 'buyer', 925.5)$$), '');
-select tests.is('pricing tables: ...still 4 fee rows, Jane''s now 925.50',
-  (select count(*)::text from public.pricing_table_fees) || ':' || (select amount::text from public.pricing_table_fees where table_id = (select id from pt where k = 'jane')), '4:925.50');
-select tests.is('pricing tables: fees refused for bad state / transaction / side / amount / unknown table (22023 / P0002)',
-  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'jane') || $$', 'TX', 'purchase', 'buyer', 1)$$) || '/' ||
-  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'jane') || $$', '*', 'sale', 'buyer', 1)$$) || '/' ||
-  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'jane') || $$', '*', 'purchase', 'lender', 1)$$) || '/' ||
-  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'jane') || $$', '*', 'refi', 'seller', 1)$$) || '/' ||
-  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'jane') || $$', '*', 'purchase', 'buyer', -1)$$) || '/' ||
-  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'jane') || $$', '*', 'purchase', 'buyer', 100000)$$) || '/' ||
-  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'jane') || $$', '*', 'purchase', 'buyer', null)$$) || '/' ||
-  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('00000000-0000-4000-8000-00000000ffff', '*', 'purchase', 'buyer', 1)$$), 'ERR:22023/ERR:22023/ERR:22023/ERR:22023/ERR:22023/ERR:22023/ERR:22023/ERR:P0002');
+-- ---- fee sets (settlement only): a selection of states + up to three amounts ----
+create function tests.save(uid uuid, t uuid, sid uuid, states text, b text, s text, r text, mv boolean default false) returns text language sql as $$
+  select tests.rpc(uid, format('public.admin_save_pricing_fee_set(%L, %L, string_to_array(%L, '',''), %s, %s, %s, %L)', t, sid, states,
+    coalesce(b, 'null::numeric'), coalesce(s, 'null::numeric'), coalesce(r, 'null::numeric'), mv)) $$;
+-- like tests.ov but a line a state's own set leaves empty shows as 'std' (get_my_fee_overrides returns a NULL amount row for it)
+create function tests.ovn(uid uuid) returns text language sql as $$
+  select tests.v(uid, $q$select coalesce(string_agg(state || ':' || transaction || ':' || paid_by || ':' || coalesce(amount::text, 'std'), ',' order by state collate "C", transaction, paid_by), '') from public.get_my_fee_overrides()$q$) $$;
+create temp table fs (k text, id uuid);
+select tests.is('pricing tables: an admin saves Marvin''s MD fee set (purchase buyer 900, seller 500) and an all-states set with only a refinance fee 300; Jane''s all-states set purchase buyer 925.505',
+  (tests.save(tests.id('a2'), (select id from pt where k = 'marvin'), null, 'md', '900', '500', null) ~ '^[0-9a-f-]{36}$')::text || '/' ||
+  (tests.save(tests.id('a1'), (select id from pt where k = 'marvin'), null, '*', null, null, '300') ~ '^[0-9a-f-]{36}$')::text || '/' ||
+  (tests.save(tests.id('a1'), (select id from pt where k = 'jane'), null, '*', '925.505', null, null) ~ '^[0-9a-f-]{36}$')::text, 'true/true/true');
+insert into fs select 'md', set_id from public.pricing_table_fees where state = 'MD' limit 1;
+insert into fs select 'star', set_id from public.pricing_table_fees where state = '*' and transaction = 'refi' limit 1;
+insert into fs select 'jane', set_id from public.pricing_table_fees where state = '*' and transaction = 'purchase' limit 1;
+select tests.is('pricing tables: stored normalised (state upper-case), to the cent (925.51), one row per state per line, and one set id per set (3 sets)',
+  (select string_agg(state || '/' || transaction || '/' || paid_by || '/' || amount::text, ',' order by state collate "C", transaction, paid_by, amount) from public.pricing_table_fees) || '|' ||
+  (select count(distinct set_id)::text from public.pricing_table_fees),
+  '*/purchase/buyer/925.51,*/refi/buyer/300.00,MD/purchase/buyer/900.00,MD/purchase/seller/500.00|3');
+select tests.is('pricing tables: editing a set (its id) replaces it: Jane''s buyer fee now 925.50, same set id, still 4 fee rows',
+  (tests.save(tests.id('a1'), (select id from pt where k = 'jane'), (select id from fs where k = 'jane'), '*', '925.5', null, null) = (select id::text from fs where k = 'jane'))::text || '/' ||
+  tests.sq($q$select (select count(*)::text from public.pricing_table_fees) || ':' || (select amount::text from public.pricing_table_fees where table_id = (select id from pt where k = 'jane'))$q$), 'true/4:925.50');
+select tests.is('pricing tables: fee sets refused for bad / mixed / empty states, no fee, bad amounts, unknown table or set (22023 / P0002)',
+  tests.save(tests.id('a1'), (select id from pt where k = 'jane'), null, 'TX', '1', null, null) || '/' ||
+  tests.save(tests.id('a1'), (select id from pt where k = 'jane'), null, '*,MD', '1', null, null) || '/' ||
+  tests.save(tests.id('a1'), (select id from pt where k = 'jane'), null, '', '1', null, null) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_save_pricing_fee_set('$$ || (select id from pt where k = 'jane') || $$', null, null, 1, null, null)$$) || '/' ||
+  tests.save(tests.id('a1'), (select id from pt where k = 'jane'), null, 'MD', null, null, null) || '/' ||
+  tests.save(tests.id('a1'), (select id from pt where k = 'jane'), null, 'MD', '-1', null, null) || '/' ||
+  tests.save(tests.id('a1'), (select id from pt where k = 'jane'), null, 'MD', null, '100000', null) || '/' ||
+  tests.save(tests.id('a1'), '00000000-0000-4000-8000-00000000ffff', null, 'MD', '1', null, null) || '/' ||
+  tests.save(tests.id('a1'), (select id from pt where k = 'jane'), '00000000-0000-4000-8000-00000000ffff', 'MD', '1', null, null) || '/' ||
+  tests.save(tests.id('a1'), (select id from pt where k = 'marvin'), (select id from fs where k = 'jane'), 'MD', '1', null, null),
+  'ERR:22023/ERR:22023/ERR:22023/ERR:22023/ERR:22023/ERR:22023/ERR:22023/ERR:P0002/ERR:P0002/ERR:P0002');
 select tests.is('pricing tables: the table can only hold the SETTLEMENT fee (CHECK): premium / recording / notary keys refused even to the owner role; bad rows refused too',
   tests.p($$insert into public.pricing_table_fees (table_id, fee_key, transaction, paid_by, amount) values ('$$ || (select id from pt where k = 'jane') || $$', 'premium', 'purchase', 'buyer', 1)$$) || '/' ||
   tests.p($$insert into public.pricing_table_fees (table_id, fee_key, transaction, paid_by, amount) values ('$$ || (select id from pt where k = 'jane') || $$', 'recording', 'purchase', 'buyer', 1)$$) || '/' ||
@@ -1469,12 +1482,15 @@ select tests.is('pricing tables: the table can only hold the SETTLEMENT fee (CHE
   tests.p($$insert into public.pricing_table_fees (table_id, state, transaction, paid_by, amount) values ('$$ || (select id from pt where k = 'jane') || $$', 'TX', 'purchase', 'buyer', 1)$$) || '/' ||
   tests.p($$insert into public.pricing_table_fees (table_id, transaction, paid_by, amount) values ('$$ || (select id from pt where k = 'jane') || $$', 'refi', 'seller', 1)$$) || '/' ||
   tests.p($$insert into public.pricing_table_fees (table_id, transaction, paid_by, amount) values ('$$ || (select id from pt where k = 'jane') || $$', 'purchase', 'buyer', -5)$$), 'ERR:23514/ERR:23514/ERR:23514/ERR:23514/ERR:23514/ERR:23514');
-select tests.is('pricing tables: a rep, a client, a disabled user and a signed-out call cannot set or clear a fee',
-  tests.rpc(tests.id('b1'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'jane') || $$', '*', 'purchase', 'buyer', 1)$$) || '/' ||
-  tests.rpc(tests.id('c1'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'jane') || $$', '*', 'purchase', 'buyer', 1)$$) || '/' ||
-  tests.rpc(tests.id('a9'), $$public.admin_clear_pricing_fee('$$ || (select id from pt where k = 'jane') || $$', '*', 'purchase', 'buyer')$$) || '/' ||
-  tests.rpc(null, $$public.admin_clear_pricing_fee('$$ || (select id from pt where k = 'jane') || $$', '*', 'purchase', 'buyer')$$), 'ERR:42501/ERR:42501/ERR:42501/ERR:42501');
-select tests.is('pricing tables: ...and nothing changed (4 fees, Jane''s still 925.50)',
+select tests.is('pricing tables: even a direct row cannot put a state in two sets of one table (trigger, 23505), nor one set in two tables',
+  tests.p($$insert into public.pricing_table_fees (table_id, state, transaction, paid_by, amount) values ('$$ || (select id from pt where k = 'marvin') || $$', 'MD', 'refi', 'buyer', 1)$$) || '/' ||
+  tests.p($$insert into public.pricing_table_fees (table_id, set_id, state, transaction, paid_by, amount) values ('$$ || (select id from pt where k = 'jane') || $$', '$$ || (select id from fs where k = 'md') || $$', 'VA', 'refi', 'buyer', 1)$$), 'ERR:23505/ERR:23505');
+select tests.is('pricing tables: a rep, a client, a disabled user and a signed-out call cannot save or remove a fee set',
+  tests.save(tests.id('b1'), (select id from pt where k = 'jane'), null, 'MD', '1', null, null) || '/' ||
+  tests.save(tests.id('c1'), (select id from pt where k = 'jane'), (select id from fs where k = 'jane'), '*', '1', null, null) || '/' ||
+  tests.rpc(tests.id('a9'), $$public.admin_remove_pricing_fee_set('$$ || (select id from pt where k = 'jane') || $$', '$$ || (select id from fs where k = 'jane') || $$')$$) || '/' ||
+  tests.rpc(null, $$public.admin_remove_pricing_fee_set('$$ || (select id from pt where k = 'jane') || $$', '$$ || (select id from fs where k = 'jane') || $$')$$), 'ERR:42501/ERR:42501/ERR:42501/ERR:42501');
+select tests.is('pricing tables: ...and nothing changed (4 fee rows, Jane''s still 925.50)',
   (select count(*)::text from public.pricing_table_fees) || '/' || (select amount::text from public.pricing_table_fees where table_id = (select id from pt where k = 'jane')), '4/925.50');
 
 -- ---- members (by email; one email, one table) ----
@@ -1567,10 +1583,10 @@ select tests.is('pricing tables: removing Marcus puts him (and Omar and Sam) bac
   tests.rpc(tests.id('a1'), $$public.admin_remove_pricing_member('$$ || (select id from pt where k = 'marvin') || $$', ' SAMPLE.rep.marcus@clatitle.com')$$) || '/' ||
   tests.rpc(tests.id('a1'), $$public.admin_remove_pricing_member('$$ || (select id from pt where k = 'marvin') || $$', 'nobody@clatitle.com')$$) || '/' ||
   tests.ov(tests.id('b2')) || '/' || tests.ov(tests.id('c5')) || '/' || tests.ov(tests.id('c1')) || '/' || tests.sq('select count(*)::text from public.pricing_table_members'), '/////2');
-select tests.is('pricing tables: clearing one fee puts that slot back to standard (the other Marvin''s fees stay); clearing a missing slot is a no-op',
-  tests.rpc(tests.id('a2'), $$public.admin_clear_pricing_fee('$$ || (select id from pt where k = 'marvin') || $$', 'MD', 'purchase', 'seller')$$) || '/' ||
-  tests.rpc(tests.id('a2'), $$public.admin_clear_pricing_fee('$$ || (select id from pt where k = 'marvin') || $$', 'VA', 'purchase', 'seller')$$) || '/' ||
-  tests.ov(tests.id('e9')), '//*:refi:buyer:300.00,MD:purchase:buyer:900.00');
+select tests.is('pricing tables: editing Marvin''s MD set to leave the seller box empty puts that line back to standard (other fees stay); removing a missing set is a quiet no-op',
+  (tests.save(tests.id('a2'), (select id from pt where k = 'marvin'), (select id from fs where k = 'md'), 'MD', '900', null, null) = (select id::text from fs where k = 'md'))::text || '/' ||
+  tests.rpc(tests.id('a2'), $$public.admin_remove_pricing_fee_set('$$ || (select id from pt where k = 'marvin') || $$', '00000000-0000-4000-8000-00000000ffff')$$) || '/' ||
+  tests.ov(tests.id('e9')), 'true//*:refi:buyer:300.00,MD:purchase:buyer:900.00');
 select tests.is('pricing tables: rename: the new name is tidied, a clash with another table (any case) is refused (23505), the same name again is a no-op, unknown table P0002; members and fees stay',
   tests.rpc(tests.id('a2'), $$public.admin_rename_pricing_table('$$ || (select id from pt where k = 'marvin') || $$', '  Marvin   Jones Pricing ')$$) || '/' ||
   tests.rpc(tests.id('a2'), $$public.admin_rename_pricing_table('$$ || (select id from pt where k = 'marvin') || $$', 'jane''s PRICING')$$) || '/' ||
@@ -1594,19 +1610,19 @@ select tests.is('pricing tables: deleting an unknown table: P0002; deleting Jane
 -- audit
 select tests.is('pricing tables: every change is audited by operation, with names, emails and before / after',
   (select string_agg(op || ':' || n, ',' order by op) from (select details ->> 'op' op, count(*)::text n from public.audit_log where action = 'pricing_table_changed' group by 1) x),
-  'create:2,delete:2,fee_clear:1,fee_set:5,member_add:3,member_move:2,member_remove:1,rename:1');
+  'create:2,delete:2,fee_set_add:3,fee_set_edit:2,member_add:3,member_move:2,member_remove:1,rename:1');
 select tests.is('pricing tables: the delete audit rows say how many fees and members went (Marvin''s: 2 fees... then Jane''s 1 fee, 1 member)',
   (select string_agg((details ->> 'name') || ':' || (details ->> 'fees_removed') || ':' || (details ->> 'members_released'), ',' order by at, id) from public.audit_log where action = 'pricing_table_changed' and details ->> 'op' = 'delete'),
   'Marvin Jones Pricing:2:1,Jane''s Pricing:1:1');
 select tests.is('pricing tables: a move is audited with the table it came from; a fee change with before and after',
   (select (details ->> 'from_table') from public.audit_log where details ->> 'op' = 'member_move' order by at, id limit 1) || '/' ||
-  (select (details ->> 'before') || '>' || (details ->> 'after') from public.audit_log where details ->> 'op' = 'fee_set' and details ->> 'after' = '925.50'), 'Marvin''s Pricing/925.51>925.50');
+  (select (details -> 'before' ->> 'purchase_buyer') || '>' || (details -> 'after' ->> 'purchase_buyer') from public.audit_log where details ->> 'op' = 'fee_set_edit' and details -> 'after' ->> 'purchase_buyer' = '925.50'), 'Marvin''s Pricing/925.51>925.50');
 select tests.is('pricing tables: privileges: anon cannot run any of the pricing functions; authenticated can; one overload each',
   (select bool_and(not has_function_privilege('anon', f, 'execute') and has_function_privilege('authenticated', f, 'execute'))::text
      from unnest(array['public.admin_create_pricing_table(text)', 'public.admin_rename_pricing_table(uuid, text)', 'public.admin_delete_pricing_table(uuid)',
-       'public.admin_set_pricing_fee(uuid, text, text, text, numeric)', 'public.admin_clear_pricing_fee(uuid, text, text, text)',
+       'public.admin_save_pricing_fee_set(uuid, uuid, text[], numeric, numeric, numeric, boolean)', 'public.admin_remove_pricing_fee_set(uuid, uuid)',
        'public.admin_add_pricing_member(uuid, text, boolean)', 'public.admin_remove_pricing_member(uuid, text)', 'public.get_my_fee_overrides()']) f) || '/' ||
-  (select count(*)::text from pg_proc where pronamespace = 'public'::regnamespace and proname in ('admin_create_pricing_table', 'admin_rename_pricing_table', 'admin_delete_pricing_table', 'admin_set_pricing_fee', 'admin_clear_pricing_fee', 'admin_add_pricing_member', 'admin_remove_pricing_member', 'get_my_fee_overrides')), 'true/8');
+  (select count(*)::text from pg_proc where pronamespace = 'public'::regnamespace and proname in ('admin_create_pricing_table', 'admin_rename_pricing_table', 'admin_delete_pricing_table', 'admin_save_pricing_fee_set', 'admin_remove_pricing_fee_set', 'admin_add_pricing_member', 'admin_remove_pricing_member', 'get_my_fee_overrides')), 'true/8');
 select tests.is('pricing tables: the fee rows follow the table out (fee and member foreign keys are ON DELETE CASCADE)',
   (select string_agg(confdeltype::text, ',' order by conrelid::regclass::text) from pg_constraint where contype = 'f' and confrelid = 'public.pricing_tables'::regclass), 'c,c');
 
@@ -1616,9 +1632,9 @@ create temp table pt2 (k text, id uuid);
 insert into pt2 select 'rep', nullif(tests.v(tests.id('a1'), $$select public.admin_create_pricing_table('Marcus Rep Pricing')::text$$), '')::uuid;
 insert into pt2 select 'own', nullif(tests.v(tests.id('a2'), $$select public.admin_create_pricing_table('Omar Own Pricing')::text$$), '')::uuid;
 select tests.is('client pricing: set up two tables: "Marcus Rep Pricing" (all-states purchase buyer 950) with Marcus in it, and "Omar Own Pricing" (800) still empty',
-  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('$$ || (select id from pt2 where k = 'rep') || $$', '*', 'purchase', 'buyer', 950)$$) || '/' ||
-  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('$$ || (select id from pt2 where k = 'own') || $$', '*', 'purchase', 'buyer', 800)$$) || '/' ||
-  tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('$$ || (select id from pt2 where k = 'rep') || $$', 'sample.rep.marcus@clatitle.com')$$), '//added');
+  (tests.save(tests.id('a1'), (select id from pt2 where k = 'rep'), null, '*', '950', null, null) ~ '^[0-9a-f-]{36}$')::text || '/' ||
+  (tests.save(tests.id('a1'), (select id from pt2 where k = 'own'), null, '*', '800', null, null) ~ '^[0-9a-f-]{36}$')::text || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('$$ || (select id from pt2 where k = 'rep') || $$', 'sample.rep.marcus@clatitle.com')$$), 'true/true/added');
 select tests.is('client pricing: a client NOT in any table follows the assigned rep''s table: Marcus, Omar and Sam all get 950; Jane (no table) and Lee (her client) get standard; e8 (no rep) gets standard',
   tests.ov(tests.id('b2')) || ' ' || tests.ov(tests.id('c5')) || ' ' || tests.ov(tests.id('c1')) || ' [' || tests.ov(tests.id('b1')) || '] [' || tests.ov(tests.id('c2')) || '] [' || tests.ov(tests.id('e8')) || ']',
   '*:purchase:buyer:950.00 *:purchase:buyer:950.00 *:purchase:buyer:950.00 [] [] []');
@@ -1665,6 +1681,58 @@ select tests.is('client pricing: the settlement-only rule still holds for these 
   tests.p($$insert into public.pricing_table_fees (table_id, fee_key, transaction, paid_by, amount) values (gen_random_uuid(), 'premium', 'purchase', 'buyer', 1)$$) || '/' ||
   tests.p($$insert into public.pricing_table_fees (table_id, fee_key, transaction, paid_by, amount) values (gen_random_uuid(), 'recording', 'purchase', 'buyer', 1)$$), 'ERR:23514/ERR:23514');
 
+
+-- ---- MULTI-STATE FEE SETS inside one table (John: "2 or 3 states if needed") ----
+-- state here: no pricing tables left. Jane (b1, rep) will be the member; Lee (c2) is her client.
+create temp table pt3 (k text, id uuid);
+insert into pt3 select 'multi', nullif(tests.rpc(tests.id('a1'), $$public.admin_create_pricing_table('Multi State Pricing')$$), '')::uuid;
+create temp table fs3 (k text, id uuid);
+select tests.is('multi-state: two sets in one table: MD+VA (any case, any order) 900 / 500, and FL 1000 / 800; Jane joins the table',
+  (tests.save(tests.id('a1'), (select id from pt3), null, 'va, md', '900', '500', null) ~ '^[0-9a-f-]{36}$')::text || '/' ||
+  (tests.save(tests.id('a2'), (select id from pt3), null, 'FL', '1000', '800', null) ~ '^[0-9a-f-]{36}$')::text || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('$$ || (select id from pt3) || $$', 'sample.rep.jane@clatitle.com')$$), 'true/true/added');
+insert into fs3 select 'mdva', set_id from public.pricing_table_fees where state = 'MD' limit 1;
+insert into fs3 select 'fl', set_id from public.pricing_table_fees where state = 'FL' limit 1;
+select tests.is('multi-state: the set applies to EACH chosen state (MD and VA 900 / 500), FL has its own set, and DC (in no set, no all-states set) gets nothing; Lee follows his rep Jane',
+  tests.ovn(tests.id('b1')) || ' | ' || (tests.ovn(tests.id('c2')) = tests.ovn(tests.id('b1')))::text || ' | ' || tests.sq($q$select count(*)::text || '/' || count(distinct set_id)::text from public.pricing_table_fees$q$),
+  'FL:purchase:buyer:1000.00,FL:purchase:seller:800.00,MD:purchase:buyer:900.00,MD:purchase:seller:500.00,VA:purchase:buyer:900.00,VA:purchase:seller:500.00 | true | 6/2');
+select tests.is('multi-state: a state can be in only ONE set: adding VA+DC is refused (23505) and the message names the set holding VA; nothing changed',
+  tests.msg(tests.id('a1'), $$select public.admin_save_pricing_fee_set('$$ || (select id from pt3) || $$', null, array['VA', 'DC'], 1100, 700, null, false)::text$$) || ' | ' ||
+  tests.sq('select count(*)::text from public.pricing_table_fees'), 'ERR:23505:VA is already in another fee set of "Multi State Pricing" (MD, VA) | 6');
+select tests.is('multi-state: with the move confirmed (p_move) VA leaves the MD+VA set and joins the new VA+DC set (1100 / 700); MD keeps its set; the audit row lists the moved state',
+  (tests.save(tests.id('a1'), (select id from pt3), null, 'VA,DC', '1100', '700', null, true) ~ '^[0-9a-f-]{36}$')::text || ' | ' ||
+  tests.ovn(tests.id('b1')) || ' | ' ||
+  tests.sq($q$select (details -> 'moved_states')::text || (details ->> 'op') from public.audit_log where action = 'pricing_table_changed' and details ->> 'op' = 'fee_set_add' and jsonb_array_length(details -> 'moved_states') > 0$q$),
+  'true | DC:purchase:buyer:1100.00,DC:purchase:seller:700.00,FL:purchase:buyer:1000.00,FL:purchase:seller:800.00,MD:purchase:buyer:900.00,MD:purchase:seller:500.00,VA:purchase:buyer:1100.00,VA:purchase:seller:700.00 | ["VA"]fee_set_add');
+insert into fs3 select 'vadc', set_id from public.pricing_table_fees where state = 'DC' limit 1;
+select tests.is('multi-state: editing a set''s states: VA+DC becomes DC only (VA now has no fee: standard), then MD+VA takes VA back (900 / 500); the set ids stay',
+  (tests.save(tests.id('a1'), (select id from pt3), (select id from fs3 where k = 'vadc'), 'DC', '1100', '700', null) = (select id::text from fs3 where k = 'vadc'))::text || ' | ' ||
+  tests.ovn(tests.id('b1')) || ' | ' ||
+  (tests.save(tests.id('a1'), (select id from pt3), (select id from fs3 where k = 'mdva'), 'MD,VA', '900', '500', null) = (select id::text from fs3 where k = 'mdva'))::text || ' | ' ||
+  tests.ovn(tests.id('b1')),
+  'true | DC:purchase:buyer:1100.00,DC:purchase:seller:700.00,FL:purchase:buyer:1000.00,FL:purchase:seller:800.00,MD:purchase:buyer:900.00,MD:purchase:seller:500.00 | true | DC:purchase:buyer:1100.00,DC:purchase:seller:700.00,FL:purchase:buyer:1000.00,FL:purchase:seller:800.00,MD:purchase:buyer:900.00,MD:purchase:seller:500.00,VA:purchase:buyer:900.00,VA:purchase:seller:500.00');
+select tests.is('multi-state: an ALL-STATES set is the fallback for states with no set of their own, and a state''s own set beats it as a whole: the all-states set (950 / 600 / refi 350) with only DC removed from its own set gives DC the fallback; MD, VA, FL keep their sets and their empty refi line is STANDARD (not 350)',
+  (tests.save(tests.id('a1'), (select id from pt3), null, '*', '950', '600', '350') ~ '^[0-9a-f-]{36}$')::text || ' | ' ||
+  tests.rpc(tests.id('a1'), $$public.admin_remove_pricing_fee_set('$$ || (select id from pt3) || $$', '$$ || (select id from fs3 where k = 'vadc') || $$')$$) || ' | ' ||
+  tests.ovn(tests.id('b1')),
+  'true |  | *:purchase:buyer:950.00,*:purchase:seller:600.00,*:refi:buyer:350.00,FL:purchase:buyer:1000.00,FL:purchase:seller:800.00,FL:refi:buyer:std,MD:purchase:buyer:900.00,MD:purchase:seller:500.00,MD:refi:buyer:std,VA:purchase:buyer:900.00,VA:purchase:seller:500.00,VA:refi:buyer:std');
+select tests.is('multi-state: a second all-states set is refused (one all-states fallback per table); all-states cannot be mixed with single states',
+  tests.msg(tests.id('a1'), $$select public.admin_save_pricing_fee_set('$$ || (select id from pt3) || $$', null, array['*'], 1, null, null, false)::text$$) || ' | ' ||
+  tests.save(tests.id('a1'), (select id from pt3), null, '*,DC', '1', null, null), 'ERR:23505:* is already in another fee set of "Multi State Pricing" (*) | ERR:22023');
+select tests.is('multi-state: a set that leaves a line empty means STANDARD for its states, not the all-states fee: MD+VA with only a buyer fee gives MD seller "std" even though all-states has 600',
+  (tests.save(tests.id('a1'), (select id from pt3), (select id from fs3 where k = 'mdva'), 'MD,VA', '900', null, null) = (select id::text from fs3 where k = 'mdva'))::text || ' | ' ||
+  (tests.ovn(tests.id('b1')) like '%MD:purchase:buyer:900.00,MD:purchase:seller:std,MD:refi:buyer:std%')::text, 'true | true');
+select tests.is('multi-state: removing the MD+VA set sends MD and VA to the all-states fallback (950 / 600 / 350): only FL keeps a set of its own',
+  tests.rpc(tests.id('a2'), $$public.admin_remove_pricing_fee_set('$$ || (select id from pt3) || $$', '$$ || (select id from fs3 where k = 'mdva') || $$')$$) || ' | ' ||
+  tests.ovn(tests.id('b1')) || ' | ' || tests.sq($q$select string_agg(distinct state, ',' order by state) from public.pricing_table_fees$q$),
+  ' | *:purchase:buyer:950.00,*:purchase:seller:600.00,*:refi:buyer:350.00,FL:purchase:buyer:1000.00,FL:purchase:seller:800.00,FL:refi:buyer:std | *,FL');
+select tests.is('multi-state: audit: sets are added / edited / removed with states and amounts before and after (add 4, edit 3, remove 2 in this table)',
+  (select string_agg(op || ':' || n, ',' order by op) from (select details ->> 'op' op, count(*)::text n from public.audit_log where action = 'pricing_table_changed' and details ->> 'table' = 'Multi State Pricing' and details ->> 'op' like 'fee_set%' group by 1) x),
+  'fee_set_add:4,fee_set_edit:3,fee_set_remove:2');
+select tests.is('multi-state: deleting the table deletes its sets: Jane and Lee are back on standard fees, the audit row counts the sets (2) and members (1)',
+  tests.rpc(tests.id('a1'), $$public.admin_delete_pricing_table('$$ || (select id from pt3) || $$')$$) || ' | ' || tests.ovn(tests.id('b1')) || ' | ' || tests.ovn(tests.id('c2')) || ' | ' ||
+  tests.sq($q$select (details ->> 'fees_removed') || ':' || (details ->> 'members_released') from public.audit_log where details ->> 'op' = 'delete' and details ->> 'name' = 'Multi State Pricing'$q$) || ' | ' ||
+  tests.sq('select count(*)::text from public.pricing_table_fees'), ' |  |  | 2:1 | 0');
 
 -- ---------------- privileges ----------------
 select tests.is('function privileges: anon cannot run the admin RPCs, authenticated can',

@@ -4,8 +4,8 @@
 <meta name="theme-color" content="#000000">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="zip-county.js?v=20261027c"></script>
-<script src="fee-snapshot.js?v=20261027c"></script>
+<script src="zip-county.js?v=20261027d"></script>
+<script src="fee-snapshot.js?v=20261027d"></script>
 <style>
 :root{--g:#8dc63f;--gd:#6fa52a;--gdd:#4d7a17;--ink:#111;--mut:#5b6272;--line:#e3e8da;--bg:#f4f7ef;--field:#d5dbca}
 *{box-sizing:border-box}
@@ -427,7 +427,7 @@ const isSettlementFee=n=>/^settlement fee to cla title/i.test(String(n??"").trim
 const feeSide=p=>{p=String(p??"").trim().toLowerCase();return p==="buyer"||p==="borrower"?"buyer":p==="seller"?"seller":null};
 function repFeeOverride(ov,st,type,name,payer){if(!isSettlementFee(name))return null;const side=feeSide(payer);if(!side)return null;
  const tx=type==="refi"?"refi":"purchase",rows=(ov||[]).filter(o=>o&&eq(o.transaction,tx)&&eq(o.paidBy,side)&&(o.state==="*"||eq(o.state,st)));
- const hit=rows.find(o=>eq(o.state,st))||rows.find(o=>o.state==="*"),a=hit?num(hit.amount):null;return a!=null&&a>=0?r2(a):null}
+ const hit=rows.find(o=>eq(o.state,st))||rows.find(o=>o.state==="*");if(!hit||hit.amount==null)return null;/* a state's own fee set beats the all-states set; an amount of null in it = standard fee for that line */const a=num(hit.amount);return a!=null&&a>=0?r2(a):null}
 function applyRepFees(fees,ov,st,type){return(fees||[]).map(f=>{const a=repFeeOverride(ov,st,type,f.name,f.payer);return a==null?f:Object.assign({},f,{amt:a,std:f.amt,special:true})})}
 
 // ---------- seller net sheet (reuses calc's seller column; nothing about fees/taxes is re-derived here) ----------
@@ -621,7 +621,7 @@ load(SNAP,"Built-in snapshot","snapshot");$("status").textContent="Loading fees 
 // Guided tour: "Take the tour" (header) and a small first-visit chip. Works for everyone, signed in or not. The engine is portal/js/tour.js + portal/tour.css,
 // downloaded only when someone starts the tour. The chip shows once; dismissing it (x), starting the tour, or finishing it hides it for good (localStorage).
 (function(){
- var V="20261027c",KEY="cla_calc_tour_chip",link=document.getElementById("claCalcTourLink"),chip=document.getElementById("claTourChip"),loading=null;
+ var V="20261027d",KEY="cla_calc_tour_chip",link=document.getElementById("claCalcTourLink"),chip=document.getElementById("claTourChip"),loading=null;
  function seen(){try{return window.localStorage.getItem(KEY)==="1"}catch(e){return true}} // no storage: never show the chip (it could not remember "no thanks")
  function dismiss(){try{window.localStorage.setItem(KEY,"1")}catch(e){}if(chip)chip.hidden=true}
  function add(tag,attrs){return new Promise(function(res){var e=document.createElement(tag);for(var k in attrs)e[k]=attrs[k];e.onload=e.onerror=function(){res()};document.head.appendChild(e)})}
@@ -635,4 +635,4 @@ load(SNAP,"Built-in snapshot","snapshot");$("status").textContent="Loading fees 
   document.getElementById("claTourChipX").onclick=function(){dismiss();if(link)link.focus()}}
 })();
 </script>
-<script src="portal/js/portal-hook.js?v=20261027c" defer></script></body></html>
+<script src="portal/js/portal-hook.js?v=20261027d" defer></script></body></html>

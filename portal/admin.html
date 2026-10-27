@@ -5,7 +5,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="portal.css">
 <script src="config.js"></script>
-<script src="../fee-snapshot.js?v=20261027c"></script>
+<script src="../fee-snapshot.js?v=20261027d"></script>
 <script src="js/mock-data.js"></script><script src="js/mock-adapter.js"></script><script src="js/supabase-adapter.js"></script><script src="js/auth-adapter.js"></script><script src="js/portal-ui.js"></script>
 </head><body>
 <main class="pg">
@@ -51,7 +51,7 @@
     <div class="row" style="grid-template-columns:minmax(0,1fr) auto auto;align-items:end;margin-bottom:0"><div><label for="ptNewName">Pricing name</label><input type="text" id="ptNewName" maxlength="80" autocomplete="off" placeholder="Marvin's Pricing"></div>
      <button class="btn" type="submit">Create table</button><button class="btn o" id="ptNewCancel" type="button">Cancel</button></div></form></section>
   <section class="card flush"><div class="sh"><h2>Your pricing tables</h2><div class="grow"><span class="sum" id="ptCount"></span></div></div>
-   <div class="tablewrap"><table><thead><tr><th>Pricing table</th><th>Settlement fees set</th><th>Members (rep and client emails)</th><th></th></tr></thead><tbody id="ptRows"></tbody></table></div></section>
+   <div class="tablewrap"><table><thead><tr><th>Pricing table</th><th>Fee sets (states)</th><th>Members (rep and client emails)</th><th></th></tr></thead><tbody id="ptRows"></tbody></table></div></section>
  </div>
  <div id="ptDetailView" class="stack" hidden>
   <section class="card"><div style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap">
@@ -61,14 +61,24 @@
    <form id="ptRenameForm" hidden novalidate style="margin-top:14px"><div class="row" style="grid-template-columns:minmax(0,1fr) auto auto;align-items:end;margin-bottom:0"><div><label for="ptRenameName">New name</label><input type="text" id="ptRenameName" maxlength="80" autocomplete="off"></div>
      <button class="btn" type="submit">Save name</button><button class="btn o" id="ptRenameCancel" type="button">Cancel</button></div></form>
    <div id="pErr" class="msg err" role="alert" style="margin-top:12px"></div><div id="pOk" class="msg ok" role="status" style="margin-top:12px"></div></section>
-  <section class="card"><h2>Settlement fees in this table</h2>
-   <p class="sub">Leave a box empty to keep the standard fee for that line.</p>
-   <div class="row" style="grid-template-columns:minmax(0,320px)"><div><label for="pState">Applies to</label><select id="pState"><option value="*">All states</option><option value="MD">Maryland only</option><option value="VA">Virginia only</option><option value="DC">Washington, DC only</option><option value="FL">Florida only</option></select></div></div>
-   <div class="tablewrap"><table><thead><tr><th>Settlement fee</th><th class="num">Standard fee</th><th class="num">This table</th></tr></thead><tbody id="pSlots"></tbody></table></div>
-   <p class="sum" id="pStdNote" style="margin:10px 0 0"></p>
-   <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap"><button class="btn" id="pSave" type="button">Save fees</button><button class="btn o" id="pClear" type="button">Back to standard for this selection</button></div>
-   <h3 style="margin:22px 0 8px;font-size:15px">Fees set in this table</h3>
-   <div class="tablewrap"><table><thead><tr><th>Applies to</th><th>Settlement fee</th><th class="num">Standard</th><th class="num">This table</th><th></th></tr></thead><tbody id="pRows"></tbody></table></div></section>
+  <section class="card"><div style="display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap"><div style="flex:1;min-width:260px"><h2>Settlement fee sets in this table</h2>
+   <p class="sub" style="margin:0">A fee set is one group of states with its own settlement fees, for example MD + VA at $900 / $500 and FL at $1,000 / $800. A state can be in only one set. A set for <b>All states</b> is the fallback for any state without a set of its own. Empty boxes keep the standard fee.</p></div>
+   <button class="btn" id="fsAdd" type="button">Add fee set</button></div>
+   <form id="fsEditor" hidden novalidate style="margin-top:18px;padding:16px;border:1px solid #d9e3cf;border-radius:12px;background:#fafcf7">
+    <h3 id="fsTitle" style="margin:0 0 10px;font-size:16px">New fee set</h3>
+    <div id="fsErr" class="msg err" role="alert"></div>
+    <div id="fsMove" class="msg err" hidden role="alert" style="display:none"><span id="fsMoveTxt"></span> <button class="btn" id="fsMoveBtn" type="button" style="min-height:32px;padding:4px 12px;margin-left:8px">Move to this set</button> <button class="btn o" id="fsMoveNo" type="button" style="min-height:32px;padding:4px 12px">Cancel</button></div>
+    <label style="display:block;margin-bottom:6px">Applies to these states</label>
+    <div id="fsStates" style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin-bottom:6px">
+     <label class="chk" style="margin:0"><input type="checkbox" id="fsAll"> <b>All states</b> <span class="sum">(fallback)</span></label>
+     <span class="sum">or pick:</span>
+     <label class="chk" style="margin:0"><input type="checkbox" data-st="MD"> Maryland (MD) <span class="sum" data-in="MD"></span></label>
+     <label class="chk" style="margin:0"><input type="checkbox" data-st="VA"> Virginia (VA) <span class="sum" data-in="VA"></span></label>
+     <label class="chk" style="margin:0"><input type="checkbox" data-st="DC"> Washington, DC <span class="sum" data-in="DC"></span></label>
+     <label class="chk" style="margin:0"><input type="checkbox" data-st="FL"> Florida (FL) <span class="sum" data-in="FL"></span></label></div>
+    <div class="tablewrap"><table><thead><tr><th>Settlement fee</th><th class="num">Standard fee</th><th class="num">This fee set</th></tr></thead><tbody id="fsSlots"></tbody></table></div>
+    <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap"><button class="btn" id="fsSave" type="submit">Save fee set</button><button class="btn o" id="fsCancel" type="button">Cancel</button></div></form>
+   <div class="tablewrap" style="margin-top:16px"><table><thead><tr><th>Applies to</th><th class="num">Purchase: buyer pays</th><th class="num">Purchase: seller pays</th><th class="num">Refinance: borrower pays</th><th></th></tr></thead><tbody id="pRows"></tbody></table></div></section>
   <section class="card"><h2>Members: reps and clients who use this table</h2>
    <p class="sub">Add a rep or an individual client by email (any email address). A rep's assigned clients follow the rep's table unless the client is in a table of their own. One email can be in only one pricing table. You can add an email before the person has a portal account: the fees apply as soon as they sign in with it.</p>
    <div id="mErr" class="msg err" role="alert"></div><div id="mOk" class="msg ok" role="status"></div>
@@ -223,7 +233,7 @@
   const STATE_NAME = { "*": "All states", MD: "Maryland", VA: "Virginia", DC: "Washington, DC", FL: "Florida" };
   const ROLE_NAME = { rep: "Sales rep", admin: "Admin", super_admin: "Super admin", client: "Client" };
   let PT = { tables: [], fees: [], members: [] }, openId = null;
-  const clearMsgs = () => { ["ptLoadErr", "pErr", "pOk", "mErr", "mOk", "ptNewErr"].forEach((i) => ($(i).textContent = "")); hideMove(); };
+  const clearMsgs = () => { ["ptLoadErr", "pErr", "pOk", "mErr", "mOk", "ptNewErr", "fsErr"].forEach((i) => ($(i).textContent = "")); if ($("fsMove")) { $("fsMove").hidden = true; $("fsMove").style.display = "none"; } hideMove(); };
   const hideMove = () => { $("mMove").hidden = true; $("mMove").style.display = "none"; pendingMove = null; };
   let pendingMove = null;
   // standard settlement fee for a slot, from the built-in fee snapshot (the calculator uses the live fee sheet; they match unless the sheet changed since the snapshot)
@@ -246,27 +256,45 @@
   function drawList() {
     const rows = PT.tables.slice().sort((a, b) => a.name.localeCompare(b.name));
     $("ptCount").textContent = rows.length + " table" + (rows.length === 1 ? "" : "s") + " · " + PT.members.length + " rep or client email" + (PT.members.length === 1 ? "" : "s") + " assigned";
-    $("ptRows").innerHTML = rows.length ? rows.map((t) => { const f = tFees(t.id), m = tMembers(t.id);
-      return '<tr><td><b>' + esc(t.name) + "</b></td><td>" + (f.length ? f.length + " fee" + (f.length === 1 ? "" : "s") : '<span class="sum">None yet (standard fees)</span>') + "</td><td>" +
+    $("ptRows").innerHTML = rows.length ? rows.map((t) => { const f = setsOf(t.id), m = tMembers(t.id);
+      return '<tr><td><b>' + esc(t.name) + "</b></td><td>" + (f.length ? f.map((x) => esc(statesLabel(x.states))).join("<br>") : '<span class="sum">No fee sets yet (standard fees)</span>') + "</td><td>" +
         (m.length ? m.map((x) => esc(x.email)).join("<br>") : '<span class="sum">No members yet</span>') + '</td><td style="text-align:right"><button type="button" class="btn o" data-open="' + esc(t.id) + '" style="min-height:34px;padding:4px 14px">Open</button></td></tr>'; }).join("")
       : '<tr><td colspan="4" class="sum">No pricing tables yet. Everyone pays the standard settlement fee. Click "New pricing table" to start.</td></tr>';
   }
   function drawDetail() {
     const t = tbl(openId); if (!t) return;
-    $("ptTitle").textContent = t.name; $("ptSub").textContent = tFees(t.id).length + " settlement fee" + (tFees(t.id).length === 1 ? "" : "s") + " set · " + tMembers(t.id).length + " member" + (tMembers(t.id).length === 1 ? "" : "s") + " · created " + CLA.date(t.createdAt);
-    drawSlots(); drawFees(); drawMembers();
+    $("ptTitle").textContent = t.name; $("ptSub").textContent = setsOf(t.id).length + " fee set" + (setsOf(t.id).length === 1 ? "" : "s") + " · " + tMembers(t.id).length + " member" + (tMembers(t.id).length === 1 ? "" : "s") + " · created " + CLA.date(t.createdAt);
+    drawFees(); drawMembers();
   }
-  function drawSlots() {
-    const st = $("pState").value;
-    $("pSlots").innerHTML = SLOTS.map(([tx, side, label]) => { const o = PT.fees.find((x) => x.tableId === openId && x.state === st && x.transaction === tx && x.paidBy === side);
-      return "<tr><td>" + esc(label) + '</td><td class="num">' + esc(stdText(st, tx, side)) + '</td><td class="num"><input type="text" inputmode="decimal" data-tx="' + tx + '" data-side="' + side + '" aria-label="Fee in this table, ' + esc(label) + '" placeholder="Standard" value="' + (o ? o.amount.toFixed(2) : "") + '" style="min-height:36px;width:130px;text-align:right"></td></tr>'; }).join("");
-    $("pStdNote").textContent = st === "*" ? "A fee set for one state beats the all-states fee for the same line. Standard fees shown come from the built-in fee snapshot; the calculator uses the live fee sheet." : "Applies only in " + STATE_NAME[st] + " and beats an all-states fee for the same line.";
+  // a fee SET = the rows that share a set id: {id, states, amounts}. States in a fixed order; the all-states set last.
+  const ST_ORDER = ["MD", "VA", "DC", "FL"], ST_SHORT = { "*": "All states", MD: "Maryland", VA: "Virginia", DC: "Washington, DC", FL: "Florida" };
+  const setsOf = (tableId) => { const g = {}; PT.fees.filter((f) => f.tableId === tableId).forEach((f) => (g[f.setId] = g[f.setId] || []).push(f));
+    return Object.keys(g).map((id) => { const r = g[id], amt = (tx, pb) => { const x = r.find((f) => f.transaction === tx && f.paidBy === pb); return x ? x.amount : null; };
+      return { id, states: [...new Set(r.map((f) => f.state))].sort((a, b) => ST_ORDER.indexOf(a) - ST_ORDER.indexOf(b)), pb: amt("purchase", "buyer"), ps: amt("purchase", "seller"), rb: amt("refi", "buyer") }; })
+      .sort((a, b) => (a.states[0] === "*") - (b.states[0] === "*") || ST_ORDER.indexOf(a.states[0]) - ST_ORDER.indexOf(b.states[0])); };
+  const stdForStates = (states, tx, side) => { const v = [...new Set([].concat(...(states[0] === "*" ? ["*"] : states).map((st) => stdFees(st, tx, side))))]; return v.length ? v.map(CLA.money).join(" / ") : "—"; };
+  const statesLabel = (states) => states[0] === "*" ? "All states" : states.map((x) => ST_SHORT[x]).join(", ");
+  let editingSet = null;   // null = a new set, else the id of the set being edited
+  const selStates = () => ($("fsAll").checked ? ["*"] : [...$("fsStates").querySelectorAll("input[data-st]")].filter((c) => c.checked).map((c) => c.dataset.st));
+  function drawEditorSlots() {
+    const sts = selStates(), keep = {}; $("fsSlots").querySelectorAll("input").forEach((i) => (keep[i.dataset.tx + i.dataset.side] = i.value));
+    $("fsSlots").innerHTML = SLOTS.map(([tx, side, label]) => "<tr><td>" + esc(label) + '</td><td class="num">' + esc(sts.length ? stdForStates(sts, tx, side) : "—") + '</td><td class="num"><input type="text" inputmode="decimal" data-tx="' + tx + '" data-side="' + side + '" aria-label="Fee in this set, ' + esc(label) + '" placeholder="Standard" value="' + esc(keep[tx + side] || "") + '" style="min-height:36px;width:130px;text-align:right"></td></tr>').join("");
+    const mineIds = new Set(setsOf(openId).filter((x) => x.id !== editingSet).flatMap((x) => x.states));
+    $("fsStates").querySelectorAll("[data-in]").forEach((sp) => (sp.textContent = mineIds.has(sp.dataset.in) ? "(in another set)" : ""));
   }
+  function openEditor(set) {
+    editingSet = set ? set.id : null; clearMsgs(); $("fsEditor").hidden = false; $("fsTitle").textContent = set ? "Edit fee set: " + statesLabel(set.states) : "New fee set";
+    $("fsAll").checked = !!set && set.states[0] === "*"; $("fsStates").querySelectorAll("input[data-st]").forEach((c) => { c.checked = !!set && set.states.includes(c.dataset.st); c.disabled = $("fsAll").checked; });
+    $("fsSlots").innerHTML = ""; drawEditorSlots();
+    if (set) { const v = { purchasebuyer: set.pb, purchaseseller: set.ps, refibuyer: set.rb }; $("fsSlots").querySelectorAll("input").forEach((i) => { const x = v[i.dataset.tx + i.dataset.side]; i.value = x == null ? "" : x.toFixed(2); }); }
+    if ($("fsEditor").scrollIntoView) $("fsEditor").scrollIntoView({ block: "nearest" });
+  }
+  function drawSlots() { /* the editor draws itself (drawEditorSlots) when it is opened or the states change */ }
   function drawFees() {
-    const rows = tFees(openId).sort((a, b) => a.state.localeCompare(b.state) || a.transaction.localeCompare(b.transaction) || a.paidBy.localeCompare(b.paidBy));
-    $("pRows").innerHTML = rows.length ? rows.map((o) => "<tr><td>" + esc(STATE_NAME[o.state] || o.state) + "</td><td>" + esc(slotLabel(o.transaction, o.paidBy)) + '</td><td class="num">' + esc(stdText(o.state, o.transaction, o.paidBy)) + '</td><td class="num"><b>' + CLA.money(o.amount) +
-      '</b></td><td style="text-align:right"><button type="button" class="btn o" data-clearfee="' + esc(o.id) + '" style="min-height:32px;padding:4px 12px">Clear</button></td></tr>').join("")
-      : '<tr><td colspan="5" class="sum">No fees set yet: members of this table pay the standard fees.</td></tr>';
+    const rows = setsOf(openId), cell = (set, k, tx, side) => set[k] == null ? '<span class="sum">Standard</span>' : "<b>" + CLA.money(set[k]) + '</b><br><span class="sum">standard ' + esc(stdForStates(set.states, tx, side)) + "</span>";
+    $("pRows").innerHTML = rows.length ? rows.map((x) => '<tr data-set="' + esc(x.id) + '"><td><b>' + esc(statesLabel(x.states)) + "</b>" + (x.states[0] === "*" ? '<br><span class="sum">for states with no set of their own</span>' : "") + '</td><td class="num">' + cell(x, "pb", "purchase", "buyer") + '</td><td class="num">' + cell(x, "ps", "purchase", "seller") + '</td><td class="num">' + cell(x, "rb", "refi", "buyer") +
+      '</td><td style="text-align:right;white-space:nowrap"><button type="button" class="btn o" data-editset="' + esc(x.id) + '" style="min-height:32px;padding:4px 12px">Edit</button> <button type="button" class="btn o" data-rmset="' + esc(x.id) + '" style="min-height:32px;padding:4px 12px">Remove</button></td></tr>').join("")
+      : '<tr><td colspan="5" class="sum">No fee sets yet: members of this table pay the standard fees. Click "Add fee set".</td></tr>';
   }
   // the pricing table a rep or client uses by being listed themselves (null = none)
   const tableOfEmail = (email) => { const m = email && PT.members.find((x) => x.email === email.toLowerCase()); return m ? tbl(m.tableId) : null; };
@@ -287,7 +315,7 @@
       return "<tr><td>" + esc(m.email) + "</td><td>" + acct + "</td><td>" + role + '</td><td style="text-align:right"><button type="button" class="btn o" data-rm="' + esc(m.email) + '" style="min-height:32px;padding:4px 12px">Remove</button></td></tr>'; }).join("")
       : '<tr><td colspan="4" class="sum">No members yet. Type a rep\'s or a client\'s email above and click Add.</td></tr>';
   }
-  function openTable(id) { openId = id; $("pState").value = "*"; $("ptRenameForm").hidden = true; clearMsgs(); drawDetail(); showView(); window.scrollTo(0, 0); }
+  function openTable(id) { openId = id; $("fsEditor").hidden = true; $("ptRenameForm").hidden = true; clearMsgs(); drawDetail(); showView(); window.scrollTo(0, 0); }
   $("ptRows").onclick = (e) => { const b = e.target.closest("[data-open]"); if (b) openTable(b.dataset.open); };
   $("ptBack").onclick = async () => { openId = null; clearMsgs(); await loadPricing(); };
   // new table: asks for a name
@@ -304,27 +332,35 @@
   $("ptDelete").onclick = async () => { const t = tbl(openId), m = tMembers(openId).length; clearMsgs();
     if (!confirm('Delete the pricing table "' + t.name + '"?\n\n' + (m ? m + " email" + (m === 1 ? "" : "s") + " will go back to the standard fees (a client goes back to their rep's table, if the rep has one). " : "") + "This cannot be undone.")) return;
     try { await A.adminDeletePricingTable(openId); openId = null; await loadPricing(); } catch (ex) { $("pErr").textContent = ex.message; } };
-  // fees
-  $("pState").onchange = () => { clearMsgs(); drawSlots(); };
-  $("pSave").onclick = async () => { clearMsgs(); const st = $("pState").value, jobs = [];
-    for (const inp of $("pSlots").querySelectorAll("input")) {
-      const tx = inp.dataset.tx, side = inp.dataset.side, v = inp.value.replace(/[$,\s]/g, ""), cur = PT.fees.find((x) => x.tableId === openId && x.state === st && x.transaction === tx && x.paidBy === side);
-      if (v === "") { if (cur) jobs.push(["clear", { tableId: openId, state: st, transaction: tx, paidBy: side }]); continue; }
-      const n = Number(v); if (!isFinite(n) || n < 0 || n > 99999.99) { $("pErr").textContent = "Enter a dollar amount from 0 to 99,999.99 (or leave the box empty for the standard fee)."; inp.focus(); return; }
-      if (!cur || Math.round(n * 100) !== Math.round(cur.amount * 100)) jobs.push(["set", { tableId: openId, state: st, transaction: tx, paidBy: side, amount: Math.round(n * 100) / 100 }]);
-    }
-    if (!jobs.length) { $("pOk").textContent = "Nothing to change."; return; }
-    try { for (const [k, o] of jobs) await (k === "set" ? A.adminSetPricingFee(o) : A.adminClearPricingFee(o));
-      $("pOk").textContent = "Saved " + tbl(openId).name + " (" + STATE_NAME[st] + "): " + jobs.length + " change" + (jobs.length === 1 ? "" : "s") + ". New quotes by its members use it right away."; }
-    catch (ex) { $("pErr").textContent = ex.message; }
-    const ok = $("pOk").textContent, er = $("pErr").textContent; await loadPricing(); $("pOk").textContent = ok; if (er) $("pErr").textContent = er; };
-  $("pClear").onclick = async () => { clearMsgs(); const st = $("pState").value, mine = PT.fees.filter((x) => x.tableId === openId && x.state === st);
-    if (!mine.length) { $("pOk").textContent = "Already standard for this selection."; return; }
-    try { for (const o of mine) await A.adminClearPricingFee({ tableId: openId, state: st, transaction: o.transaction, paidBy: o.paidBy }); $("pOk").textContent = "Back to the standard settlement fee for " + STATE_NAME[st] + "."; } catch (ex) { $("pErr").textContent = ex.message; }
-    const ok = $("pOk").textContent, er = $("pErr").textContent; await loadPricing(); $("pOk").textContent = ok; if (er) $("pErr").textContent = er; };
-  $("pRows").onclick = async (e) => { const b = e.target.closest("[data-clearfee]"); if (!b) return; const o = PT.fees.find((x) => x.id === b.dataset.clearfee); if (!o) return; clearMsgs();
-    try { await A.adminClearPricingFee({ tableId: o.tableId, state: o.state, transaction: o.transaction, paidBy: o.paidBy }); $("pOk").textContent = "Cleared: back to the standard fee for that line."; } catch (ex) { $("pErr").textContent = ex.message; }
-    const ok = $("pOk").textContent, er = $("pErr").textContent; await loadPricing(); $("pOk").textContent = ok; if (er) $("pErr").textContent = er; };
+  // fee sets
+  $("fsAdd").onclick = () => openEditor(null);
+  $("fsCancel").onclick = () => { $("fsEditor").hidden = true; hideFsMove(); };
+  const hideFsMove = () => { $("fsMove").hidden = true; $("fsMove").style.display = "none"; };
+  $("fsStates").onchange = (e) => {
+    if (e.target.id === "fsAll") $("fsStates").querySelectorAll("input[data-st]").forEach((c) => { if (e.target.checked) c.checked = false; c.disabled = e.target.checked; });
+    $("fsErr").textContent = ""; hideFsMove(); drawEditorSlots();
+  };
+  const saveSet = async (move) => {
+    $("fsErr").textContent = ""; hideFsMove(); const states = selStates(), amt = {}; $("pOk").textContent = ""; $("pErr").textContent = "";
+    if (!states.length) { $("fsErr").textContent = "Pick at least one state, or All states."; return; }
+    for (const inp of $("fsSlots").querySelectorAll("input")) { const v = inp.value.replace(/[$,\s]/g, ""), n = Number(v);
+      if (v !== "" && (!isFinite(n) || n < 0 || n > 99999.99)) { $("fsErr").textContent = "Enter a dollar amount from 0 to 99,999.99 (or leave the box empty for the standard fee)."; inp.focus(); return; }
+      amt[inp.dataset.tx + inp.dataset.side] = v === "" ? null : Math.round(n * 100) / 100; }
+    try { await A.adminSavePricingFeeSet({ tableId: openId, setId: editingSet, states, purchaseBuyer: amt.purchasebuyer, purchaseSeller: amt.purchaseseller, refiBorrower: amt.refibuyer, move: !!move });
+      const msg = "Saved the fee set for " + statesLabel(states) + " in " + tbl(openId).name + ". New quotes by its members use it right away.";
+      $("fsEditor").hidden = true; editingSet = null; await loadPricing(); $("pOk").textContent = msg; }
+    catch (ex) { if (/already in another fee set/.test(ex.message)) { $("fsMoveTxt").textContent = ex.message + " A state can be in only one fee set."; $("fsMove").hidden = false; $("fsMove").style.display = ""; } else $("fsErr").textContent = ex.message; }
+  };
+  $("fsEditor").onsubmit = (e) => { e.preventDefault(); saveSet(false); };
+  $("fsMoveBtn").onclick = () => saveSet(true);
+  $("fsMoveNo").onclick = hideFsMove;
+  $("pRows").onclick = async (e) => {
+    const ed = e.target.closest("[data-editset]"), rm = e.target.closest("[data-rmset]");
+    if (ed) { const set = setsOf(openId).find((x) => x.id === ed.dataset.editset); if (set) openEditor(set); return; }
+    if (!rm) return; const set = setsOf(openId).find((x) => x.id === rm.dataset.rmset); if (!set) return; clearMsgs();
+    if (!confirm("Remove the fee set for " + statesLabel(set.states) + " from " + tbl(openId).name + "?\n\n" + (set.states[0] === "*" ? "States without a set of their own go back to the standard fees." : "Those states go back to the all-states set if the table has one, otherwise to the standard fees."))) return;
+    try { await A.adminRemovePricingFeeSet(openId, set.id); $("fsEditor").hidden = true; await loadPricing(); $("pOk").textContent = "Removed the fee set for " + statesLabel(set.states) + "."; } catch (ex) { $("pErr").textContent = ex.message; }
+  };
   // members (by email)
   const addMember = async (email, move) => { clearMsgs();
     try { const r = await A.adminAddPricingMember(openId, email, { move }); $("mEmail").value = "";

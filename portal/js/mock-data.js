@@ -94,12 +94,15 @@
     // starter pricing tables (migration 16), all fake: "Marvin's Pricing" (Marcus, plus an email with no portal account yet) and "Jane's Pricing" (Jane)
     const PT = (n, name) => ({ id: "pt" + n, name, createdBy: id("a1"), createdAt: iso(3), updatedAt: iso(1) });
     const pricingTables = [PT(1, "Marvin's Pricing"), PT(2, "Jane's Pricing")];
-    const PF = (n, t, st, tx, pb, amt) => ({ id: "pf" + n, tableId: "pt" + t, state: st, transaction: tx, paidBy: pb, amount: amt, updatedAt: iso(1), updatedBy: id("a1") });
-    const pricingFees = [PF(1, 1, "*", "purchase", "buyer", 950), PF(2, 1, "*", "purchase", "seller", 600), PF(3, 1, "*", "refi", "buyer", 350),
-      PF(4, 2, "MD", "purchase", "buyer", 900), PF(5, 2, "MD", "purchase", "seller", 500)];
+    // fee SETS: one set = a selection of states + amounts, stored as one row per state per line (setId groups them).
+    // Marvin's Pricing: one all-states set (the fallback). Jane's Pricing: an MD+VA set (900 / 500) and a separate FL set (1000 / 800); DC has no set, so Jane pays standard there.
+    const PF = (n, t, set, st, tx, pb, amt) => ({ id: "pf" + n, tableId: "pt" + t, setId: "ps" + set, state: st, transaction: tx, paidBy: pb, amount: amt, updatedAt: iso(1), updatedBy: id("a1") });
+    const pricingFees = [PF(1, 1, 1, "*", "purchase", "buyer", 950), PF(2, 1, 1, "*", "purchase", "seller", 600), PF(3, 1, 1, "*", "refi", "buyer", 350),
+      PF(4, 2, 2, "MD", "purchase", "buyer", 900), PF(5, 2, 2, "MD", "purchase", "seller", 500), PF(6, 2, 2, "VA", "purchase", "buyer", 900), PF(7, 2, 2, "VA", "purchase", "seller", 500),
+      PF(8, 2, 3, "FL", "purchase", "buyer", 1000), PF(9, 2, 3, "FL", "purchase", "seller", 800)];
     const PM = (n, t, email) => ({ id: "pm" + n, tableId: "pt" + t, email, addedBy: id("a1"), addedAt: iso(2) });
     // Omar is Marcus's client but is listed in Jane's Pricing himself: his own email beats his rep's table
     const pricingMembers = [PM(1, 1, "sample.rep.marcus@clatitle.com"), PM(2, 1, "marvin.newhire@clatitle.com"), PM(3, 2, "sample.rep.jane@clatitle.com"), PM(4, 2, "omar.broker@example.com")];
-    return { version: 8, users, assignments, quotes, audit, photos, invitations, feedback, pricingTables, pricingFees, pricingMembers };
+    return { version: 9, users, assignments, quotes, audit, photos, invitations, feedback, pricingTables, pricingFees, pricingMembers };
   };
 })();
