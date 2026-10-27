@@ -65,7 +65,9 @@
   CLA.helpHref = (p) => (CLA.isStaff(p) ? "staff-help.html" : "help.html");
   CLA.isStaff = (p) => !!p && (p.role === "super_admin" || p.role === "admin" || p.role === "rep") && (!p.status || p.status === "active");
   // ---- staff feedback: a "Feedback" button in the header. Staff only: others never even download the widget. ----
-  CLA.FEEDBACK_V = "20261025g";   // cache-bust for feedback-widget.js / .css; bump with the ?v= in index.html
+  // a decision the sender has not looked at yet (migration 17): drives the dot on the feedback bubble and the "Updated" tag in the list
+  CLA.feedbackUnread = (f) => !!f && ["approved", "shipped", "dismissed"].includes(f.status) && (f.seenStatus || null) !== f.status;
+  CLA.FEEDBACK_V = "20261027j";   // cache-bust for feedback-widget.js / .css; bump with the ?v= in index.html
   CLA.startFeedback = async function (A, me, opts) {
     try {
       if (!A || !CLA.isStaff(me) || typeof A.submitFeedback !== "function") return null;
@@ -76,7 +78,7 @@
   };
   // ---- guided tour (js/tour.js + tour.css; loaded only when someone is about to see it) ----
   // Each tour lives on the person's own dashboard: admin.html (admin / super admin), rep.html (rep), client.html (client / realtor).
-  CLA.TOUR_V = "20261027i";   // cache-bust for tour.js / tour.css; bump with the ?v= in index.html
+  CLA.TOUR_V = "20261027j";   // cache-bust for tour.js / tour.css; bump with the ?v= in index.html
   CLA.tourKind = (me) => { const f = location.pathname.split("/").pop(); return !me ? null : f === "admin.html" && CLA.isAdmin(me) ? "admin" : f === "rep.html" && CLA.isRep(me) ? "rep" : f === "client.html" && me.role === "client" ? "client" : null; };
   CLA.loadTour = () => CLA.startTour ? Promise.resolve() : new Promise((res, rej) => { const s = document.createElement("script"); s.src = "js/tour.js?v=" + CLA.TOUR_V; s.onload = res; s.onerror = () => rej(new Error("load")); document.head.appendChild(s); });
   // Called by each dashboard once it has drawn itself. Starts the tour on its own ONLY for a person who has never seen it (profiles.tour_seen_at is NULL,

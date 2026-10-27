@@ -11,7 +11,9 @@
   const MAX = 2000;
   const CATS = [["bug", "Bug: something is broken"], ["idea", "Idea: something that would help"], ["question", "Question"], ["other", "Other"]];
   const CAT_NAME = { bug: "Bug", idea: "Idea", question: "Question", other: "Other" };
-  const STATUS_NAME = { new: "Received", notified: "John has been told", approved: "Approved", dismissed: "Closed" };
+  // what the sender sees (migration 17): "notified" (John has been told) is just "Received" to them
+  const STATUS_NAME = { new: "Received", notified: "Received", approved: "Approved \u00b7 on the list", shipped: "Shipped", dismissed: "Not planned" };
+  const STATUS_CLS = { new: "new", notified: "new", approved: "approved", shipped: "shipped", dismissed: "dismissed" };
   // path only: no query, no hash (the database cuts them off as well)
   CLA.feedbackPage = (loc) => { const l = loc || window.location; return String((l && l.pathname) || "").split("?")[0].split("#")[0].slice(0, 200); };
 
@@ -34,6 +36,7 @@
     link.setAttribute("aria-haspopup", "dialog"); link.setAttribute("aria-expanded", "false"); link.setAttribute("aria-label", "Send feedback"); link.setAttribute("data-tip", "Feedback"); link.title = "Send feedback to John";
     link.appendChild(svg("claFbIcoChat", [["path", { d: "M5 4h14a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-6.2l-4.3 3.4c-.6.5-1.5.1-1.5-.7V18H5a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3z", fill: "currentColor" }], ["circle", { cx: "8.5", cy: "11", r: "1.3", fill: "#8dc63f" }], ["circle", { cx: "12.5", cy: "11", r: "1.3", fill: "#8dc63f" }], ["circle", { cx: "16.5", cy: "11", r: "1.3", fill: "#8dc63f" }]]));
     link.appendChild(svg("claFbIcoX", [["path", { d: "M6 6l12 12M18 6L6 18", fill: "none", stroke: "currentColor", "stroke-width": "2.6", "stroke-linecap": "round" }]]));
+    const dot = el("span", "claFbDot"); dot.id = "claFbDot"; dot.hidden = true; dot.setAttribute("aria-hidden", "true"); link.appendChild(dot);   // unread dot: a decision the sender has not looked at yet
     document.body.appendChild(link);
 
     // ---- the panel (built once, shown on demand; it opens above the bubble, or as a bottom sheet on a phone) ----
@@ -67,23 +70,32 @@
     again.type = "button"; again.id = "claFbAgain"; closeB.type = "button"; closeB.id = "claFbClose"; row2.appendChild(again); row2.appendChild(closeB);
     done.appendChild(okMark); done.appendChild(thanks); done.appendChild(row2);
     // my feedback
-    const mine = el("div", "claFbMine"); mine.id = "claFbMine"; mine.appendChild(el("h3", "", "Your feedback"));
+    const mine = el("div", "claFbMine"); mine.id = "claFbMine"; mine.appendChild(el("h3", "", "My suggestions"));
     const ul = el("ul"); ul.setAttribute("aria-live", "polite"); mine.appendChild(ul);
     [hi, title, form, done, mine].forEach((x) => body.appendChild(x)); dlg.appendChild(xBtn); dlg.appendChild(body); ovl.appendChild(dlg); document.body.appendChild(ovl);
 
     const short = (t) => (t.length > 160 ? t.slice(0, 160) + "…" : t);
-    async function paintMine() {
-      let rows = [];
-      try { rows = (await A.listMyFeedback()) || []; } catch (e) { rows = []; }
+    const setDot = (n) => { dot.hidden = !n; dot.textContent = n > 9 ? "9+" : String(n || ""); link.setAttribute("aria-label", n ? "Send feedback (" + n + " update" + (n === 1 ? "" : "s") + " on your suggestions)" : "Send feedback"); };
+    let lastRows = [];
+    async function loadMine() { try { lastRows = (await A.listMyFeedback()) || []; } catch (e) { lastRows = []; } setDot(lastRows.filter((f) => CLA.feedbackUnread(f)).length); return lastRows; }
+    // "My suggestions": newest first, each with a friendly status; everything from a user is put on the page with textContent. Rows that changed since the sender last looked get an "Updated" tag.
+    async function paintMine(markSeen) {
+      const rows = await loadMine();
       ul.textContent = "";
       if (!rows.length) { ul.appendChild(el("li", "none", "Nothing sent yet.")); return; }
-      rows.slice(0, 8).forEach((f) => {
-        const li = el("li"), b = el("b", "", CAT_NAME[f.category] || f.category), st = el("span", "st " + f.status, STATUS_NAME[f.status] || f.status);
-        li.appendChild(b); li.appendChild(st); li.appendChild(document.createTextNode(" · " + new Date(f.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" }) + " · " + short(String(f.message || ""))));
-        if (f.decidedNote) li.appendChild(el("span", "note", "John: " + f.decidedNote));
+      rows.slice(0, 10).forEach((f) => {
+        const li = el("li"), b = el("b", "", CAT_NAME[f.category] || f.category), st = el("span", "st " + (STATUS_CLS[f.status] || "new"), STATUS_NAME[f.status] || f.status);
+        li.appendChild(b); li.appendChild(st);
+        if (CLA.feedbackUnread(f)) { const up = el("span", "up", "Updated"); li.appendChild(up); li.classList.add("unread"); }
+        li.appendChild(document.createTextNode(" · " + new Date(f.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" }) + " · " + short(String(f.message || ""))));
+        if (f.status === "shipped") li.appendChild(el("span", "note", f.shippedNote ? "What changed: " + f.shippedNote : "This is live now."));
+        if (f.decidedNote && f.status !== "shipped") li.appendChild(el("span", "note", "John: " + f.decidedNote));
         ul.appendChild(li);
       });
+      // they have now seen the current status of everything: clear the dot (the "Updated" tags stay until the panel is closed)
+      if (markSeen && rows.some((f) => CLA.feedbackUnread(f)) && typeof A.markMyFeedbackSeen === "function") { try { await A.markMyFeedbackSeen(); setDot(0); } catch (e) { /* the dot simply stays */ } }
     }
+    loadMine();   // the dot, as soon as the bubble is on the page
     function show(view) { form.hidden = view !== "form"; done.hidden = view !== "done"; title.hidden = view !== "form"; if (view === "done") { okMark.classList.remove("go"); void okMark.offsetWidth; okMark.classList.add("go"); } }
     const setBusy = (b) => { send.disabled = b; send.classList.toggle("busy", b); if (b) send.setAttribute("aria-busy", "true"); else send.removeAttribute("aria-busy"); send.querySelector(".claFbSendTx").textContent = b ? "Sending…" : "Send feedback"; };
     const setCount = () => { count.textContent = msg.value.length + " / " + MAX; count.classList.toggle("warn", msg.value.length > MAX * 0.9); };
@@ -92,7 +104,7 @@
       if (closing) { clearTimeout(closing); closing = null; ovl.classList.remove("out"); }
       if (isOpen) return; isOpen = true;
       err.textContent = ""; msg.value = ""; setCount(); cat.value = "bug"; syncChips(); setBusy(false);
-      page.textContent = "Page: " + (CLA.feedbackPage() || "/"); show("form"); ovl.hidden = false; link.classList.add("open"); link.setAttribute("aria-expanded", "true"); paintMine(); msg.focus();
+      page.textContent = "Page: " + (CLA.feedbackPage() || "/"); show("form"); ovl.hidden = false; link.classList.add("open"); link.setAttribute("aria-expanded", "true"); paintMine(true); msg.focus();
       document.addEventListener("keydown", onKey);
     };
     const finish = () => { closing = null; ovl.hidden = true; ovl.classList.remove("out"); };
@@ -119,9 +131,9 @@
       if (!text) { err.textContent = "Please write a message first."; msg.focus(); return; }
       if (text.length > MAX) { err.textContent = "That is too long (" + MAX + " characters at most)."; return; }
       setBusy(true);
-      try { await A.submitFeedback({ category: cat.value, message: text, page: CLA.feedbackPage() }); setBusy(false); show("done"); closeB.focus(); paintMine(); }
+      try { await A.submitFeedback({ category: cat.value, message: text, page: CLA.feedbackPage() }); setBusy(false); show("done"); closeB.focus(); paintMine(false); }
       catch (ex) { err.textContent = (ex && ex.message) || "Could not send. Please try again."; setBusy(false); }
     };
-    return { link, open, close, root: ovl };
+    return { link, open, close, root: ovl, refresh: () => paintMine(false) };
   };
 })();

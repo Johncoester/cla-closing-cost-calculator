@@ -99,6 +99,9 @@ with sync_playwright() as p:
     pg.evaluate("window.scrollTo(0,0)"); snap(pg, "feedback-bubble", clip={"x": 780, "y": 540, "width": 500, "height": 360}, fixed=True)
     pg.click("#claFeedbackLink"); pg.wait_for_timeout(700); pg.fill("#claFbMsg", "Example: the print view cuts off the footer on my laptop."); 
     snap(pg, "feedback-open", clip={"x": 820, "y": 90, "width": 460, "height": 810}, fixed=True)
+    # "My suggestions" (migration 17): scroll the panel to the list; the Updated tags show what changed since the last visit
+    pg.evaluate("()=>{const u=document.querySelector('#claFbMine ul');u.style.maxHeight='none';u.style.overflow='visible';document.querySelector('#claFbMine').scrollIntoView({block:'end'})}"); pg.wait_for_timeout(300)   # (the real list scrolls; expanded here so every status shows)
+    dr = pg.evaluate("()=>{const r=document.querySelector('.claFbDlg').getBoundingClientRect();return {x:Math.max(0,r.x-16),y:Math.max(0,r.y-16),width:r.width+32,height:r.height+32}}"); snap(pg, "feedback-mine", clip=dr, fixed=True)
     pg.keyboard.press("Escape")
     # rep dashboard
     pg.goto(B + "portal/rep.html"); pg.wait_for_selector("#clients tr"); pg.wait_for_load_state("networkidle")
@@ -159,6 +162,7 @@ with sync_playwright() as p:
     pg.click('#tabs button[data-i="1"]'); pg.wait_for_timeout(600); snap(pg, "admin-quotes", clip=mainclip(pg, 1000))
     pg.click('#tabs button[data-i="3"]'); pg.wait_for_timeout(600); snap(pg, "admin-audit", clip=mainclip(pg, 560))
     pg.click('#tabs button[data-i="4"]'); pg.wait_for_timeout(600); snap(pg, "admin-feedback", clip=mainclip(pg, 720))
+    snap(pg, "admin-feedback-ship", sel="#fbRows tr:has([data-ship-note])", pad=10)   # an approved item: the What changed field and Mark shipped
     # pricing
     pg.click('#tabs button[data-i="5"]'); pg.wait_for_selector("#ptRows tr"); pg.wait_for_timeout(600)
     snap(pg, "pricing-tables", clip=mainclip(pg, 820))

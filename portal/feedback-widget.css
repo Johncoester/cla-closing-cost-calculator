@@ -18,6 +18,7 @@
 .claFbFab .claFbIcoX{opacity:0;transform:rotate(-70deg) scale(.6)}
 .claFbFab.open .claFbIcoChat{opacity:0;transform:rotate(70deg) scale(.6)}
 .claFbFab.open .claFbIcoX{opacity:1;transform:none}
+.claFbDot{position:absolute;top:-3px;right:-3px;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:#e53935;color:#fff;font:700 11px/20px system-ui,sans-serif;text-align:center;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.3);pointer-events:none}.claFbDot[hidden]{display:none}.claFbFab.open .claFbDot{display:none}
 .claFbFab::before{content:"";position:absolute;inset:0;border-radius:50%;border:2px solid var(--fbg);opacity:0;pointer-events:none;animation:claFbPulse 1.9s ease-out 1.4s 2 both}   /* attention pulse, twice, once per page load */
 .claFbFab::after{content:attr(data-tip);position:absolute;right:calc(100% + 10px);top:50%;transform:translate(6px,-50%);background:#111;color:#fff;font-size:12.5px;font-weight:600;line-height:1;padding:7px 10px;border-radius:8px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .15s ease,transform .15s ease}
 .claFbFab:hover::after,.claFbFab:focus-visible::after{opacity:1;transform:translate(0,-50%)}
@@ -85,11 +86,12 @@
 /* my feedback */
 .claFbMine{margin-top:16px;padding:12px 0 6px;border-top:1px solid var(--fbline)}
 .claFbMine h3{margin:0 0 8px;font-size:11.5px;color:var(--fbmut);text-transform:uppercase;letter-spacing:.06em}
-.claFbMine ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px;max-height:150px;overflow:auto}
+.claFbMine ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px;max-height:230px;overflow:auto}
 .claFbMine li{padding:8px 11px;border:1px solid var(--fbline);border-radius:12px;background:#fbfcf8;font-size:12.5px;overflow-wrap:anywhere}
 .claFbMine li b{font-weight:700}.claFbMine .st{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;background:#eef1e8;font-size:11px;font-weight:700}
 .claFbMine .st.approved{background:#d8efb6;color:#1d3a06}.claFbMine .st.dismissed{background:#e9e9e9;color:#555}.claFbMine .st.notified{background:#e4ecfa;color:#1c3d73}
-.claFbMine .note{display:block;margin-top:3px;color:#26370c}.claFbMine .none{color:var(--fbmut);font-size:13px;padding:2px 0}
+.claFbMine .st.shipped{background:#8dc63f;color:#112200}.claFbMine .up{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;background:#111;color:#fff;font-size:10.5px;font-weight:700;letter-spacing:.02em}.claFbMine li.unread{border-color:#8dc63f;background:#f4fae8}
+.claFbMine .note.sub{color:#4b5563}.claFbMine .note{display:block;margin-top:3px;color:#26370c}.claFbMine .none{color:var(--fbmut);font-size:13px;padding:2px 0}
 
 /* if the AI assistant launcher is on the page too (chatbot branch: .claChat, bottom-right), sit above it */
 body:has(.claChat) .claFbFab{bottom:calc(var(--fbpad-b) + 70px)}

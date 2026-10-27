@@ -74,7 +74,11 @@
  *   listMyFeedback()                      -> Feedback[]  the caller's own submissions, newest first (the "Your feedback" list; shows status and John's note)
  *   adminListFeedback()                   -> Feedback[]  ADMIN or SUPER ADMIN: everything, newest first
  *   adminSetFeedbackStatus(id, status, note?)   SUPER ADMIN ONLY. status: approved|dismissed; note optional (<= 1000 chars). 'new' and 'notified' are set by the assistant, not here.
- *   Feedback = {id, createdAt, userId, roleAtSubmit, category, message, pagePath, status: new|notified|approved|dismissed, notifiedAt, decidedAt, decidedNote}
+ *   Feedback = {id, createdAt, userId, roleAtSubmit, category, message, pagePath, status: new|notified|approved|shipped|dismissed, notifiedAt, decidedAt, decidedNote, shippedAt, shippedNote, seenStatus}
+ *  Feedback status updates (migration 17; NO e-mail is sent by anything here):
+ *   adminMarkFeedbackShipped(id, note?)   SUPER ADMIN ONLY, approved items only; note = "what changed" (<= 500 chars) shown to the sender
+ *   markMyFeedbackSeen(id?)               -> number   the sender marks their OWN notes (one, or all) as seen; the only thing a sender can write
+ *   CLA.feedbackUnread(f): a decision (approved / shipped / dismissed) the sender has not looked at yet (f.seenStatus !== f.status); drives the dot on the bubble
  *   The message is USER CONTENT: put it on the page with textContent / CLA.esc(), never as raw HTML.
  *  Named PRICING TABLES for the CLA settlement fee (migration 16: pricing_tables, pricing_table_fees, pricing_table_members).
  *   ONLY CLA's "Settlement Fee to CLA Title & Escrow" line; premiums / recording fees can never be stored. A table has a unique name ("Marvin's Pricing"),

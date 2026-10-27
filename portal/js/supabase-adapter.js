@@ -26,8 +26,8 @@
     const iso = (x) => x || null;
 
     // ---- row <-> DTO mappers ----
-    const FB_COLS = "id, created_at, user_id, role_at_submit, category, message, page_path, status, notified_at, decided_at, decided_note";
-    const toFeedback = (r) => ({ id: r.id, createdAt: r.created_at, userId: r.user_id, roleAtSubmit: r.role_at_submit, category: r.category, message: r.message, pagePath: r.page_path, status: r.status, notifiedAt: r.notified_at, decidedAt: r.decided_at, decidedNote: r.decided_note });
+    const FB_COLS = "id, created_at, user_id, role_at_submit, category, message, page_path, status, notified_at, decided_at, decided_note, shipped_at, shipped_note, sender_seen_status";
+    const toFeedback = (r) => ({ id: r.id, createdAt: r.created_at, userId: r.user_id, roleAtSubmit: r.role_at_submit, category: r.category, message: r.message, pagePath: r.page_path, status: r.status, notifiedAt: r.notified_at, decidedAt: r.decided_at, decidedNote: r.decided_note, shippedAt: r.shipped_at || null, shippedNote: r.shipped_note || null, seenStatus: r.sender_seen_status || null });
     const toProfile = (r) => r && ({
       id: r.id, role: r.role, status: r.status, email: r.email, firstName: r.first_name || "", lastName: r.last_name || "",
       phone: r.phone, cellPhone: r.cell_phone || null, companyName: r.company_name, companyPhone: r.company_phone, companyAddress: r.company_address,
@@ -204,6 +204,9 @@
       async listMyFeedback() { const me = await this.getMyProfile(); return must(await sb.from("feedback").select(FB_COLS).eq("user_id", me.id).order("created_at", { ascending: false }).limit(20)).map(toFeedback); },
       async adminListFeedback() { return must(await sb.from("feedback").select(FB_COLS).order("created_at", { ascending: false }).limit(500)).map(toFeedback); },
       async adminSetFeedbackStatus(id, status, note) { must(await sb.rpc("admin_set_feedback_status", { p_id: id, p_status: status, p_note: note || null })); },   // super admin only
+      // ---- feedback status updates (migration 17): "mark shipped" is super admin only; "seen" is the sender marking their OWN notes (nothing else a sender can write) ----
+      async adminMarkFeedbackShipped(id, note) { must(await sb.rpc("admin_mark_feedback_shipped", { p_id: id, p_note: note || null })); },
+      async markMyFeedbackSeen(id) { return must(await sb.rpc("mark_my_feedback_seen", id ? { p_id: id } : {})); },
       async adminSetIsRep(id, on, reassignTo) { must(await sb.rpc("admin_set_is_rep", Object.assign({ p_user: id, p_is_rep: !!on }, reassignTo ? { p_reassign_to: reassignTo } : {}))); },   // super admins only; targets: admin or super admin ("Also works as a rep")
       async adminReassign(email, repId) { must(await sb.rpc("admin_reassign_client", { p_client_email: email, p_rep_id: repId })); },
       // ---- named PRICING TABLES for the settlement fee (migration 16): reads through RLS / the RPC, writes only through the admin RPCs ----

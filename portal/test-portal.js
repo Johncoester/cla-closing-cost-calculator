@@ -351,7 +351,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
   {
     const GREET = "Hey! I am John Coester here to help you. Give me some feedback.";
     // sample rows exist for the admin panel
-    await as("sample.admin@clatitle.com"); assert.strictEqual((await A.adminListFeedback()).length, 3); ok("feedback: the demo data has 3 sample submissions");
+    await as("sample.admin@clatitle.com"); assert.strictEqual((await A.adminListFeedback()).length, 9); ok("feedback: the demo data has 9 sample submissions (every status)");
     // clients and signed-out visitors can neither send nor read
     await as("sam.agent@example.com");
     await reject(A.submitFeedback({ category: "bug", message: "hi", page: "/x" }), /Not allowed/, "feedback: a client cannot submit");
@@ -362,7 +362,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     // a rep: sends, reads only their own, cannot read others or decide
     await as("sample.rep.jane@clatitle.com");
     const r1 = await A.submitFeedback({ category: " IDEA ", message: "  Please add a dark mode.  ", page: "/portal/rep.html?client=secret#top" });
-    const mine = await A.listMyFeedback(); assert.strictEqual(mine.length, 2); const row = mine.find((f) => f.id === r1.id);
+    const mine = await A.listMyFeedback(); assert.strictEqual(mine.length, 6); const row = mine.find((f) => f.id === r1.id);
     assert.deepStrictEqual([row.category, row.message, row.pagePath, row.status, row.roleAtSubmit, row.userId], ["idea", "Please add a dark mode.", "/portal/rep.html", "new", "rep", id("b1")]); ok("feedback: a rep submits (trimmed, category normalised, page = path only, status new, role stamped)");
     assert.ok(mine.every((f) => f.userId === id("b1"))); ok("feedback: a rep sees only their own submissions");
     await reject(A.adminListFeedback(), /Admins only/, "feedback: a rep cannot read everyone's feedback");
@@ -380,7 +380,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     // admin / super admin read everything; only a super admin decides
     await as("sample.robin.admin@clatitle.com"); const all = await A.adminListFeedback(); assert.ok(all.length >= 12 && all.some((f) => f.userId === id("b1")) && all.some((f) => f.userId === id("b2"))); ok("feedback: an Admin reads everyone's feedback");
     await reject(A.adminSetFeedbackStatus("fb1", "approved"), /Only a super admin/, "feedback: an Admin cannot approve or dismiss");
-    await A.submitFeedback({ category: "idea", message: "Admin idea" }); assert.strictEqual((await A.listMyFeedback()).length, 2); ok("feedback: an Admin can send feedback too (their own: sample + new)");
+    await A.submitFeedback({ category: "idea", message: "Admin idea" }); assert.strictEqual((await A.listMyFeedback()).length, 3); ok("feedback: an Admin can send feedback too (their own: two samples + new)");
     await as("sample.admin@clatitle.com");
     await reject(A.adminSetFeedbackStatus("fb1", "notified"), /approved or dismissed/, "feedback: notified is not settable from the app");
     await reject(A.adminSetFeedbackStatus("nope", "approved"), /No such feedback/, "feedback: an unknown id is refused");
@@ -390,6 +390,30 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     await A.adminSetFeedbackStatus("fb1", "dismissed", "   "); f1 = (await A.adminListFeedback()).find((f) => f.id === "fb1"); assert.deepStrictEqual([f1.status, f1.decidedNote], ["dismissed", null]); ok("feedback: a decision can be changed; a blank note is stored as none");
     const au = await A.adminAuditLog(50); assert.ok(au.some((x) => x.action === "feedback_decided") && au.some((x) => x.action === "feedback_submitted")); assert.ok(!JSON.stringify(au.filter((x) => x.action === "feedback_submitted")).includes("dark mode")); ok("feedback: audited (the message itself is not copied into the audit log)");
     await as("sample.rep.jane@clatitle.com"); assert.strictEqual((await A.listMyFeedback()).every((f) => f.userId === id("b1")), true);
+    // ---- feedback status updates (migration 17): shipped, the sender's seen marker, mark shipped ----
+    const unread = (rows) => Array.from(rows).filter((f) => ["approved", "shipped", "dismissed"].includes(f.status) && (f.seenStatus || null) !== f.status);
+    await as("sample.rep.jane@clatitle.com"); let jm = await A.listMyFeedback();
+    assert.deepStrictEqual([...new Set(Array.from(jm).map((f) => f.status))].sort(), ["approved", "dismissed", "new", "shipped"]); assert.deepStrictEqual(unread(jm).map((f) => f.id).sort(), ["fb1", "fb4", "fb5"]); ok("feedback status: the demo data has a note in every status; Jane has unread decisions (fb4 approved, fb5 shipped, and fb1 just dismissed above)");
+    assert.strictEqual(await A.markMyFeedbackSeen("fb4"), 1); assert.strictEqual(await A.markMyFeedbackSeen("fb4"), 0); assert.deepStrictEqual(unread(await A.listMyFeedback()).map((f) => f.id).sort(), ["fb1", "fb5"]); ok("feedback status: a sender marks one note as seen (once); the others stay unread");
+    assert.strictEqual(await A.markMyFeedbackSeen("fb8"), 0); await as("sample.rep.marcus@clatitle.com"); assert.deepStrictEqual(unread(await A.listMyFeedback()).map((f) => f.id), ["fb8"]); ok("feedback status: marking someone else's note changes nothing (Marcus still has his unread)");
+    await as("sample.rep.jane@clatitle.com"); assert.ok((await A.markMyFeedbackSeen()) >= 1); assert.strictEqual(unread(await A.listMyFeedback()).length, 0); ok("feedback status: mark all seen clears every unread decision");
+    await as("sam.agent@example.com"); await reject(A.markMyFeedbackSeen(), /Not allowed/, "feedback status: a client cannot mark seen"); await reject(A.adminMarkFeedbackShipped("fb4", "x"), /Admins only/, "feedback status: a client cannot mark shipped");
+    await as("sample.rep.jane@clatitle.com"); await reject(A.adminMarkFeedbackShipped("fb4", "x"), /Admins only/, "feedback status: a rep cannot mark shipped");
+    await as("sample.robin.admin@clatitle.com"); await reject(A.adminMarkFeedbackShipped("fb4", "x"), /Only a super admin/, "feedback status: an Admin cannot mark shipped (same permission as approve)");
+    await as("sample.admin@clatitle.com");
+    await reject(A.adminMarkFeedbackShipped("fb1", "x"), /Only an approved item/, "feedback status: a new (not approved) item cannot be shipped"); await reject(A.adminMarkFeedbackShipped("nope", "x"), /No such feedback/, "feedback status: an unknown id is refused");
+    await reject(A.adminMarkFeedbackShipped("fb4", "n".repeat(501)), /too long/, "feedback status: a 501-character shipped note is refused");
+    await A.adminMarkFeedbackShipped("fb4", "  Save as PDF is in the calculator.  "); let f4 = (await A.adminListFeedback()).find((x) => x.id === "fb4");
+    assert.deepStrictEqual([f4.status, f4.shippedNote, !!f4.shippedAt, f4.decidedNote, f4.seenStatus], ["shipped", "Save as PDF is in the calculator.", true, "Good one, it is on the list.", null]); ok("feedback status: a super admin marks an approved item shipped with a note (trimmed); the decision note stays; the sender's seen marker resets");
+    await reject(A.adminMarkFeedbackShipped("fb4", "again"), /Only an approved item/, "feedback status: a shipped item cannot be shipped twice"); await reject(A.adminSetFeedbackStatus("fb4", "dismissed"), /already shipped/, "feedback status: a shipped item cannot be dismissed or re-approved");
+    await A.adminMarkFeedbackShipped("fb3", ""); assert.strictEqual((await A.adminListFeedback()).find((x) => x.id === "fb3").shippedNote, null); ok("feedback status: the shipped note is optional (a blank note is stored as none)");
+    await as("sample.rep.jane@clatitle.com"); jm = await A.listMyFeedback(); assert.deepStrictEqual(unread(jm).map((f) => f.id), ["fb4"]); ok("feedback status: the sender sees the shipped item as unread again");
+    await as("sample.admin@clatitle.com"); await A.adminSetFeedbackStatus("fb6", "dismissed", "Not now: fees depend on the property, so we want you to pick it each time."); await as("sample.rep.jane@clatitle.com");
+    assert.strictEqual(unread(await A.listMyFeedback()).some((f) => f.id === "fb6"), false); await as("sample.admin@clatitle.com"); await A.adminSetFeedbackStatus("fb6", "dismissed", "A changed note"); await as("sample.rep.jane@clatitle.com");
+    assert.strictEqual(unread(await A.listMyFeedback()).some((f) => f.id === "fb6"), true); ok("feedback status: the same decision again does not re-flag; a changed note does");
+    await as("sample.admin@clatitle.com"); const au2 = await A.adminAuditLog(80); assert.ok(au2.some((x) => x.action === "feedback_shipped") && !JSON.stringify(au2.filter((x) => x.action === "feedback_shipped")).includes("Save as PDF")); ok("feedback status: shipping is audited (feedback_shipped) without the note text");
+    // senders never see anyone else's items and the adapter has no way for a sender to change a status
+    await as("sample.rep.jane@clatitle.com"); assert.ok((await A.listMyFeedback()).every((f) => f.userId === id("b1"))); assert.strictEqual(typeof A.adminSetFeedbackStatus, "function"); await reject(A.adminSetFeedbackStatus("fb4", "approved"), /Admins only/, "feedback status: a sender cannot change a status");
   }
 
   // ---- staff feedback: the widget on real pages (jsdom) ----
@@ -411,7 +435,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     const fire = (win, el, type) => el.dispatchEvent(new win.Event(type, { bubbles: true, cancelable: true }));
     // staff see the button; the greeting heads the dialog
     const R = await renderPage("rep.html", "sample.rep.jane@clatitle.com", "#claFeedbackLink"), d = R.d;
-    assert.strictEqual(R.errs.length, 0, R.errs.join()); const fab = d.getElementById("claFeedbackLink"); assert.ok(fab && fab.parentNode === d.body && !d.querySelector("header #claFeedbackLink") && fab.classList.contains("claFbFab")); assert.strictEqual(fab.getAttribute("aria-label"), "Send feedback"); assert.strictEqual(fab.getAttribute("aria-expanded"), "false"); ok("feedback widget: a rep sees a floating chat bubble (bottom-right launcher, labelled 'Send feedback', not in the header)");
+    assert.strictEqual(R.errs.length, 0, R.errs.join()); const fab = d.getElementById("claFeedbackLink"); assert.ok(fab && fab.parentNode === d.body && !d.querySelector("header #claFeedbackLink") && fab.classList.contains("claFbFab")); assert.strictEqual(fab.getAttribute("aria-label"), "Send feedback (2 updates on your suggestions)"); assert.strictEqual(fab.getAttribute("aria-expanded"), "false"); ok("feedback widget: a rep sees a floating chat bubble (bottom-right launcher, labelled 'Send feedback', not in the header)");
     assert.ok(d.getElementById("claFb").hidden); d.getElementById("claFeedbackLink").click(); assert.ok(!d.getElementById("claFb").hidden); assert.strictEqual(d.getElementById("claFeedbackLink").getAttribute("aria-expanded"), "true"); ok("feedback widget: the bubble opens the panel (aria-expanded true)");
     assert.strictEqual(d.getElementById("claFbHi").textContent, GREET); assert.ok(d.getElementById("claFb").textContent.includes(GREET)); assert.ok(d.getElementById("claFb").querySelector(".claFbBody").firstElementChild === d.getElementById("claFbHi")); ok("feedback widget: John's greeting is at the top of the dialog (exact text)");
     assert.strictEqual(R.win.CLA.FEEDBACK_GREETING, GREET);
@@ -443,11 +467,32 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     const w2 = boot(), CL = w2.CLA, A2 = CL.createMockAdapter({}); await A2.signIn("sam.agent@example.com", "x"); const me2 = await A2.getMyProfile();
     assert.strictEqual(await CL.startFeedback(A2, me2, { base: "" }), null); assert.strictEqual(await CL.startFeedback(A2, null, {}), null); assert.ok(!CL.isStaff(me2) && !CL.isStaff(null) && !CL.isStaff({ role: "rep", status: "disabled" }) && CL.isStaff({ role: "rep", status: "active" }) && CL.isStaff({ role: "admin" }) && CL.isStaff({ role: "super_admin" })); ok("feedback widget: startFeedback / isStaff refuse clients, guests and disabled reps");
     // admin pages: an Admin reads everything but cannot decide; a Super admin can
+    // ---- feedback status updates: the bubble's dot and the "My suggestions" list ----
+    {
+      const evil2 = "<img src=x onerror=window.pwned2=1>";
+      const RJ = await renderPage("rep.html", "sample.rep.jane@clatitle.com", "#claFeedbackLink", null, (st) => { const f = st.feedback.find((x) => x.id === "fb5"); f.shippedNote = evil2; const g = st.feedback.find((x) => x.id === "fb6"); g.decidedNote = null; });
+      await tick(120); let dj = RJ.d, fabj = dj.getElementById("claFeedbackLink"), dotj = dj.getElementById("claFbDot");
+      assert.ok(dotj && !dotj.hidden && dotj.textContent === "2" && /2 updates/.test(fabj.getAttribute("aria-label"))); ok("feedback bubble: a dot with the number of unread decisions (2) shows before the panel is opened");
+      fabj.click(); await tick(150);
+      const li = [...dj.querySelectorAll("#claFbMine li")], txt = (re) => li.find((x) => re.test(x.textContent));
+      assert.strictEqual(dj.querySelector("#claFbMine h3").textContent, "My suggestions"); assert.ok(li.length >= 5);
+      assert.ok(txt(/Show my email/) && /Shipped/.test(txt(/Show my email/).querySelector(".st").textContent) && /What changed: /.test(txt(/Show my email/).textContent)); assert.ok(txt(/Show my email/).querySelector(".up"));
+      assert.ok(/Approved · on the list/.test(txt(/save a quote as a PDF/).querySelector(".st").textContent) && /John: Good one/.test(txt(/save a quote as a PDF/).textContent) && txt(/save a quote as a PDF/).querySelector(".up"));
+      assert.ok(/Not planned/.test(txt(/remember my last county/).querySelector(".st").textContent) && !/John:/.test(txt(/remember my last county/).textContent) && !txt(/remember my last county/).querySelector(".up")); ok("feedback bubble: My suggestions shows Received / Approved · on the list / Shipped (with what changed) / Not planned (decision note only when there is one); changed items carry an Updated tag");
+      assert.ok(/Received/.test(txt(/Save as new quote button/).querySelector(".st").textContent) && !txt(/Save as new quote button/).querySelector(".up")); const order = li.map((x) => x.textContent); assert.ok(order.findIndex((t) => /Save as new quote button/.test(t)) < order.findIndex((t) => /save a quote as a PDF/.test(t)) && order.findIndex((t) => /save a quote as a PDF/.test(t)) < order.findIndex((t) => /remember my last county/.test(t))); ok("feedback bubble: a new note shows Received, and the list is newest first");
+      assert.ok(!dj.querySelector("#claFbMine img") && !RJ.win.pwned2 && txt(/Show my email/).textContent.includes(evil2)); ok("feedback bubble: the shipped note is put on the page as text (markup in it does nothing)");
+      await tick(150); assert.ok(dotj.hidden, "dot cleared once the panel was opened"); const stj = JSON.parse(RJ.win.localStorage.getItem("cla_portal_mock_v1")).feedback.filter((x) => x.userId === id("b1")); assert.ok(stj.every((x) => !["approved", "shipped", "dismissed"].includes(x.status) || x.seenStatus === x.status)); assert.deepStrictEqual(stj.map((x) => x.status).sort(), ["approved", "dismissed", "new", "shipped", "shipped"]); ok("feedback bubble: opening the panel marks the decisions as seen (dot gone), and no status was changed");
+      RJ.dom.window.close();
+      const RJ2 = await renderPage("rep.html", "sample.rep.jane@clatitle.com", "#claFeedbackLink", null, (st) => { st.feedback.forEach((x) => { if (x.seenStatus !== undefined && x.userId === id("b1")) x.seenStatus = ["approved", "shipped", "dismissed"].includes(x.status) ? x.status : null; }); }); await tick(120);
+      assert.ok(RJ2.d.getElementById("claFbDot").hidden && RJ2.d.getElementById("claFeedbackLink").getAttribute("aria-label") === "Send feedback"); RJ2.d.getElementById("claFeedbackLink").click(); await tick(120); assert.ok(!RJ2.d.querySelector("#claFbMine .up")); ok("feedback bubble: nothing unread means no dot and no Updated tags"); RJ2.dom.window.close();
+      const RM = await renderPage("rep.html", "sample.rep.marcus@clatitle.com", "#claFeedbackLink"); await tick(120); assert.strictEqual(RM.d.getElementById("claFbDot").textContent, "1"); RM.d.getElementById("claFeedbackLink").click(); await tick(150);
+      assert.ok(/Where do I change my cell/.test(RM.d.getElementById("claFbMine").textContent) && !/Show my email|county/.test(RM.d.getElementById("claFbMine").textContent) && /Cell column/.test(RM.d.getElementById("claFbMine").textContent)); ok("feedback bubble: each sender sees only their own suggestions (Marcus sees his shipped note, not Jane's)"); RM.dom.window.close();
+    }
     const RA = await renderPage("admin.html", "sample.robin.admin@clatitle.com", "#users tr", async (A0) => { await A0.submitFeedback({ category: "bug", message: evil, page: "/portal/admin.html" }); });
     assert.ok(RA.d.getElementById("claFeedbackLink")); const tabs = [...RA.d.querySelectorAll("#tabs button")]; assert.strictEqual(tabs[4].textContent, "Feedback"); tabs[4].click(); await tick(80);
     assert.ok(!RA.d.getElementById("pFeedback").hidden); assert.ok(RA.d.querySelectorAll("#fbRows tr").length >= 4); assert.strictEqual(RA.d.querySelectorAll("#fbRows [data-fb]").length, 0); assert.match(RA.d.getElementById("fNote").textContent, /Read only/); ok("feedback panel: an Admin lists everything but has no approve/dismiss buttons");
     assert.ok(!RA.d.querySelector("#fbRows img") && RA.d.getElementById("fbRows").textContent.includes(evil)); assert.strictEqual(RA.errs.length, 0, RA.errs.join()); ok("feedback panel: messages are escaped");
-    RA.d.getElementById("fStatus").value = "approved"; fire(RA.win, RA.d.getElementById("fStatus"), "change"); assert.strictEqual(RA.d.querySelectorAll("#fbRows tr").length, 1); assert.match(RA.d.getElementById("fbRows").textContent, /Where do I change my cell/); RA.d.getElementById("fStatus").value = "";
+    RA.d.getElementById("fStatus").value = "approved"; fire(RA.win, RA.d.getElementById("fStatus"), "change"); assert.strictEqual(RA.d.querySelectorAll("#fbRows tr").length, 2); assert.match(RA.d.getElementById("fbRows").textContent, /Where do I change my cell/); RA.d.getElementById("fStatus").value = "";
     RA.d.getElementById("fCat").value = "idea"; fire(RA.win, RA.d.getElementById("fCat"), "change"); assert.ok([...RA.d.querySelectorAll("#fbRows tr")].every((tr) => /Idea/.test(tr.children[2].textContent))); RA.d.getElementById("fCat").value = "";
     RA.d.getElementById("fFilter").value = "dark"; fire(RA.win, RA.d.getElementById("fFilter"), "input"); assert.match(RA.d.getElementById("fbRows").textContent, /No feedback matches/); ok("feedback panel: filters by status, category and text"); RA.dom.window.close();
     const RS = await renderPage("admin.html", "sample.admin@clatitle.com", "#users tr"); [...RS.d.querySelectorAll("#tabs button")][4].click(); await tick(80);
@@ -455,6 +500,19 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     RS.d.querySelector('#fbRows input[data-note="fb1"]').value = "Thanks, fixed"; btn.click(); await tick(80);
     const st = JSON.parse(RS.win.localStorage.getItem("cla_portal_mock_v1")).feedback.find((f) => f.id === "fb1"); assert.deepStrictEqual([st.status, st.decidedNote], ["approved", "Thanks, fixed"]); assert.match(RS.d.querySelector('#fbRows input[data-note="fb1"]').closest("tr").textContent, /Approved/); ok("feedback panel: a super admin approves with a note");
     assert.strictEqual(RS.errs.length, 0, RS.errs.join()); RS.dom.window.close();
+    // ---- feedback status updates: "Mark shipped" in the admin Feedback tab ----
+    {
+      const RP = await renderPage("admin.html", "sample.admin@clatitle.com", "#users tr"); [...RP.d.querySelectorAll("#tabs button")][4].click(); await tick(80);
+      assert.ok([...RP.d.querySelectorAll("#fStatus option")].some((o) => o.value === "shipped")); const row4 = (id4) => RP.d.querySelector('#fbRows [data-fb="' + id4 + '"]');
+      assert.ok(row4("fb4") && RP.d.querySelector('#fbRows button[data-fb="fb4"][data-to="shipped"]') && RP.d.querySelector('#fbRows input[data-ship-note="fb4"]')); assert.ok(!RP.d.querySelector('#fbRows button[data-fb="fb1"][data-to="shipped"]') && !RP.d.querySelector('#fbRows button[data-fb="fb5"][data-to="shipped"]')); ok("feedback panel: an approved item gets a What changed field and a Mark shipped button; new and already-shipped items do not");
+      RP.d.querySelector('#fbRows input[data-ship-note="fb4"]').value = "Save as PDF is on the calculator."; RP.d.querySelector('#fbRows button[data-fb="fb4"][data-to="shipped"]').click(); await tick(120);
+      const st4 = JSON.parse(RP.win.localStorage.getItem("cla_portal_mock_v1")).feedback.find((f) => f.id === "fb4"); assert.deepStrictEqual([st4.status, st4.shippedNote, !!st4.shippedAt, st4.seenStatus], ["shipped", "Save as PDF is on the calculator.", true, null]);
+      const tr4 = [...RP.d.querySelectorAll("#fbRows tr")].find((t) => /save a quote as a PDF/.test(t.textContent)); assert.ok(/Shipped/.test(tr4.textContent) && /Save as PDF is on the calculator/.test(tr4.textContent) && !tr4.querySelector("button")); ok("feedback panel: Mark shipped saves the note, shows Shipped with the note and drops the buttons");
+      RP.d.getElementById("fStatus").value = "shipped"; fire(RP.win, RP.d.getElementById("fStatus"), "change"); assert.ok(RP.d.querySelectorAll("#fbRows tr").length >= 3); assert.strictEqual(RP.errs.length, 0, RP.errs.join()); RP.dom.window.close();
+      const RR = await renderPage("admin.html", "sample.robin.admin@clatitle.com", "#users tr"); [...RR.d.querySelectorAll("#tabs button")][4].click(); await tick(80);
+      assert.strictEqual(RR.d.querySelectorAll("#fbRows [data-fb]").length, 0); assert.match(RR.d.getElementById("fbRows").textContent, /Shipped/); assert.match(RR.d.getElementById("fNote").textContent, /Read only/); ok("feedback panel: an Admin (not super) sees shipped items and notes read-only, with no buttons"); RR.dom.window.close();
+    }
+
 
     // ================= named PRICING TABLES for the settlement fee (migration 16) =================
     {
@@ -867,6 +925,12 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
       const Q5 = await renderPage("quote.html", "sam.agent@example.com", "#body:not([hidden])", null, (st) => { const r = st.users.find((x) => x.email === "sample.rep.jane@clatitle.com"); r.email = '"><img src=x onerror=window.__e=1>@evil.example'; }, FQ);
       assert.ok(!Q5.d.getElementById("cobrand").querySelector("img[onerror]") && !Q5.win.__e && /evil\.example/.test(Q5.d.getElementById("cobrand").textContent)); Q5.dom.window.close(); ok("quote page: the rep's email shows as plain text and a hostile email value does nothing");
       const qh = fs.readFileSync(path.join(__dirname, "quote.html"), "utf8"); assert.ok(/CLA\.clientContactLines\(p\)/.test(qh) && !/innerHTML = .*companyWebsite/.test(qh)); ok("contact header: quote.html uses the helper too"); }
+    // ---- feedback status updates send NOTHING outbound (John's rule: no automatic e-mail or messages) ----
+    { const rdf = (f) => fs.readFileSync(path.join(__dirname, f), "utf8"), mig = fs.readFileSync(path.join(__dirname, "..", "supabase", "migrations", "20261027000017_feedback_status_updates.sql"), "utf8");
+      for (const f of ["js/feedback-widget.js"]) assert.ok(!/mailto:|fetch\(|XMLHttpRequest|sendBeacon|functions\.invoke|\.invoke\(/.test(rdf(f)), f + " must not send anything");
+      const adminJs = rdf("admin.html").slice(rdf("admin.html").indexOf("staff feedback: admin and super admin read everything")); assert.ok(!/mailto:|fetch\(|sendBeacon|functions\.invoke|\.invoke\(/.test(adminJs.slice(0, adminJs.indexOf("function drawFeedback") + 6000).split("// ---- ")[0]));
+      assert.ok(!/pg_net|net\.http|http_post|mail|smtp|sendgrid|resend|webhook/i.test(mig.replace(/NO e-mail is sent[^\n]*/, "")) , "the migration must not call anything outside the database");
+      assert.ok(/\bNO e-mail\b/.test(mig)); ok("feedback status updates: no outbound e-mail or request anywhere (widget, admin feedback code, migration)"); }
     // files: no external libraries / CDN; motion respects prefers-reduced-motion
     const tj = fs.readFileSync(path.join(__dirname, "js", "tour.js"), "utf8"), tc = fs.readFileSync(path.join(__dirname, "tour.css"), "utf8");
     assert.ok(!/https?:\/\/|import\s|require\(/.test(tj) && !/https?:\/\/|@import/.test(tc)); assert.ok(/prefers-reduced-motion:no-preference/.test(tc) && !/(^|\})\s*\.[^{]*\{[^}]*transition/.test(tc.replace(/@media[^{]*\{(?:[^{}]*\{[^}]*\})+\s*\}/g, ""))); ok("tour: no external libraries or CDN; animation only when the person has not asked for reduced motion");
@@ -976,13 +1040,14 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
 
   // ---- staff feedback through the Supabase adapter ----
   {
-    const fb = [{ id: "f1", created_at: "2026-10-25T10:00:00Z", user_id: id("b1"), role_at_submit: "rep", category: "bug", message: "<b>x</b>", page_path: "/index.html", status: "new", notified_at: null, decided_at: null, decided_note: null }];
+    const fb = [{ id: "f1", created_at: "2026-10-25T10:00:00Z", user_id: id("b1"), role_at_submit: "rep", category: "bug", message: "<b>x</b>", page_path: "/index.html", status: "new", notified_at: null, decided_at: null, decided_note: null, shipped_at: null, shipped_note: null, sender_seen_status: null }];
     const cl = []; const chain2 = (t) => { const o = {}; for (const m of ["select", "eq", "order", "limit"]) o[m] = (...a) => { cl.push([t, m, a]); return o; }; o.then = (res) => res({ data: t === "feedback" ? fb : [{ id: id("b1"), role: "rep", is_rep: false, status: "active", email: "e", first_name: "J", last_name: "R", is_complete: true }], error: null }); o.maybeSingle = o.single = async () => ({ data: { id: id("b1"), role: "rep", is_rep: false, status: "active", email: "e", first_name: "J", last_name: "R", is_complete: true }, error: null }); return o; };
     const SF = CLA.createSupabaseAdapter({ url: "u", anonKey: "k" }, { createClient: () => ({ auth: { getSession: async () => ({ data: { session: { user: { id: id("b1"), email: "e" } } } }) }, from: (t) => chain2(t),
       rpc: async (n, a) => { cl.push(["rpc", n, a]); return { data: n === "submit_feedback" ? "new-id" : null, error: null }; } }) });
     assert.strictEqual((await SF.submitFeedback({ category: "idea", message: "m", page: "/p" })).id, "new-id"); assert.strictEqual(JSON.stringify(cl.find((c) => c[1] === "submit_feedback")[2]), JSON.stringify({ p_category: "idea", p_message: "m", p_page: "/p" })); ok("supabase: submitFeedback calls the submit_feedback RPC (no table insert)");
     await SF.adminSetFeedbackStatus("f1", "approved", "ok"); assert.strictEqual(JSON.stringify(cl.find((c) => c[1] === "admin_set_feedback_status")[2]), JSON.stringify({ p_id: "f1", p_status: "approved", p_note: "ok" })); assert.ok(!cl.some((c) => c[0] === "feedback" && ["insert", "update", "delete"].includes(c[1]))); ok("supabase: deciding calls admin_set_feedback_status (no direct table writes)");
-    const list = await SF.adminListFeedback(); assert.strictEqual(JSON.stringify(list[0]), JSON.stringify({ id: "f1", createdAt: "2026-10-25T10:00:00Z", userId: id("b1"), roleAtSubmit: "rep", category: "bug", message: "<b>x</b>", pagePath: "/index.html", status: "new", notifiedAt: null, decidedAt: null, decidedNote: null })); ok("supabase: feedback rows map to the Feedback DTO");
+    const list = await SF.adminListFeedback(); assert.strictEqual(JSON.stringify(list[0]), JSON.stringify({ id: "f1", createdAt: "2026-10-25T10:00:00Z", userId: id("b1"), roleAtSubmit: "rep", category: "bug", message: "<b>x</b>", pagePath: "/index.html", status: "new", notifiedAt: null, decidedAt: null, decidedNote: null, shippedAt: null, shippedNote: null, seenStatus: null })); ok("supabase: feedback rows map to the Feedback DTO (including shipped and seen)");
+    await SF.adminMarkFeedbackShipped("f1", "Live now"); assert.strictEqual(JSON.stringify(cl.find((c) => c[1] === "admin_mark_feedback_shipped")[2]), JSON.stringify({ p_id: "f1", p_note: "Live now" })); await SF.markMyFeedbackSeen("f1"); assert.strictEqual(JSON.stringify(cl.filter((c) => c[1] === "mark_my_feedback_seen").pop()[2]), JSON.stringify({ p_id: "f1" })); await SF.markMyFeedbackSeen(); assert.strictEqual(JSON.stringify(cl.filter((c) => c[1] === "mark_my_feedback_seen").pop()[2]), "{}"); assert.ok(!cl.some((c) => c[0] === "feedback" && ["insert", "update", "delete"].includes(c[1]))); ok("supabase: mark shipped and mark seen go through their RPCs (no direct table writes)");
     assert.strictEqual((await SF.listMyFeedback()).length, 1); assert.ok(cl.some((c) => c[0] === "feedback" && c[1] === "eq" && c[2][0] === "user_id")); ok("supabase: listMyFeedback filters on the caller's user id");
     assert.ok(!/user_agent/.test(JSON.stringify(cl.filter((c) => c[1] === "select")))); ok("supabase: the user agent column is never read into the app");
     const rf = (message, code) => CLA.createSupabaseAdapter({ url: "u", anonKey: "k" }, { createClient: () => ({ auth: fake3.createClient().auth, rpc: async () => ({ data: null, error: { message, code } }) }) });
@@ -1089,7 +1154,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
 
     // cache-bust: every ?v= in index.html and TOUR_V agree
     const vs = [...idx.matchAll(/\?v=(\d{8}[a-z])/g)].map((m) => m[1]), pu = fs.readFileSync(path.join(__dirname, "js", "portal-ui.js"), "utf8");
-    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261027i" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261027i");
+    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261027j" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261027j");
     // the new elements are inert in print and add no external requests
     assert.ok(/@media print\{\s*@page\{margin:14mm\}\s*\.claChip\{display:none!important\}/.test(idx) && !/https?:\/\//.test(tj2)); ok("calculator tour: the chip is not printed; tour.js has no external libraries or CDN");
   }

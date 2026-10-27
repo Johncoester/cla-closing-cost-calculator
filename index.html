@@ -4,8 +4,8 @@
 <meta name="theme-color" content="#000000">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="zip-county.js?v=20261027i"></script>
-<script src="fee-snapshot.js?v=20261027i"></script>
+<script src="zip-county.js?v=20261027j"></script>
+<script src="fee-snapshot.js?v=20261027j"></script>
 <style>
 :root{--g:#8dc63f;--gd:#6fa52a;--gdd:#4d7a17;--ink:#111;--mut:#5b6272;--line:#e3e8da;--bg:#f4f7ef;--field:#d5dbca}
 *{box-sizing:border-box}
@@ -621,7 +621,7 @@ load(SNAP,"Built-in snapshot","snapshot");$("status").textContent="Loading fees 
 // Guided tour: "Take the tour" (header) and a small first-visit chip. Works for everyone, signed in or not. The engine is portal/js/tour.js + portal/tour.css,
 // downloaded only when someone starts the tour. The chip shows once; dismissing it (x), starting the tour, or finishing it hides it for good (localStorage).
 (function(){
- var V="20261027i",KEY="cla_calc_tour_chip",link=document.getElementById("claCalcTourLink"),chip=document.getElementById("claTourChip"),loading=null;
+ var V="20261027j",KEY="cla_calc_tour_chip",link=document.getElementById("claCalcTourLink"),chip=document.getElementById("claTourChip"),loading=null;
  function seen(){try{return window.localStorage.getItem(KEY)==="1"}catch(e){return true}} // no storage: never show the chip (it could not remember "no thanks")
  function dismiss(){try{window.localStorage.setItem(KEY,"1")}catch(e){}if(chip)chip.hidden=true}
  function add(tag,attrs){return new Promise(function(res){var e=document.createElement(tag);for(var k in attrs)e[k]=attrs[k];e.onload=e.onerror=function(){res()};document.head.appendChild(e)})}
@@ -635,4 +635,4 @@ load(SNAP,"Built-in snapshot","snapshot");$("status").textContent="Loading fees 
   document.getElementById("claTourChipX").onclick=function(){dismiss();if(link)link.focus()}}
 })();
 </script>
-<script src="portal/js/portal-hook.js?v=20261027i" defer></script></body></html>
+<script src="portal/js/portal-hook.js?v=20261027j" defer></script></body></html>

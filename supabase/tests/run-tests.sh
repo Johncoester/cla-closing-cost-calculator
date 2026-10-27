@@ -37,7 +37,7 @@ runu() { "${P[@]}" -d cla_test "$@"; }
 runu -f "$HERE/00_supabase_shim.sql"
 M6="$(ls "$ROOT"/migrations/*admin_also_rep.sql)"
 for f in "$ROOT"/migrations/*.sql; do
-  case "$f" in *admin_also_rep.sql|*admin_role_enum.sql|*_admin_role.sql|*admin_manage_admins.sql|*reassign_on_demote.sql|*staff_feedback.sql|*tour_seen.sql|*pricing_tables.sql) continue;; esac
+  case "$f" in *admin_also_rep.sql|*admin_role_enum.sql|*_admin_role.sql|*admin_manage_admins.sql|*reassign_on_demote.sql|*staff_feedback.sql|*tour_seen.sql|*pricing_tables.sql|*feedback_status_updates.sql) continue;; esac
   runu --single-transaction -f "$f" >/dev/null 2>&1
 done
 runu -v migration6="$M6" -f "$HERE/20_upgrade_from_5.sql" 2>&1 | grep -E "PASS|FAIL|checks,|ERROR|WARNING" | sed 's/^psql:[^ ]* //'
@@ -50,7 +50,7 @@ echo "upgrade check: migrations 1-6 + data, then migrations 9 and 10 (admin role
 runu -f "$HERE/00_supabase_shim.sql"
 M9="$(ls "$ROOT"/migrations/*admin_role_enum.sql)"; M10="$(ls "$ROOT"/migrations/*_admin_role.sql)"
 for f in "$ROOT"/migrations/*.sql; do
-  case "$f" in *admin_role_enum.sql|*_admin_role.sql|*admin_manage_admins.sql|*reassign_on_demote.sql|*staff_feedback.sql|*tour_seen.sql|*pricing_tables.sql) continue;; esac
+  case "$f" in *admin_role_enum.sql|*_admin_role.sql|*admin_manage_admins.sql|*reassign_on_demote.sql|*staff_feedback.sql|*tour_seen.sql|*pricing_tables.sql|*feedback_status_updates.sql) continue;; esac
   runu --single-transaction -f "$f" >/dev/null 2>&1
 done
 # Why migrations 9 and 10 are two files: both in ONE transaction must fail (Postgres: an enum value added in a
@@ -72,7 +72,7 @@ echo "upgrade check: migrations 1-10 + data, then migration 11 (admins manage ad
 runu -f "$HERE/00_supabase_shim.sql"
 M11="$(ls "$ROOT"/migrations/*admin_manage_admins.sql)"
 for f in "$ROOT"/migrations/*.sql; do
-  case "$f" in *admin_manage_admins.sql|*reassign_on_demote.sql|*staff_feedback.sql|*tour_seen.sql|*pricing_tables.sql) continue;; esac
+  case "$f" in *admin_manage_admins.sql|*reassign_on_demote.sql|*staff_feedback.sql|*tour_seen.sql|*pricing_tables.sql|*feedback_status_updates.sql) continue;; esac
   runu --single-transaction -f "$f" >/dev/null 2>&1
 done
 runu -v migration11="$M11" -f "$HERE/40_upgrade_from_10.sql" 2>&1 | grep -E "PASS|FAIL|checks,|ERROR|WARNING" | sed 's/^psql:[^ ]* //'
@@ -85,7 +85,7 @@ echo "upgrade check: migrations 1-11 + data, then migration 12 (reassign on demo
 runu -f "$HERE/00_supabase_shim.sql"
 M12="$(ls "$ROOT"/migrations/*reassign_on_demote.sql)"
 for f in "$ROOT"/migrations/*.sql; do
-  case "$f" in *reassign_on_demote.sql|*staff_feedback.sql|*tour_seen.sql|*pricing_tables.sql) continue;; esac
+  case "$f" in *reassign_on_demote.sql|*staff_feedback.sql|*tour_seen.sql|*pricing_tables.sql|*feedback_status_updates.sql) continue;; esac
   runu --single-transaction -f "$f" >/dev/null 2>&1
 done
 runu -v migration12="$M12" -f "$HERE/50_upgrade_from_11.sql" 2>&1 | grep -E "PASS|FAIL|checks,|ERROR|WARNING" | sed 's/^psql:[^ ]* //'
@@ -97,7 +97,7 @@ echo "upgrade check: migrations 1-12 + data, then migration 13 (staff feedback)"
 runu -f "$HERE/00_supabase_shim.sql"
 M13="$(ls "$ROOT"/migrations/*staff_feedback.sql)"
 for f in "$ROOT"/migrations/*.sql; do
-  case "$f" in *staff_feedback.sql|*tour_seen.sql|*pricing_tables.sql) continue;; esac
+  case "$f" in *staff_feedback.sql|*tour_seen.sql|*pricing_tables.sql|*feedback_status_updates.sql) continue;; esac
   runu --single-transaction -f "$f" >/dev/null 2>&1
 done
 runu -v migration13="$M13" -f "$HERE/60_upgrade_from_12.sql" 2>&1 | grep -E "PASS|FAIL|checks,|ERROR|WARNING" | sed 's/^psql:[^ ]* //'
@@ -109,7 +109,7 @@ echo "upgrade check: migrations 1-13 + data, then migration 14 (guided tour flag
 runu -f "$HERE/00_supabase_shim.sql"
 M14="$(ls "$ROOT"/migrations/*tour_seen.sql)"
 for f in "$ROOT"/migrations/*.sql; do
-  case "$f" in *tour_seen.sql|*pricing_tables.sql) continue;; esac
+  case "$f" in *tour_seen.sql|*pricing_tables.sql|*feedback_status_updates.sql) continue;; esac
   runu --single-transaction -f "$f" >/dev/null 2>&1
 done
 runu -v migration14="$M14" -f "$HERE/70_upgrade_from_13.sql" 2>&1 | grep -E "PASS|FAIL|checks,|ERROR|WARNING" | sed 's/^psql:[^ ]* //'
@@ -121,8 +121,20 @@ echo "upgrade check: migrations 1-15 + data, then migration 16 (named pricing ta
 runu -f "$HERE/00_supabase_shim.sql"
 M16="$(ls "$ROOT"/migrations/*pricing_tables.sql)"
 for f in "$ROOT"/migrations/*.sql; do
-  case "$f" in *pricing_tables.sql) continue;; esac
+  case "$f" in *pricing_tables.sql|*feedback_status_updates.sql) continue;; esac
   runu --single-transaction -f "$f" >/dev/null 2>&1
 done
 runu -v migration16="$M16" -f "$HERE/80_upgrade_from_15.sql" 2>&1 | grep -E "PASS|FAIL|checks,|ERROR|WARNING" | sed 's/^psql:[^ ]* //'
+[ "${PIPESTATUS[0]}" -eq 0 ] || exit "${PIPESTATUS[0]}"
+
+# Upgrade check 8: the LIVE state (migrations 1-16 with data: feedback in every status) gets migration 17 (feedback status updates for the sender) on top (see 90_upgrade_from_16.sql).
+echo "upgrade check: migrations 1-16 + data, then migration 17 (feedback status updates: shipped, seen marker)"
+"${P[@]}" -d postgres -c "drop database cla_test with (force)" -c "create database cla_test"
+runu -f "$HERE/00_supabase_shim.sql"
+M17="$(ls "$ROOT"/migrations/*feedback_status_updates.sql)"
+for f in "$ROOT"/migrations/*.sql; do
+  case "$f" in *feedback_status_updates.sql) continue;; esac
+  runu --single-transaction -f "$f" >/dev/null 2>&1
+done
+runu -v migration17="$M17" -f "$HERE/90_upgrade_from_16.sql" 2>&1 | grep -E "PASS|FAIL|checks,|ERROR|WARNING" | sed 's/^psql:[^ ]* //'
 exit ${PIPESTATUS[0]}

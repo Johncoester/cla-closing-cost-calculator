@@ -10,7 +10,7 @@
 
   CLA.createMockAdapter = function () {
     const load = () => {
-      try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.version === 10) return s; } catch (e) {}
+      try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.version === 11) return s; } catch (e) {}
       const s = CLA.MOCK_SEED(); localStorage.setItem(KEY, JSON.stringify(s)); return s;
     };
     const save = (s) => localStorage.setItem(KEY, JSON.stringify(s));
@@ -219,7 +219,7 @@
         const mine = s.feedback.filter((f) => f.userId === u.id), now = Date.now();
         if (mine.filter((f) => now - new Date(f.createdAt).getTime() < 3600000).length >= 10 || mine.filter((f) => now - new Date(f.createdAt).getTime() < DAY).length >= 40)
           err("You have sent a lot of feedback recently: please try again later.");
-        const f = { id: uid(), createdAt: new Date().toISOString(), userId: u.id, roleAtSubmit: u.role, category, message, pagePath: page, status: "new", notifiedAt: null, decidedAt: null, decidedNote: null };
+        const f = { id: uid(), createdAt: new Date().toISOString(), userId: u.id, roleAtSubmit: u.role, category, message, pagePath: page, status: "new", notifiedAt: null, decidedAt: null, decidedNote: null, shippedAt: null, shippedNote: null, seenStatus: null };
         s.feedback.unshift(f); log(s, u.id, "feedback_submitted", "feedback", f.id, { category }); save(s); return { id: f.id };
       },
       async listMyFeedback() { const s = load(), u = need(s); if (!isStaff(u)) return []; return clone((s.feedback || []).filter((f) => f.userId === u.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))); },
@@ -229,8 +229,23 @@
         if (!["approved", "dismissed"].includes(status)) err("Status must be approved or dismissed.");
         const n = String(note || "").trim() || null; if (n && n.length > 1000) err("Note is too long (1000 characters at most).");
         const f = (s.feedback || []).find((x) => x.id === id) || err("No such feedback.");
-        const before = f.status; f.status = status; f.decidedAt = new Date().toISOString(); f.decidedNote = n;
+        if (f.status === "shipped") err("This item is already shipped.");
+        const before = f.status; if (before !== status || (f.decidedNote || null) !== n) f.seenStatus = null;   // a changed decision or note shows as new to the sender again
+        f.status = status; f.decidedAt = new Date().toISOString(); f.decidedNote = n;
         log(s, u.id, "feedback_decided", "feedback", id, { before, after: status }); save(s);
+      },
+      // feedback status updates (migration 17): same rules as admin_mark_feedback_shipped() and mark_my_feedback_seen()
+      async adminMarkFeedbackShipped(id, note) {
+        const s = load(), u = needSuper(s); const n = String(note || "").trim() || null; if (n && n.length > 500) err("Note is too long (500 characters at most).");
+        const f = (s.feedback || []).find((x) => x.id === id) || err("No such feedback.");
+        if (f.status !== "approved") err("Only an approved item can be marked shipped.");
+        f.status = "shipped"; f.shippedAt = new Date().toISOString(); f.shippedNote = n; f.seenStatus = null;
+        log(s, u.id, "feedback_shipped", "feedback", id, { before: "approved", after: "shipped" }); save(s);
+      },
+      async markMyFeedbackSeen(id) {
+        const s = load(), u = need(s); if (!isStaff(u)) err("Not allowed.");
+        let n = 0; (s.feedback || []).forEach((f) => { if (f.userId === u.id && (!id || f.id === id) && (f.seenStatus || null) !== f.status) { f.seenStatus = f.status; n++; } });
+        if (n) save(s); return n;
       },
       // ---- named PRICING TABLES for the settlement fee (migration 16: pricing_tables, pricing_table_fees, pricing_table_members) ----
       // Same rules as the RLS, the admin RPCs, private.pricing_rep_for() / pricing_table_for() and get_my_fee_overrides().

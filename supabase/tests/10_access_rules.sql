@@ -1734,6 +1734,80 @@ select tests.is('multi-state: deleting the table deletes its sets: Jane and Lee 
   tests.sq($q$select (details ->> 'fees_removed') || ':' || (details ->> 'members_released') from public.audit_log where details ->> 'op' = 'delete' and details ->> 'name' = 'Multi State Pricing'$q$) || ' | ' ||
   tests.sq('select count(*)::text from public.pricing_table_fees'), ' |  |  | 2:1 | 0');
 
+-- =====================================================================
+-- Migration 17: FEEDBACK STATUS UPDATES for the sender (shipped status, "seen" marker, mark shipped). No e-mail anywhere.
+-- Cast: new rep g1 Gus sends three notes; super admin d1 decides and ships; admin a2 and rep b1 are refused; client c1 and guests too.
+-- =====================================================================
+insert into public.invitations (email, role, is_rep) values ('gus.rep@clatitle.com', 'rep', true);
+insert into auth.users (id, email) values (tests.id('e7'), 'gus.rep@clatitle.com');
+update public.profiles set first_name = 'Gus', last_name = 'Rep', phone = '301-555-0181' where id = tests.id('e7');
+insert into fb_ids select 'g1', tests.v(tests.id('e7'), $$select public.submit_feedback('idea', 'Gus one: add a dark mode.', '/index.html')::text$$)::uuid;
+insert into fb_ids select 'g2', tests.v(tests.id('e7'), $$select public.submit_feedback('bug', 'Gus two: the logo is blurry.', '/index.html')::text$$)::uuid;
+insert into fb_ids select 'g3', tests.v(tests.id('e7'), $$select public.submit_feedback('other', 'Gus three: rename Quote.', '/index.html')::text$$)::uuid;
+create function tests.unread(uid uuid) returns text language sql as $$
+  select tests.v(uid, $q$select count(*)::text from public.feedback where status in ('approved', 'shipped', 'dismissed') and sender_seen_status is distinct from status$q$) $$;
+select tests.is('migration 17: new columns exist, and a new note starts unseen but not "unread" (status is still new)',
+  (select (count(*) = 3)::text from information_schema.columns where table_schema = 'public' and table_name = 'feedback' and column_name in ('shipped_at', 'shipped_note', 'sender_seen_status')) || '/' || tests.unread(tests.id('e7')), 'true/0');
+select tests.is('mark shipped: only a super admin; an admin, a rep, the sender, a client and a guest are all refused (42501)',
+  tests.v(tests.id('a2'), $$select public.admin_mark_feedback_shipped('$$ || (select id from fb_ids where k = 'g1') || $$', 'x')::text$$) || '/' ||
+  tests.v(tests.id('b1'), $$select public.admin_mark_feedback_shipped('$$ || (select id from fb_ids where k = 'g1') || $$', 'x')::text$$) || '/' ||
+  tests.v(tests.id('e7'), $$select public.admin_mark_feedback_shipped('$$ || (select id from fb_ids where k = 'g1') || $$', 'x')::text$$) || '/' ||
+  tests.v(tests.id('c1'), $$select public.admin_mark_feedback_shipped('$$ || (select id from fb_ids where k = 'g1') || $$', 'x')::text$$) || '/' ||
+  tests.v(null, $$select public.admin_mark_feedback_shipped('$$ || (select id from fb_ids where k = 'g1') || $$', 'x')::text$$), 'ERR:42501/ERR:42501/ERR:42501/ERR:42501/ERR:42501');
+select tests.is('mark shipped: a NEW (not yet approved) item cannot be shipped (22023); a missing id is P0002; "shipped" through the decide RPC is refused (22023)',
+  tests.v(tests.id('d1'), $$select public.admin_mark_feedback_shipped('$$ || (select id from fb_ids where k = 'g1') || $$', 'x')::text$$) || '/' ||
+  tests.v(tests.id('d1'), $$select public.admin_mark_feedback_shipped('00000000-0000-4000-8000-0000000000ff', 'x')::text$$) || '/' ||
+  tests.v(tests.id('d1'), $$select public.admin_set_feedback_status('$$ || (select id from fb_ids where k = 'g1') || $$', 'shipped')::text$$), 'ERR:22023/ERR:P0002/ERR:22023');
+select tests.is('approve g1 and g2, dismiss g3 (with a note): the sender now has 3 unread; the statuses are set',
+  tests.v(tests.id('d1'), $$select public.admin_set_feedback_status('$$ || (select id from fb_ids where k = 'g1') || $$', 'approved', 'On the list.')::text$$) || '/' ||
+  tests.v(tests.id('d1'), $$select public.admin_set_feedback_status('$$ || (select id from fb_ids where k = 'g2') || $$', 'approved')::text$$) || '/' ||
+  tests.v(tests.id('d1'), $$select public.admin_set_feedback_status('$$ || (select id from fb_ids where k = 'g3') || $$', 'dismissed', 'Not now.')::text$$) || '/' ||
+  tests.unread(tests.id('e7')) || '/' || tests.sq($q$select string_agg(status, ',' order by message) from public.feedback where user_id = tests.id('e7')$q$), '///3/approved,dismissed,approved');
+select tests.is('the sender can read their own rows only: Gus sees 3 of his, rep Jane (b1) sees none of them',
+  tests.v(tests.id('e7'), $$select count(*)::text from public.feedback where user_id = (select id from public.profiles where email = 'gus.rep@clatitle.com')$$) || '/' ||
+  tests.v(tests.id('b1'), $$select count(*)::text from public.feedback where user_id = (select id from public.profiles where email = 'gus.rep@clatitle.com')$$), '3/0');
+select tests.is('a sender cannot change a status, a note or the seen marker with a plain update (no grant: 42501); a delete is refused too',
+  tests.v(tests.id('e7'), $$update public.feedback set status = 'shipped' where user_id = auth.uid()$$) || '/' ||
+  tests.v(tests.id('e7'), $$update public.feedback set sender_seen_status = status where user_id = auth.uid()$$) || '/' ||
+  tests.v(tests.id('e7'), $$update public.feedback set shipped_note = 'hax' where user_id = auth.uid()$$) || '/' ||
+  tests.v(tests.id('e7'), $$delete from public.feedback where user_id = auth.uid()$$), 'ERR:42501/ERR:42501/ERR:42501/ERR:42501');
+select tests.is('mark seen: not for a client or a guest (42501); another staff member using Gus''s id changes nothing (0) and Gus still has 3 unread',
+  tests.v(tests.id('c1'), $$select public.mark_my_feedback_seen()::text$$) || '/' || tests.v(null, $$select public.mark_my_feedback_seen()::text$$) || '/' ||
+  tests.v(tests.id('b1'), $$select public.mark_my_feedback_seen('$$ || (select id from fb_ids where k = 'g1') || $$')::text$$) || '/' || tests.unread(tests.id('e7')), 'ERR:42501/ERR:42501/0/3');
+select tests.is('mark seen: one item (1 changed), the same item again (0), then all the rest (2): unread goes 3 -> 2 -> 0; statuses never change',
+  tests.v(tests.id('e7'), $$select public.mark_my_feedback_seen('$$ || (select id from fb_ids where k = 'g1') || $$')::text$$) || '/' || tests.unread(tests.id('e7')) || '/' ||
+  tests.v(tests.id('e7'), $$select public.mark_my_feedback_seen('$$ || (select id from fb_ids where k = 'g1') || $$')::text$$) || '/' ||
+  tests.v(tests.id('e7'), $$select public.mark_my_feedback_seen()::text$$) || '/' || tests.unread(tests.id('e7')) || '/' ||
+  tests.sq($q$select string_agg(status, ',' order by message) from public.feedback where user_id = tests.id('e7')$q$), '1/2/0/2/0/approved,dismissed,approved');
+select tests.is('mark shipped: the super admin ships g1 with a note: status shipped, shipped_at and shipped_note set, decided_note kept, the sender has 1 unread again',
+  tests.v(tests.id('d1'), $$select public.admin_mark_feedback_shipped('$$ || (select id from fb_ids where k = 'g1') || $$', '  Dark mode is in the header.  ')::text$$) || '/' ||
+  tests.sq($q$select f.status || '|' || (f.shipped_at is not null)::text || '|' || f.shipped_note || '|' || f.decided_note from public.feedback f where f.id = (select id from fb_ids where k = 'g1')$q$) || '/' || tests.unread(tests.id('e7')),
+  '/shipped|true|Dark mode is in the header.|On the list./1');
+select tests.is('a shipped item cannot be shipped twice or approved / dismissed again (22023)',
+  tests.v(tests.id('d1'), $$select public.admin_mark_feedback_shipped('$$ || (select id from fb_ids where k = 'g1') || $$', 'again')::text$$) || '/' ||
+  tests.v(tests.id('d1'), $$select public.admin_set_feedback_status('$$ || (select id from fb_ids where k = 'g1') || $$', 'dismissed')::text$$) || '/' ||
+  tests.v(tests.id('d1'), $$select public.admin_set_feedback_status('$$ || (select id from fb_ids where k = 'g1') || $$', 'approved')::text$$), 'ERR:22023/ERR:22023/ERR:22023');
+select tests.is('a note of 500 characters is fine, 501 is refused (22023) and leaves the item as it was',
+  tests.v(tests.id('d1'), 'select public.admin_mark_feedback_shipped(''' || (select id from fb_ids where k = 'g2') || ''', ' || quote_literal(repeat('n', 501)) || ')::text') || '/' ||
+  tests.sq($q$select status from public.feedback where id = (select id from fb_ids where k = 'g2')$q$) || '/' ||
+  tests.v(tests.id('d1'), 'select public.admin_mark_feedback_shipped(''' || (select id from fb_ids where k = 'g2') || ''', ' || quote_literal(repeat('n', 500)) || ')::text') || '/' ||
+  tests.sq($q$select status || '|' || length(shipped_note)::text from public.feedback where id = (select id from fb_ids where k = 'g2')$q$), 'ERR:22023/approved//shipped|500');
+select tests.is('a changed decision note on a dismissed item makes it unread again; the same note again does not',
+  tests.unread(tests.id('e7')) || '/' ||
+  tests.v(tests.id('d1'), $$select public.admin_set_feedback_status('$$ || (select id from fb_ids where k = 'g3') || $$', 'dismissed', 'Not now.')::text$$) || '/' || tests.unread(tests.id('e7')) || '/' ||
+  tests.v(tests.id('e7'), $$select public.mark_my_feedback_seen()::text$$) || '/' ||
+  tests.v(tests.id('d1'), $$select public.admin_set_feedback_status('$$ || (select id from fb_ids where k = 'g3') || $$', 'dismissed', 'Not now.')::text$$) || '/' || tests.unread(tests.id('e7')), '2//2/2//0');
+select tests.is('audit: feedback_shipped rows (2) carry before/after but never the note text',
+  (select count(*)::text from public.audit_log where action = 'feedback_shipped') || '/' ||
+  (select count(*)::text from public.audit_log where action = 'feedback_shipped' and details::text like '%Dark mode%') || '/' ||
+  (select count(*)::text from public.audit_log where action = 'feedback_shipped' and details ->> 'after' = 'shipped'), '2/0/2');
+select tests.is('function privileges: anon cannot run the new RPCs, authenticated can',
+  (not has_function_privilege('anon', 'public.admin_mark_feedback_shipped(uuid, text)', 'execute') and not has_function_privilege('anon', 'public.mark_my_feedback_seen(uuid)', 'execute')
+   and has_function_privilege('authenticated', 'public.admin_mark_feedback_shipped(uuid, text)', 'execute') and has_function_privilege('authenticated', 'public.mark_my_feedback_seen(uuid)', 'execute'))::text, 'true');
+select tests.is('the old rules still hold: an admin (a2) still cannot approve (42501); status "notified" through the decide RPC is refused (22023)',
+  tests.v(tests.id('a2'), $$select public.admin_set_feedback_status('$$ || (select id from fb_ids where k = 'g2') || $$', 'approved')::text$$) || '/' ||
+  tests.v(tests.id('d1'), $$select public.admin_set_feedback_status('$$ || (select id from fb_ids where k = 'g3') || $$', 'notified')::text$$), 'ERR:42501/ERR:22023');
+
 -- ---------------- privileges ----------------
 select tests.is('function privileges: anon cannot run the admin RPCs, authenticated can',
   (select (not has_function_privilege('anon', 'public.admin_set_role(uuid, public.user_role, uuid)', 'execute')

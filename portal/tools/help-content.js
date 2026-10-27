@@ -63,9 +63,19 @@ sec("getting-started", 2, "Getting started", "E", "Sign in, accept an invitation
     ["Write your message", "Up to 2,000 characters. The page you are on is added automatically (the page name only, nothing else)."],
     ["Choose Send feedback", "You see \"Thanks, I read every note.\" You can send up to 10 an hour and 40 a day."],
   ] },
-  { t: "p", x: "The same panel lists your recent feedback with a status (Received, John has been told, Approved or Closed) and John's note, if he left one." },
+  { t: "p", x: "The same panel has a My suggestions list: your own notes, newest first, each with a status. See \"Following your suggestions\" below." },
   { t: "img", f: "feedback-bubble.png", cap: "The feedback bubble, bottom-right on every page for staff.", alt: "Round feedback bubble in the bottom-right corner" },
   { t: "img", f: "feedback-open.png", cap: "The feedback panel opens above the bubble.", alt: "Feedback panel with category chips and message box" },
+  { t: "h3", x: "Following your suggestions" },
+  { t: "p", x: "Open the bubble and scroll to My suggestions. Each note shows where it stands:" },
+  { t: "table", cols: ["Status", "What it means"], rows: [
+    ["Received", "John has your note (including when it has been passed to him). No decision yet."],
+    ["Approved · on the list", "John approved it and it is planned. His note, if any, appears under it."],
+    ["Shipped", "It is live. Under it, \"What changed\" says what is different now."],
+    ["Not planned", "John decided not to do it. His note appears only if he wrote one."],
+  ] },
+  { t: "p", x: "A red dot with a number appears on the bubble when a decision changed since you last looked (Approved, Shipped or Not planned, or an edited note). Open the panel and the dot clears; the items that changed carry an Updated tag until you close the panel. Nothing is e-mailed: you see updates here, in the portal." },
+  { t: "img", f: "feedback-mine.png", cap: "My suggestions with a status on each note (the list scrolls); Updated marks what changed since your last visit.", alt: "Feedback panel showing My suggestions with Approved, Shipped and Not planned badges" },
 ]);
 
 sec("roles", 3, "Roles and what each can do", "E", "Four roles. A super admin or admin can also work as a rep.", [
@@ -93,7 +103,7 @@ sec("roles", 3, "Roles and what each can do", "E", "Four roles. A super admin or
     ["Read the audit log", "Yes", "Yes", "No", "No"],
     ["See the feedback bubble and send feedback", "Yes", "Yes", "Yes", "No"],
     ["Read all staff feedback", "Yes", "Yes", "No", "No"],
-    ["Approve or dismiss feedback", "Yes", "No (read only)", "No", "No"],
+    ["Approve, dismiss or mark feedback shipped", "Yes", "No (read only)", "No", "No"],
     ["Manage pricing tables", "Yes", "Yes", "No", "No"],
     ["Get special settlement-fee pricing", "If their email is in a table and they also work as a rep", "Same", "If in a table", "If their own email or their rep is in a table"],
   ] },
@@ -277,7 +287,9 @@ sec("admin", 7, "Admin guide", "A", "People, roles, assignments, the audit log a
   { t: "p", x: "In the Users table, the Status badge tells you whether someone has signed in: Active (hover to see the last sign-in date), Invited, never signed in (they have not opened the invitation yet), or Disabled." },
   { t: "img", f: "admin-audit.png", cap: "The audit log.", alt: "Audit log" },
   { t: "h3", x: "Staff feedback review" },
-  { t: "p", x: "Admins and super admins read every item and can filter by status and category or search. Only a super admin can add a note and choose Approve or Dismiss; admins see it read-only. The sender sees the status and note in their feedback panel. Statuses are New, Notified, Approved and Dismissed." },
+  { t: "p", x: "Admins and super admins read every item and can filter by status and category or search. Only a super admin can add a note and choose Approve or Dismiss; admins see it read-only. The sender sees the status and note in their feedback panel (My suggestions). Statuses are New, Notified, Approved, Shipped and Dismissed." },
+  { t: "p", x: "When an approved item is live, type what changed in the \"What changed\" box on its row and choose Mark shipped (a super admin only; only approved items). The sender then sees Shipped with your note and a dot on their bubble. A shipped item cannot be changed again. The audit log records it as feedback_shipped. No e-mail or message is sent: senders see updates inside the portal." },
+  { t: "img", f: "admin-feedback-ship.png", cap: "An approved item: a What changed note and Mark shipped.", alt: "Feedback row with What changed field and Mark shipped button" },
   { t: "img", f: "admin-feedback.png", cap: "Feedback review.", alt: "Feedback tab" },
 ]);
 
