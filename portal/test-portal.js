@@ -772,6 +772,31 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     assert.ok(H.d.querySelector("body > #claFeedbackLink") && kids.indexOf("claFeedbackLink") === -1 && kids.indexOf("claTourLink") > -1 && kids.indexOf("chip") > kids.indexOf("claTourLink")); ok("tour: the 'Take the tour' link sits before the profile chip in the header, and the Feedback bubble floats in the body without colliding"); H.dom.window.close();
     const G2 = await renderPage("login.html", null, "header"); assert.ok(!G2.d.getElementById("claTourLink")); ok("tour: no 'Take the tour' link for guests"); G2.dom.window.close();
     const PR = await renderPage("profile.html", "sample.new.client@example.com", "#claTourLink"); assert.ok(PR.d.getElementById("claTourLink") && !PR.d.getElementById("claTour") && PR.win.CLA.tourKind(await (async () => { const a = await PR.win.CLA.getAdapter(); return a.getMyProfile(); })()) === null); ok("tour: other pages (profile) have the link but never auto-start; the link sends you to your dashboard"); PR.dom.window.close();
+    // ---- Help page (portal/help.html): header link, signed-in guard, audience sections, pictures ----
+    { const hp = fs.readFileSync(path.join(__dirname, "help.html"), "utf8"), hook2 = fs.readFileSync(path.join(__dirname, "js", "portal-hook.js"), "utf8");
+      for (const [pg, who, w] of [["client.html", "sam.agent@example.com", "#claTourLink"], ["rep.html", "sample.rep.jane@clatitle.com", "#claTourLink"], ["admin.html", "sample.admin@clatitle.com", "#claTourLink"]]) {
+        const X = await renderPage(pg, who, w); const a = X.d.querySelector("header .hr a#helpLink"); const kk = [...X.d.querySelector("header .hr").children];
+        assert.ok(a && a.getAttribute("href") === "help.html" && a.textContent === "Help" && kk.indexOf(a) < kk.indexOf(X.d.getElementById("claTourLink")) && X.d.querySelector("header .hr .chip")); X.dom.window.close();
+      }
+      ok("help: a 'Help' link (help.html) is in the portal header for a client, a rep and an admin, before 'Take the tour'");
+      const GH = await renderPage("login.html", null, "header"); assert.ok(!GH.d.getElementById("helpLink")); GH.dom.window.close(); ok("help: no Help link in the header for guests (sign-in page)");
+      assert.ok(/CLA\.boot\(null\)/.test(hp) && !/CLA\.boot\(false\)/.test(hp)); assert.ok(/id="claHelpLink"[^;]*help\.html/.test(hook2) && /me\.role/.test(hook2.slice(hook2.indexOf("claHelpLink") - 900, hook2.indexOf("claHelpLink")))); ok("help: help.html uses the signed-in guard (boot(null)) and stays hidden for guests; the calculator header link is added only where the account link is (signed in)");
+      process.on("unhandledRejection", swallow);
+      { const HG = await renderPage("help.html", null, "main"); assert.ok(HG.d.getElementById("top").hidden && !HG.d.querySelector("header.top")); HG.dom.window.close(); }
+      await new Promise((r) => setTimeout(r, 30)); process.removeListener("unhandledRejection", swallow);
+      const secsOf = (X) => [...X.d.querySelectorAll(".help-sec")].filter((e) => !e.hidden);
+      const HC = await renderPage("help.html", "sam.agent@example.com", "header .hr .chip"); assert.strictEqual(HC.errs.length, 0, HC.errs.join()); assert.ok(HC.d.getElementById("audSeg").hidden && secsOf(HC).length > 0 && secsOf(HC).every((e) => e.dataset.aud === "E") && ![...HC.d.querySelectorAll("#tocList li")].some((li) => !li.hidden && li.dataset.aud !== "E")); HC.dom.window.close();
+      const HR = await renderPage("help.html", "sample.rep.jane@clatitle.com", "header .hr .chip"); assert.ok(secsOf(HR).some((e) => e.dataset.aud === "R") && secsOf(HR).every((e) => e.dataset.aud !== "A") && !HR.d.getElementById("audSeg").hidden); HR.dom.window.close();
+      const HA = await renderPage("help.html", "sample.admin@clatitle.com", "header .hr .chip"); const aud = new Set(secsOf(HA).map((e) => e.dataset.aud)); assert.ok(aud.has("E") && aud.has("R") && aud.has("A"));
+      HA.d.querySelector('#audSeg button[data-v="A"]').click(); assert.ok(secsOf(HA).length > 0 && secsOf(HA).every((e) => e.dataset.aud === "A")); HA.d.querySelector('#audSeg button[data-v="mine"]').click(); assert.ok(secsOf(HA).length > 3); HA.dom.window.close();
+      ok("help: a client sees only the Everyone sections, a rep adds Reps, an admin sees all and can filter by audience (the chips only appear for staff)");
+      const ids = [...hp.matchAll(/ id="([\w-]+)"/g)].map((m) => m[1]), tocLinks = [...hp.matchAll(/<a href="#([\w-]+)">/g)].map((m) => m[1]).filter((x) => x !== "top");
+      assert.ok(tocLinks.length >= 12 && tocLinks.every((x) => ids.includes(x)) && new Set(ids).size === ids.length); ok("help: every contents link points at a section; ids are unique");
+      const imgs = [...hp.matchAll(/<img src="(help\/img\/[\w-]+\.png)" alt="([^"]+)" width="(\d+)" height="(\d+)"/g)], dirImgs = fs.readdirSync(path.join(__dirname, "help", "img")).filter((f) => f.endsWith(".png"));
+      assert.ok(imgs.length >= 28 && imgs.every((m) => fs.existsSync(path.join(__dirname, m[1])) && m[2].length > 8 && +m[3] <= 1200) && dirImgs.length === new Set(imgs.map((m) => path.basename(m[1]))).size && !/<img(?![^>]*alt=)/.test(hp)); ok("help: every picture exists on disk, has alt text, is at most 1200px wide, and there are no unused files");
+      assert.ok(imgs.every((m) => fs.statSync(path.join(__dirname, m[1])).size < 200 * 1024)); ok("help: each picture is under 200 KB");
+      assert.ok(!/https?:\/\/(?!fonts\.googleapis)/.test(hp.replace(/quotes\.clatitle\.com/g, "")) && !/eyJ|service_role|apikey|password\s*[:=]/i.test(hp)); ok("help: no external links except the font, and no keys or passwords in the page");
+    }
     // files: no external libraries / CDN; motion respects prefers-reduced-motion
     const tj = fs.readFileSync(path.join(__dirname, "js", "tour.js"), "utf8"), tc = fs.readFileSync(path.join(__dirname, "tour.css"), "utf8");
     assert.ok(!/https?:\/\/|import\s|require\(/.test(tj) && !/https?:\/\/|@import/.test(tc)); assert.ok(/prefers-reduced-motion:no-preference/.test(tc) && !/(^|\})\s*\.[^{]*\{[^}]*transition/.test(tc.replace(/@media[^{]*\{(?:[^{}]*\{[^}]*\})+\s*\}/g, ""))); ok("tour: no external libraries or CDN; animation only when the person has not asked for reduced motion");
@@ -994,7 +1019,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
 
     // cache-bust: every ?v= in index.html and TOUR_V agree
     const vs = [...idx.matchAll(/\?v=(\d{8}[a-z])/g)].map((m) => m[1]), pu = fs.readFileSync(path.join(__dirname, "js", "portal-ui.js"), "utf8");
-    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261027d" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261027d");
+    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261027e" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261027e");
     // the new elements are inert in print and add no external requests
     assert.ok(/@media print\{\s*@page\{margin:14mm\}\s*\.claChip\{display:none!important\}/.test(idx) && !/https?:\/\//.test(tj2)); ok("calculator tour: the chip is not printed; tour.js has no external libraries or CDN");
   }

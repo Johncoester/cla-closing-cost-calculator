@@ -56,7 +56,7 @@
   };
   // ---- guided tour (js/tour.js + tour.css; loaded only when someone is about to see it) ----
   // Each tour lives on the person's own dashboard: admin.html (admin / super admin), rep.html (rep), client.html (client / realtor).
-  CLA.TOUR_V = "20261027d";   // cache-bust for tour.js / tour.css; bump with the ?v= in index.html
+  CLA.TOUR_V = "20261027e";   // cache-bust for tour.js / tour.css; bump with the ?v= in index.html
   CLA.tourKind = (me) => { const f = location.pathname.split("/").pop(); return !me ? null : f === "admin.html" && CLA.isAdmin(me) ? "admin" : f === "rep.html" && CLA.isRep(me) ? "rep" : f === "client.html" && me.role === "client" ? "client" : null; };
   CLA.loadTour = () => CLA.startTour ? Promise.resolve() : new Promise((res, rej) => { const s = document.createElement("script"); s.src = "js/tour.js?v=" + CLA.TOUR_V; s.onload = res; s.onerror = () => rej(new Error("load")); document.head.appendChild(s); });
   // Called by each dashboard once it has drawn itself. Starts the tour on its own ONLY for a person who has never seen it (profiles.tour_seen_at is NULL,
@@ -106,6 +106,7 @@
       const url = await A.getAvatarUrl(profile);
       right = '<a class="navlink" href="../index.html">Calculator</a><a class="navlink"' + (CLA.isAdmin(profile) && profile.isRep ? ' data-tour="h-admin"' : "") + ' href="' + CLA.homeFor(profile.role) + '">' + (CLA.isAdmin(profile) && profile.isRep ? "Admin dashboard" : "Dashboard") + "</a>" +
         (CLA.isAdmin(profile) && profile.isRep ? '<a class="navlink" id="repLink" href="rep.html">Rep dashboard</a>' : "") +
+        '<a class="navlink" id="helpLink" data-tour="h-help" href="help.html">Help</a>' +
         '<button class="claTourLink" id="claTourLink" type="button">Take the tour</button>' +
         '<a class="chip" data-tour="h-profile" href="profile.html">' + CLA.avatarImg(url, profile, "sm") + '<span>' + CLA.esc(CLA.fullName(profile)) + '<small>' + CLA.roleLabel(profile.role, profile) + "</small></span></a>" +
         '<button class="btn sec" id="signOut" type="button">Sign out</button>';

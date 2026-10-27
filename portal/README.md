@@ -214,7 +214,7 @@ The same engine also runs on the public calculator, for **anyone** (guest or sig
 - **Tabs:** the Seller Net Sheet step opens that tab and puts the person's own tab back afterwards (also if they skip or press Esc). The tour never clicks Purchase / Cash / Refinance, because switching those rebuilds the documents and endorsements and would discard edits; it only points at them. No fee or number is changed.
 - **The chip:** shown only to someone who has not dismissed it. The x, starting the tour from the chip or from the header link all store `cla_calc_tour_chip = "1"` in `localStorage`, so it never comes back. If browser storage is blocked the chip is not shown at all. It does not print.
 - **Phones:** the box is a bottom sheet (also for the centred welcome note); on desktop a tall target (the breakdown) gets the box beside it instead of on top of it.
-- **Cache-bust:** `?v=20261027d` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
+- **Cache-bust:** `?v=20261027e` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
 - **Tests:** the "calculator tour" block in `portal/test-portal.js` (link, step counts, targets, skipping, tab restore, chip persistence, phone sheet, versions). Screenshots: `portal/tools/screenshots_calculator_tour.py`.
 
 ## What is mocked, what is real
@@ -269,4 +269,10 @@ Must be written: (a) an **API layer** (API Gateway + Lambda), because browsers c
 
 ## Rep pricing tables: settlement fee only (migration 16, local branch `rep-pricing`, not applied live)
 Named **pricing tables** (e.g. "Marvin's Pricing") hold lower **settlement fees**, as **fee sets** that cover any selection of states (MD+VA, FL, all states...) (`Settlement Fee to CLA Title & Escrow` only; premiums and recording fees can never change); admins and super admins add a rep's or an individual client's **email** to a table on the admin page's **Rep pricing** tab. One email, one table.
-Design, the one rule for whose fee a person gets (own email's table first, else the assigned rep's table, else standard), tests, and how to apply: see [`REP-PRICING.md`](REP-PRICING.md). Cache-bust `?v=20261027d`.
+Design, the one rule for whose fee a person gets (own email's table first, else the assigned rep's table, else standard), tests, and how to apply: see [`REP-PRICING.md`](REP-PRICING.md). Cache-bust `?v=20261027e`.
+
+## In-portal Help page (local branch `help-manual`, not pushed)
+`portal/help.html` is the user manual for signed-in people (Everyone / Reps / Admins sections, contents with anchors, browser Find is the search). It is **generated**: edit `portal/tools/help-content.js`, then `node portal/tools/build-help.js`. The pictures in `portal/help/img/` come from the **mock build with fake people only**: `python3 portal/tools/screenshots_help.py` (serves this repo on a local port with the mock config forced) then `python3 portal/tools/optimize_help_images.py`.
+- A **Help** link is in the portal header (`CLA.renderHeader`) and next to "My account" in the calculator header (`portal-hook.js`), for signed-in users only.
+- The page uses `CLA.boot(null)`: signed-out visitors go to `login.html?next=help.html`; the content stays hidden until sign-in. This is a convenience, not security: the static file itself is public like every other portal page (the manual holds no keys or client data). Clients see the Everyone sections, reps add Reps, admins see everything (a filter bar lets staff narrow it).
+- Cache-bust letter: `20261027e` (see above).
