@@ -1,6 +1,6 @@
 # CLA Quote Portal: foundation (branch `portal-foundation`)
 
-Status: **local only.** Nothing is pushed, deployed, or signed up for. Target platform: **Supabase** (John's choice).
+Status: **live** at https://quotes.clatitle.com/ (Supabase project, GitHub Pages). Branches are merged to `main` after John approves; each section below says which migration is applied. Target platform: **Supabase** (John's choice).
 Everything runs today in **demo (mock) mode** with sample data; the Supabase pieces are written and the
 database part is tested, but no Supabase project exists yet.
 
@@ -198,12 +198,12 @@ The sender sees what happened to their note, inside the portal. **No e-mail or m
 - **Unread** = status in (approved, shipped, dismissed) and `sender_seen_status` is not the current status (`CLA.feedbackUnread`). The feedback bubble shows a red number dot; opening the panel marks everything seen (the "Updated" tags stay until the panel closes). "My suggestions" is the list in the panel (newest first, up to 10).
 - **Admin Feedback tab:** approved items get a "What changed" box and **Mark shipped**; shipped items show the note; admins who are not super admins see it read-only. Filter has a Shipped status.
 - **Adapters:** `adminMarkFeedbackShipped(id, note)` and `markMyFeedbackSeen(id?)` (supabase + mock). Mock seed: version 11 with a note in every status (Jane has 2 unread, Marcus 1, Robin 1).
-- **Apply live (when approved):** run `20261027000017_feedback_status_updates.sql` once (SQL editor), then deploy the site (`?v=20261027j`). The older site keeps working before the migration, but the new panel needs the new columns, so apply the migration first. Rollback of the site is `git revert`; the migration is additive (new columns and functions; the status constraint only gains `shipped`).
+- **Live:** migration 17 was applied on 2026-10-27 and the site deployed. The older site keeps working before the migration, but the new panel needs the new columns, so apply the migration first. Rollback of the site is `git revert`; the migration is additive (new columns and functions; the status constraint only gains `shipped`).
 - **Screens:** `portal/tools/screenshots_feedback_status.py`.
 
 ## Delete a disabled user (migration 18) and the Users-tab filters
 
-**Status: built and tested locally on branch `delete-user`. NOT applied live, edge function NOT deployed.**
+**Status: live since 2026-10-27 (commit `4fe0050`).**
 
 - **Who:** super admins and admins, with the same reach as Disable (`private.can_manage_user`): never yourself, never the last active super admin, and an admin never a super admin (an admin may delete another admin). The person must be **disabled** first.
 - **RPC** `admin_delete_user(p_user, p_confirm_email, p_reassign_to default null)` (security definer; admins only). Refusals in order: not admin 42501, no target 22023, yourself 42501, unknown P0002, admin vs super admin 42501, not disabled 55000, email mismatch 22023 (case / spaces ignored), last active super admin 55000, active clients and no successor 23514 (successor via `private.move_rep_clients`).
@@ -214,7 +214,7 @@ The sender sees what happened to their note, inside the portal. **No e-mail or m
 - **UI (admin Users tab):** a **Delete...** button only on disabled rows (greyed with a tooltip when the actor may not manage that person; none on your own row). The dialog lists deleted / moved / kept, asks for a successor rep when needed, and enables **Delete permanently** only when the exact email is typed.
 - **Filters (Users tab):** Role (All, Super admin, Admin, Rep, Client), Status (All, Active (not disabled), Disabled, Invited never signed in) and a search (name, email, company), combined, with "Showing N of M" and Clear filters. **Rep includes admins / super admins who also work as a rep** (`CLA.isRep`); a note appears under the filters. They keep their Admin label in the table.
 - **Tests:** `10_access_rules.sql` (delete section), `95_upgrade_from_17.sql` (upgrade check 9), `test-portal.js` (mock + supabase adapter + admin screen + filters). Screens: `portal/tools/screenshots_delete_user.py`.
-- **Apply live (when approved):** run `20261027000018_delete_user.sql` once (SQL editor), deploy the `delete-user` function (`supabase functions deploy delete-user`), then deploy the site (`?v=20261027l`). Before the migration the Delete button errors harmlessly (the function is missing).
+- **Live:** migration 18 applied, the `delete-user` function deployed (`verify_jwt` on) and the site published on 2026-10-27 (commit `4fe0050`). Before the migration the Delete button errors harmlessly (the function is missing).
 
 ## Guided tour (migration 14)
 
@@ -242,8 +242,15 @@ The same engine also runs on the public calculator, for **anyone** (guest or sig
 - **Tabs:** the Seller Net Sheet step opens that tab and puts the person's own tab back afterwards (also if they skip or press Esc). The tour never clicks Purchase / Cash / Refinance, because switching those rebuilds the documents and endorsements and would discard edits; it only points at them. No fee or number is changed.
 - **The chip:** shown only to someone who has not dismissed it. The x, starting the tour from the chip or from the header link all store `cla_calc_tour_chip = "1"` in `localStorage`, so it never comes back. If browser storage is blocked the chip is not shown at all. It does not print.
 - **Phones:** the box is a bottom sheet (also for the centred welcome note); on desktop a tall target (the breakdown) gets the box beside it instead of on top of it.
-- **Cache-bust:** `?v=20261027l` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
+- **Cache-bust:** `?v=20261027m` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
 - **Tests:** the "calculator tour" block in `portal/test-portal.js` (link, step counts, targets, skipping, tab restore, chip persistence, phone sheet, versions). Screenshots: `portal/tools/screenshots_calculator_tour.py`.
+
+## Who pays each transfer / recordation tax (local branch `tax-split`; calculator only, no database change)
+- Each deed-based tax line (basis = sale price: MD state/county transfer and county recordation, DC, VA grantor/grantee and regional, FL deed stamps) has a Seller / Split / Buyer control in the calculator inputs (quote tab and seller net sheet). Taxes on the loan (note stamps, mortgage or DOT recordation, intangible) are not adjustable; a refinance has no control.
+- **Defaults are unchanged:** every line starts with the payer in the `Transfer_Taxes` tab (MD non-first-time-buyer: Split; MD first-time buyer: Seller; DC recordation: Buyer, transfer: Seller; VA and FL as in the sheet). The old "Buyer pays seller's transfer / deed tax" box still works; a per-line choice beats it.
+- **Split** = half each in whole cents (an odd cent goes to the seller), so buyer + seller always equals the tax. Lines are labelled "(split 50/50)", "(paid by buyer)" or "(paid by seller)".
+- **Saved quotes:** the lines the person clicked are stored in the snapshot's `inputs.taxPayers` (`{ "County transfer tax": "split" }`), next to the lines and the copied text, which carry the labels. No migration is needed (`inputs` is free-form JSON). Choices reset when the state or county changes.
+- Tests: "TS", "SN" and "DOM tax payer" checks in `test.js`; "tax payer choice (mock)" in `portal/test-portal.js`. Picture: `portal/help/client/calc-tax-payer.png`.
 
 ## What is mocked, what is real
 
@@ -288,16 +295,16 @@ Must be written: (a) an **API layer** (API Gateway + Lambda), because browsers c
 * Rep invites of a client who belongs to another rep fail with a message that reveals the client already has a rep. Acceptable inside CLA; tighten if reps should not learn that.
 * Seed reps use `sample.rep.*@clatitle.com` because the database insists on CLA addresses; no email is ever sent from seed data.
 
-## "Invited, never signed in" badge (migration 15, local branch `invited-badge`, not applied live)
+## "Invited, never signed in" badge (migration 15, applied live)
 - **Problem:** a profile is `status = 'active'` from the moment of the invite, so the admin Users table showed "Active" for people who never opened their invite. `profiles.last_seen_at` cannot tell: no code writes it (it is NULL for everybody, including people who sign in daily).
 - **Source of truth:** `auth.users.last_sign_in_at` (NULL until the first sign-in, which includes accepting the invite link). The browser cannot read the auth schema, so `20261026000015_admin_last_sign_in.sql` adds `public.admin_list_last_sign_ins()` (admin / super admin only, read-only, returns only `user_id` + `last_sign_in_at`). `adminListUsers()` merges it into `Profile.lastSignInAt` (ISO = signed in, `null` = never, `undefined` = unknown).
 - **Badges (admin.html, Status column):** Disabled (unchanged) / **Invited, never signed in** (warn style, like "Invited, not signed up" in rep.html; tooltip with the invite date) / **Active** (tooltip: last signed in). If the migration is not applied yet the value is unknown and the page shows plain "Active" (never a wrong "Invited" label), so deploying the site before the migration is safe.
 - **Apply live (when approved):** run `20261026000015_admin_last_sign_in.sql` once in the Supabase SQL editor (idempotent, no table/policy changes), then deploy. Either order is safe; migration first shows the badge immediately.
 - **Edge:** someone who clicked the invite link but never finished setting a password has a sign-in time and shows "Active".
 
-## Rep pricing tables: settlement fee only (migration 16, local branch `rep-pricing`, not applied live)
+## Rep pricing tables: settlement fee only (migration 16, applied live)
 Named **pricing tables** (e.g. "Marvin's Pricing") hold lower **settlement fees**, as **fee sets** that cover any selection of states (MD+VA, FL, all states...) (`Settlement Fee to CLA Title & Escrow` only; premiums and recording fees can never change); admins and super admins add a rep's or an individual client's **email** to a table on the admin page's **Rep pricing** tab. One email, one table.
-Design, the one rule for whose fee a person gets (own email's table first, else the assigned rep's table, else standard), tests, and how to apply: see [`REP-PRICING.md`](REP-PRICING.md). Cache-bust `?v=20261027l`.
+Design, the one rule for whose fee a person gets (own email's table first, else the assigned rep's table, else standard), tests, and how to apply: see [`REP-PRICING.md`](REP-PRICING.md). Cache-bust `?v=20261027m`.
 
 ## In-portal Help: client guide and staff manual (local branch `help-manual`, not pushed)
 Two pages, both **generated** by `node portal/tools/build-help.js` (do not edit the HTML by hand):
@@ -306,4 +313,4 @@ Two pages, both **generated** by `node portal/tools/build-help.js` (do not edit 
 - **Header Help link** (`CLA.helpHref` in `portal-ui.js`; the calculator header link in `portal-hook.js` uses the same function): clients go to `help.html`, reps, admins and super admins to `staff-help.html`. Signed-in users only.
 - **Guards:** both pages use `CLA.boot(null)` (signed-out visitors go to `login.html?next=...`) and stay hidden until then. `staff-help.html` sends a client to `help.html`. **Be honest about what that is:** static pages can be fetched by anyone who knows the URL; the guard decides what a signed-in person sees on screen, it is not access control. Neither page has a key, a secret or customer data (the pictures use made-up sample people).
 - **Pictures:** `python3 portal/tools/screenshots_help.py` (serves this repo on a local port with the mock config forced, hides the demo banner), then `python3 portal/tools/optimize_help_images.py`, which sorts them into `help/client/` (used by the client guide) and `help/staff/` (everything else the staff manual uses) and removes anything unused.
-- Cache-bust letter: `20261027l` (see above).
+- Cache-bust letter: `20261027m` (see above).

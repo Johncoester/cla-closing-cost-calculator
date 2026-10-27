@@ -4,8 +4,8 @@
 <meta name="theme-color" content="#000000">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="zip-county.js?v=20261027l"></script>
-<script src="fee-snapshot.js?v=20261027l"></script>
+<script src="zip-county.js?v=20261027m"></script>
+<script src="fee-snapshot.js?v=20261027m"></script>
 <style>
 :root{--g:#8dc63f;--gd:#6fa52a;--gdd:#4d7a17;--ink:#111;--mut:#5b6272;--line:#e3e8da;--bg:#f4f7ef;--field:#d5dbca}
 *{box-sizing:border-box}
@@ -66,6 +66,11 @@ input[type=checkbox]{width:18px;height:18px;margin:0;accent-color:var(--gd);flex
 .chk{position:relative;display:block;padding-left:30px;margin:0 0 10px;font-size:13.5px;font-weight:400;color:#2c3128;cursor:pointer}
 .chk>input[type=checkbox]{position:absolute;left:0;top:1px}
 .chk .sum{font-size:12.5px}
+.taxpay{margin:2px 0 12px;padding:10px 12px;border:1px solid #e3e7da;border-radius:10px;background:#fafbf7}.taxpay .tph{font-size:12.5px;font-weight:600;color:#2c3128;margin-bottom:6px}
+.taxpay .tpr{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 10px;padding:6px 0;border-top:1px solid #eef0e7}.taxpay .tpr:first-of-type{border-top:0}
+.taxpay .tpn{flex:1 1 150px;font-size:13px;color:#2c3128}.taxpay .tpn .sum{display:block}
+.taxpay .seg{display:inline-flex;border:1px solid #c9d1bb;border-radius:8px;overflow:hidden}.taxpay .seg button{appearance:none;border:0;background:#fff;color:#2c3128;font:inherit;font-size:12.5px;padding:5px 10px;cursor:pointer;border-left:1px solid #c9d1bb}.taxpay .seg button:first-child{border-left:0}
+.taxpay .seg button[aria-pressed=true]{background:#8dc63f;color:#17210a;font-weight:700}.taxpay .seg button:focus-visible{outline:2px solid #3b6b00;outline-offset:-2px}
 #ends .chk{padding:8px 0 8px 30px;margin:0;border-bottom:1px solid #f0f2ea}#ends .chk>input{top:9px}
 /* fees */
 .fee{display:grid;grid-template-columns:20px minmax(0,1fr) 96px 64px;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid #f0f2ea;font-size:13px}
@@ -229,6 +234,7 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 <label id="occWrap" class="chk"><input type="checkbox" id="occ" checked><span>Owner-occupied principal residence</span></label>
 <div class="sum hint" id="occNote"></div>
 <label id="bpstWrap" class="chk"><input type="checkbox" id="bpst"><span>Buyer pays seller's transfer / deed tax <span class="sum">(contract term; e.g. FL deed stamps)</span></span></label>
+<div id="taxPay" class="taxpay" hidden></div>
 </section>
 <section class="card c2"><h2>Fees &amp; options</h2>
 <details id="docsBox"><summary>Documents to record</summary>
@@ -288,6 +294,7 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 <label class="chk"><input type="checkbox" id="s_own"><span>Seller pays the owner's title policy <span class="sum" id="s_ownNote"></span></span></label>
 <label class="chk"><input type="checkbox" id="s_fthb"><span>Buyer is a first-time homebuyer <span class="sum">(can shift transfer tax to the seller)</span></span></label>
 <label class="chk"><input type="checkbox" id="s_bpst"><span>Buyer pays seller's transfer / deed tax <span class="sum">(contract term; e.g. FL deed stamps)</span></span></label>
+<div id="s_taxPay" class="taxpay" hidden></div>
 <details><summary>CLA seller fees</summary><div id="s_fees"></div></details>
 </section>
 </div>
@@ -379,9 +386,12 @@ function premiums(R,i){const W=[],o={owner:null,lenderActual:null,lenderFull:nul
  return{...o,warnings:W}}
 
 // ---------- main calculation ----------
+// A 50/50 split in whole cents: the two halves always add up exactly to the amount (an odd cent goes to the seller).
+const halves=amt=>{const c=Math.round((+amt||0)*100),b=Math.floor(c/2);return[b/100,(c-b)/100]};
+const TAX_PAYERS=["seller","split","buyer"];
 function calc(R,i){const L=[],W=[],refi=i.type==="refi";
  const add=(sec,item,b,s)=>{b=r2(b||0);s=r2(s||0);if(b||s)L.push({sec,item,b,s})};
- const split=(payer,amt)=>{payer=String(payer||"buyer").toLowerCase();if(payer==="seller"&&!refi)return[0,amt];if(payer==="split"&&!refi)return[amt/2,amt/2];return[amt,0]};
+ const split=(payer,amt)=>{payer=String(payer||"buyer").toLowerCase();if(payer==="seller"&&!refi)return[0,amt];if(payer==="split"&&!refi)return halves(amt);return[amt,0]};
  const cash=i.type==="cash"||!(i.loan>0);
  // documents being recorded (deed of trust only when there is a loan)
  const docs=Object.entries(i.docs||{}).filter(([d,[n]])=>n>0&&!(d==="Deed of Trust"&&cash));const nDocs=docs.reduce((a,[,[n]])=>a+n,0);
@@ -410,11 +420,19 @@ function calc(R,i){const L=[],W=[],refi=i.type==="refi";
   add(SEC.E,`Recording fees – ${d}${n>1?" ×"+n:""}${big?" (10+ pages, not a principal residence)":""}`,...split(payer,amt*n))}
  // transfer and recordation taxes
  const taxes=pick(R.Transfer_Taxes,i.state,i.county,i.type,r=>r["Tax Name"]+"|"+r.Transaction);let anyTax=false;const agg={};
- for(const t of taxes){const x=taxAmount(t,i);if(!x)continue;anyTax=true;const k=t["Tax Name"];(agg[k]=agg[k]||{amt:0,payer:x.payer,fthb:x.fthb}).amt+=x.amt}
- for(const[k,v]of Object.entries(agg)){const toBuyer=i.buyerPaysSellerTax&&v.payer==="seller";add(SEC.E,k+(v.fthb?" (first-time buyer)":"")+(toBuyer?" (buyer paying seller's tax)":""),...split(toBuyer?"buyer":v.payer,v.amt))}
+ for(const t of taxes){const x=taxAmount(t,i);if(!x)continue;anyTax=true;const k=t["Tax Name"],adj=/^sale/i.test(String(t.Basis||"").trim());const a=agg[k]=agg[k]||{amt:0,payer:x.payer,fthb:x.fthb,adj:true};a.amt+=x.amt;a.adj=a.adj&&adj}
+ const TX=[];
+ for(const[k,v]of Object.entries(agg)){const def=v.payer,want=v.adj&&!refi&&i.taxPayers?String(i.taxPayers[k]||"").toLowerCase():"",ov=TAX_PAYERS.includes(want)?want:"";
+  let eff=def,tag="";
+  if(ov){eff=ov;if(ov!==def)tag=ov==="split"?"":ov==="buyer"?" (paid by buyer)":" (paid by seller)"}
+  else if(i.buyerPaysSellerTax&&def==="seller"){eff="buyer";tag=" (buyer paying seller's tax)"}
+  if(eff==="split"&&!refi)tag=" (split 50/50)";
+  const label=k+(v.fthb?" (first-time buyer)":"")+tag;
+  add(SEC.E,label,...split(eff,v.amt));
+  TX.push({name:k,label,amt:r2(v.amt),def,payer:eff,adjustable:v.adj&&!refi,fthb:v.fthb})}
  if(!anyTax&&!refi&&i.price>0)W.push(`No transfer/recordation taxes found for ${i.county||"(county)"}, ${i.state}.`);
  const order=[SEC.B,SEC.C,SEC.E,SEC.H];L.sort((a,b)=>order.indexOf(a.sec)-order.indexOf(b.sec));
- const B=r2(L.reduce((a,x)=>a+x.b,0)),S=r2(L.reduce((a,x)=>a+x.s,0));return{lines:L,warnings:W,buyer:B,seller:S,total:r2(B+S),premiums:P}}
+ const B=r2(L.reduce((a,x)=>a+x.b,0)),S=r2(L.reduce((a,x)=>a+x.s,0));return{lines:L,warnings:W,buyer:B,seller:S,total:r2(B+S),premiums:P,taxes:TX}}
 function fmt(x){return"$"+(+x).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}
 function claFees(R,st,type){return R.CLA_Fees.filter(f=>eq(f.State,st)&&txOK(f.Transaction,type)&&!(type==="refi"&&eq(f["Paid By"],"Seller"))&&!(type==="cash"&&lenderOnly(f)))}
 
@@ -458,7 +476,7 @@ function sellerNet(R,i){const price=+i.price||0,W=[],sum=a=>r2(a.reduce((t,x)=>t
  const releases=(+i.payoff1>0?1:0)+(+i.payoff2>0?1:0),ownPay=i.ownerPays==null?ownerPayDefault(R,i.state,i.county):i.ownerPays?"Seller":"Buyer";
  // a cash-style purchase (no buyer loan) so only seller lines remain; actual premium split, so the seller pays the full owner's premium
  const q=calc(R,{type:"cash",state:i.state,county:i.county,uw:i.uw,price,loan:0,payoff:0,pol:i.pol||"enhanced",rate:i.rate||"basic",fthb:!!i.fthb,occ:true,ownPay,pres:"actual",ends:[],
-  docs:{"Deed":[1,3],"Deed of Trust":[0,30],"Release":[releases,3],"Power of Attorney":[0,3]},fees:i.fees||sellerFeeInputs(R,i.state),buyerPaysSellerTax:!!i.bpst});
+  docs:{"Deed":[1,3],"Deed of Trust":[0,30],"Release":[releases,3],"Power of Attorney":[0,3]},fees:i.fees||sellerFeeInputs(R,i.state),buyerPaysSellerTax:!!i.bpst,taxPayers:i.taxPayers});
  W.push(...q.warnings.filter(w=>!/lender/i.test(w)&&!(/owner's premium/.test(w)&&ownPay!=="Seller")));
  const gov=[],title=[];for(const l of q.lines)if(l.s>0)(/^Title – /.test(l.item)?title:gov).push({item:l.item.replace(/^Title – /,""),amt:l.s});
  const commissions=[{item:"Buyer's broker commission"+pc(i.buyerComm),amt:bc},{item:"Seller's broker commission"+pc(i.sellerComm),amt:sc}];
@@ -489,7 +507,7 @@ const SNAP=typeof CLA_FEES_SNAPSHOT!=="undefined"?CLA_FEES_SNAPSHOT:{};
 async function fetchSheet(fetchFn){const raw={};await Promise.all(TABS.map(async t=>{const r=await fetchFn(sheetCsvUrl(t),{cache:"no-store"});
  if(!r.ok)throw Error(`${t}: HTTP ${r.status}`);const rows=parseCSV(await r.text());if(!validTab(rows)){if(REQUIRED.includes(t))throw Error(`${t}: unexpected content (is the sheet shared "anyone with the link"?)`);return}raw[t]=rows}));return raw}
 async function loadFees(fetchFn){try{const raw=await fetchSheet(fetchFn);return{raw,source:"sheet",at:new Date()}}catch(e){return{raw:SNAP,source:"snapshot",error:String(e.message||e)}}}
-if(typeof module!=="undefined")module.exports={lenderOnly,perDoc,parseCSV,normalize,calc,premiums,taxAmount,DOC_DEFAULTS,allCounties,usesDefaults,zipLookup,loadFees,fetchSheet,claFees,SNAP,SHEET_ID,sheetCsvUrl,TABS,sellerNet,prorateTaxes,defaultPaidThrough,sellerFeeRows,sellerFeeInputs,commission,ownerPayDefault,isSettlementFee,repFeeOverride,applyRepFees};
+if(typeof module!=="undefined")module.exports={lenderOnly,perDoc,parseCSV,normalize,calc,premiums,taxAmount,DOC_DEFAULTS,allCounties,usesDefaults,zipLookup,loadFees,fetchSheet,claFees,SNAP,SHEET_ID,sheetCsvUrl,TABS,sellerNet,prorateTaxes,defaultPaidThrough,sellerFeeRows,sellerFeeInputs,commission,ownerPayDefault,isSettlementFee,repFeeOverride,applyRepFees,halves};
 
 // ---------- UI ----------
 if(typeof document!=="undefined"){
@@ -510,10 +528,19 @@ function setType(t){type=t;document.querySelectorAll("#tabs button").forEach(b=>
 function inputs(){return{type,state:$("state").value,county:$("county").value,uw:$("uw").value,price:+$("price").value,loan:+$("loan").value,payoff:+$("payoff").value,pol:$("pol").value,rate:$("rate").value,fthb:$("fthb").checked,occ:$("occ").checked,ownPay:$("ownPay").value,pres:$("pres").value,
  ends:[...document.querySelectorAll("#ends input:checked")].map(e=>e.dataset.code),
  fees:[...document.querySelectorAll("#fees .fee")].filter(d=>d.children[0].checked).map(d=>Object.assign({name:d.children[0].dataset.name,payer:d.children[0].dataset.payer,tx:d.children[0].dataset.tx,sec:d.children[0].dataset.sec,amt:+d.children[2].value||0},d.children[0].dataset.special?{special:true,std:+d.children[0].dataset.std}:{})),
- buyerPaysSellerTax:$("bpst").checked,
+ buyerPaysSellerTax:$("bpst").checked,taxPayers:taxChoices(taxQ,$("state").value+"|"+$("county").value),
  docs:Object.fromEntries([...document.querySelectorAll("#docs tr[data-doc]")].map(r=>[r.dataset.doc,[+r.querySelectorAll("input")[0].value||0,+r.querySelectorAll("input")[1].value||1]]))}}
+// Who pays each transfer / recordation tax: Seller, Split 50/50 or Buyer. A choice the person clicks is kept by tax name (st.pay) and saved with the quote; untouched lines follow the default.
+const PAYNAME={seller:"seller",split:"split 50/50",buyer:"buyer"};
+function renderTaxPay(el,taxes,st,again,bl){const list=(taxes||[]).filter(t=>t.adjustable);el.hidden=!list.length;if(!list.length){el.innerHTML="";return}
+ el.innerHTML='<div class="tph">Who pays each transfer / recordation tax</div>'+list.map(t=>`<div class="tpr"><span class="tpn">${esc(t.name)}<span class="sum">${fmt(t.amt)} · default: ${PAYNAME[t.def]||t.def}</span></span><span class="seg" role="group" aria-label="Who pays ${esc(t.name)}">${TAX_PAYERS.map(v=>`<button type="button" data-tax="${esc(t.name)}" data-v="${v}" aria-pressed="${t.payer===v}">${v==="seller"?"Seller":v==="buyer"?bl:"Split"}</button>`).join("")}</span></div>`).join("");
+ el.onclick=e=>{const b=e.target.closest("button[data-tax]");if(!b)return;const k=b.dataset.tax,t=list.find(x=>x.name===k);if(!t)return;
+  st.pay[k]=b.dataset.v;again();const nb=[...el.querySelectorAll("button[data-tax]")].find(x=>x.dataset.tax===k&&x.dataset.v===b.dataset.v);if(nb)nb.focus()}}
+// the per-tax choices belong to one county: they reset when the state or county changes
+function taxChoices(st,key){if(st.key!==key){st.key=key;st.pay={}}return Object.keys(st.pay).length?{...st.pay}:undefined}
+const taxQ={key:"",pay:{}},taxS={key:"",pay:{}};
 const TN={purchase:"Purchase (financed)",cash:"Cash purchase",refi:"Refinance"};
-function run(){const i=inputs();$("occNote").textContent=i.state==="MD"&&!i.occ?"Maryland: if this is not a principal residence, a deed or deed of trust of 10 or more pages records for $115 instead of $60 (RP 3-601).":"";$("cntyNote").textContent=!i.county?"Enter a ZIP or choose a county to include county taxes.":usesDefaults(R,i.state,i.county)?"Using state default rates for this county":"";const res=calc(R,i);last={i,res};
+function run(){const i=inputs();$("occNote").textContent=i.state==="MD"&&!i.occ?"Maryland: if this is not a principal residence, a deed or deed of trust of 10 or more pages records for $115 instead of $60 (RP 3-601).":"";$("cntyNote").textContent=!i.county?"Enter a ZIP or choose a county to include county taxes.":usesDefaults(R,i.state,i.county)?"Using state default rates for this county":"";const res=calc(R,i);last={i,res};renderTaxPay($("taxPay"),res.taxes,taxQ,run,type==="refi"?"Borrower":"Buyer");
  $("summary").innerHTML=`${TN[type]} · ${i.county||"(no county)"}, ${i.state} · ${i.uw} ${src==="snapshot"?'<span class="flag">BUILT-IN SNAPSHOT</span>':""}`;
  $("tB").textContent=fmt(res.buyer);$("tS").textContent=fmt(res.seller);$("tA").textContent=fmt(res.total);const bl=type==="refi"?"Borrower":"Buyer",groups=[];let g=null;
  for(const l of res.lines){if(!g||l.sec!==g.sec){g={sec:l.sec,rows:"",b:0,s:0};groups.push(g)}g.b+=l.b||0;g.s+=l.s||0;
@@ -557,12 +584,12 @@ function sinputs(){const n=id=>+$(id).value||0;return{state:$("s_state").value,c
  buyerComm:{mode:$("s_bbm").value,val:n("s_bbv")},sellerComm:{mode:$("s_slm").value,val:n("s_slv")},payoff1:n("s_po1"),payoff2:n("s_po2"),annualTax:n("s_tax"),paidThrough:$("s_ptd").value,
  hoaDues:n("s_hoa"),hoaTransfer:n("s_hoat"),special:n("s_spec"),concession:{mode:$("s_cm").value,val:n("s_cv")},warranty:n("s_war"),termination:n("s_term"),
  other:[...SC.querySelectorAll(".orow")].map(r=>({label:r.querySelector("input[type=text]").value,amt:+r.querySelector("input[type=number]").value||0})),
- ownerPays:$("s_own").checked,fthb:$("s_fthb").checked,bpst:$("s_bpst").checked,
+ ownerPays:$("s_own").checked,fthb:$("s_fthb").checked,bpst:$("s_bpst").checked,taxPayers:taxChoices(taxS,$("s_state").value+"|"+$("s_county").value),
  fees:[...document.querySelectorAll("#s_fees .fee")].filter(d=>d.children[0].checked).map(d=>Object.assign({name:d.children[0].dataset.name,payer:d.children[0].dataset.payer,tx:d.children[0].dataset.tx,sec:d.children[0].dataset.sec,amt:+d.children[2].value||0},d.children[0].dataset.special?{special:true,std:+d.children[0].dataset.std}:{}))}}
 const sgn=x=>x<0?`<span class="cr">−${fmt(-x)}</span>`:fmt(x);
 function sCard(n,title,rows,total,tl){return`<section class="card sec"><div class="sh"><span class="l">${n}</span><h3>${title}</h3></div><table class="ledger one"><thead><tr><th>Item</th><th class="num">Amount</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.item)}</td><td class="num">${sgn(r.amt)}</td></tr>`).join("")||'<tr><td class="z">None</td><td class="num z">—</td></tr>'}<tr class="tot"><td>${tl}</td><td class="num">${sgn(total)}</td></tr></tbody></table></section>`}
 const fullAddr=i=>[[$("s_addr").value.trim(),$("s_city").value.trim()].filter(Boolean).join(", "),[i.state,$("s_zip").value.trim()].filter(Boolean).join(" ")].filter(Boolean).join(", ");
-function runS(){syncOwn();const i=sinputs(),r=sellerNet(R,i),T=r.totals,cd=pDate(i.closing);sLast={i,r};
+function runS(){syncOwn();const i=sinputs(),r=sellerNet(R,i),T=r.totals,cd=pDate(i.closing);sLast={i,r};renderTaxPay($("s_taxPay"),r.calc.taxes,taxS,runS,"Buyer");
  $("s_cntyNote").textContent=!i.county?"Enter a ZIP or choose a county to include county taxes.":usesDefaults(R,i.state,i.county)?"Using state default rates for this county":"";
  for(const[k,c,h]of[["bb",i.buyerComm,"s_bbh"],["sl",i.sellerComm,"s_slh"]]){$("s_"+k+"w").className=c.mode==="flat"?"money":"";$(h).textContent=`= ${fmt(commission(i.price,c))}${c.mode==="flat"&&i.price>0?` (${(commission(i.price,c)/i.price*100).toFixed(2)}% of price)`:""}`}
  $("s_cw").className=i.concession.mode==="flat"?"money":"";$("s_ch").textContent=i.concession.val?`= ${fmt(commission(i.price,i.concession))}`:"";
@@ -621,7 +648,7 @@ load(SNAP,"Built-in snapshot","snapshot");$("status").textContent="Loading fees 
 // Guided tour: "Take the tour" (header) and a small first-visit chip. Works for everyone, signed in or not. The engine is portal/js/tour.js + portal/tour.css,
 // downloaded only when someone starts the tour. The chip shows once; dismissing it (x), starting the tour, or finishing it hides it for good (localStorage).
 (function(){
- var V="20261027l",KEY="cla_calc_tour_chip",link=document.getElementById("claCalcTourLink"),chip=document.getElementById("claTourChip"),loading=null;
+ var V="20261027m",KEY="cla_calc_tour_chip",link=document.getElementById("claCalcTourLink"),chip=document.getElementById("claTourChip"),loading=null;
  function seen(){try{return window.localStorage.getItem(KEY)==="1"}catch(e){return true}} // no storage: never show the chip (it could not remember "no thanks")
  function dismiss(){try{window.localStorage.setItem(KEY,"1")}catch(e){}if(chip)chip.hidden=true}
  function add(tag,attrs){return new Promise(function(res){var e=document.createElement(tag);for(var k in attrs)e[k]=attrs[k];e.onload=e.onerror=function(){res()};document.head.appendChild(e)})}
@@ -635,4 +662,4 @@ load(SNAP,"Built-in snapshot","snapshot");$("status").textContent="Loading fees 
   document.getElementById("claTourChipX").onclick=function(){dismiss();if(link)link.focus()}}
 })();
 </script>
-<script src="portal/js/portal-hook.js?v=20261027l" defer></script></body></html>
+<script src="portal/js/portal-hook.js?v=20261027m" defer></script></body></html>

@@ -195,6 +195,48 @@ const oc=SN({concession:{mode:"pct",val:2},hoaDues:150,hoaTransfer:300,special:1
 ok(near(oc.totals.pro,10000+150)&&near(oc.totals.other,300+1000+500+75+2500+100)&&oc.other.some(o=>o.item==="Roof repair")&&oc.other.some(o=>o.item==="Other seller cost"),"SN concession 2% = $10,000; HOA dues; other lines (labels, blank label default, zero skipped)");
 ok(near(oc.totalCosts,snMD.totalCosts+10150+4475)&&near(oc.net,snMD.net-10150-4475),"SN totals include prorations/credits and other costs");
 ok(near(SN({concession:{mode:"flat",val:3000}}).totals.pro,3000)&&SN({other:Array(8).fill({label:"a",amt:10})}).other.length===5,"SN flat concession; other-cost list capped at 5");
+// ---- per-line payer for transfer / recordation taxes: Seller, Split 50/50 or Buyer ----
+{const tl=(r,re)=>r.lines.filter(l=>re.test(l.item));const one=(r,re)=>{const a=tl(r,re);return a.length===1?a[0]:null};
+ const tp=(o,pay)=>X.calc(R,inp(Object.assign({state:"MD",county:"Montgomery",price:450000,loan:360000},o,{taxPayers:pay})));
+ // defaults are unchanged: MD (non first-time buyer) already comes from the sheet as a 50/50 split; first-time buyer goes to the seller; DC/VA/FL as before
+ const d0=tp({}),dTT=one(d0,/County transfer tax/);ok(dTT&&near(dTT.b,2250)&&near(dTT.s,2250)&&/\(split 50\/50\)$/.test(dTT.item),"TS default MD transfer tax stays 50/50 and is labelled (split 50/50)");
+ const f0=tp({fthb:true});ok(near(one(f0,/County transfer tax/).s,4500)&&one(f0,/County transfer tax/).b===0&&near(one(f0,/State transfer tax/).s,1125),"TS first-time buyer still defaults to the seller");
+ ok(!d0.taxes.some(t=>t.payer==="buyer")&&d0.taxes.every(t=>t.adjustable),"TS result lists each tax line with its payer; MD deed taxes are adjustable");
+ // each choice, on each tax, for each state
+ for(const[st,co,price,loan]of[["MD","Montgomery",450000,360000],["MD","Baltimore City",300000,240000],["DC","District of Columbia",450000,360000],["VA","Fairfax",450000,360000],["FL","Orange",450000,360000]]){
+  const base=X.calc(R,inp({state:st,county:co,price,loan})),names=base.taxes.filter(t=>t.adjustable).map(t=>t.name);ok(names.length>=1,`TS ${st} ${co}: adjustable tax lines found (${names.join(", ")})`);
+  for(const n of names){const tot=base.taxes.find(t=>t.name===n).amt;
+   for(const v of["seller","split","buyer"]){const r=X.calc(R,inp({state:st,county:co,price,loan,taxPayers:{[n]:v}})),l=r.lines.find(x=>x.item.startsWith(n));
+    const sellerOnly=v==="seller",buyerOnly=v==="buyer";
+    ok(l&&near(l.b+l.s,tot,0.0001)&&(sellerOnly?l.b===0:buyerOnly?l.s===0:near(l.b,l.s,0.011)),`TS ${st} ${co} ${n} -> ${v}: ${l&&l.b}/${l&&l.s} adds up to ${tot}`);
+    if(v==="split")ok(/\(split 50\/50\)$/.test(l.item),`TS ${st} ${n} split label`);
+    // nothing else moves
+    const rest=x=>x.lines.filter(y=>!y.item.startsWith(n)).map(y=>y.item+y.b+"|"+y.s).join(";");ok(rest(r)===rest(base),`TS ${st} ${n} ${v}: all other lines unchanged`)}}}
+ // totals follow the choice: buyer, seller and all-parties
+ {const a=tp({},{"County transfer tax":"seller"}),b=tp({},{"County transfer tax":"buyer"}),c=tp({},{"County transfer tax":"split"});
+  ok(near(a.buyer-d0.buyer,-2250)&&near(a.seller-d0.seller,2250)&&near(b.buyer-d0.buyer,2250)&&near(b.seller-d0.seller,-2250)&&near(c.buyer,d0.buyer)&&near(c.seller,d0.seller),"TS buyer/seller totals move by the right amount");
+  ok(near(a.total,d0.total)&&near(b.total,d0.total)&&near(c.total,d0.total),"TS all-parties total never changes with who pays");
+  ok(one(b,/County transfer tax/).item==="County transfer tax (paid by buyer)"&&one(a,/County transfer tax/).item==="County transfer tax (paid by seller)","TS non-default choices are labelled with who pays")}
+ // FL deed stamps: default seller; split makes both pay; existing "buyer pays seller's tax" toggle unchanged and the line choice wins over it
+ {const fl=o=>X.calc(R,inp(Object.assign({state:"FL",county:"Orange",price:400000,loan:320000},o))),line=r=>r.lines.find(l=>/Doc stamps on deed/.test(l.item));
+  ok(line(fl({})).b===0&&near(line(fl({})).s,2800),"TS FL deed stamps default: seller");
+  ok(near(line(fl({taxPayers:{"Doc stamps on deed":"split"}})).b,1400)&&near(line(fl({taxPayers:{"Doc stamps on deed":"split"}})).s,1400)&&/split 50\/50/.test(line(fl({taxPayers:{"Doc stamps on deed":"split"}})).item),"TS FL deed stamps split 1,400 / 1,400");
+  ok(near(line(fl({buyerPaysSellerTax:true})).b,2800)&&/buyer paying seller's tax/.test(line(fl({buyerPaysSellerTax:true})).item),"TS old buyer-pays-seller's-tax toggle still moves it to the buyer");
+  ok(near(line(fl({buyerPaysSellerTax:true,taxPayers:{"Doc stamps on deed":"split"}})).s,1400),"TS an explicit line choice wins over the old toggle");
+  ok(line(fl({taxPayers:{"Doc stamps on note":"seller"}})).s===2800&&fl({taxPayers:{"Doc stamps on note":"seller"}}).lines.find(l=>/Doc stamps on note/.test(l.item)).s===0,"TS loan-based mortgage taxes cannot be moved (note stamps stay with the buyer)");
+  ok(fl({taxPayers:{"Doc stamps on deed":"bogus"}}).lines.find(l=>/Doc stamps on deed/.test(l.item)).s>0,"TS an unknown choice is ignored")}
+ // refinance: nothing to choose, everything stays with the borrower
+ {const rf=X.calc(R,inp({type:"refi",state:"MD",county:"Montgomery",loan:360000,payoff:300000,taxPayers:{"County recordation tax":"split"}}));ok(rf.seller===0&&rf.taxes.every(t=>!t.adjustable),"TS refinance: taxes stay with the borrower; no payer choice")}
+ // odd cents: the two halves always add up to the exact total (the odd cent goes to the seller)
+ for(const[amt,b,sl]of[[1557.51,778.75,778.76],[0.01,0,0.01],[100.01,50,50.01],[2250,1125,1125],[1000.03,500.01,500.02]]){const h=X.halves(amt);ok(near(h[0],b,1e-9)&&near(h[1],sl,1e-9)&&Math.round((h[0]+h[1])*100)===Math.round(amt*100),`TS halves(${amt}) = ${h}`)}
+ {let bad=0;for(let p=100000;p<=100000+4000;p+=37){const r=X.calc(R,inp({state:"MD",county:"Frederick",price:p+0.37,loan:80000,taxPayers:{"State transfer tax":"split","County transfer tax":"split","County recordation tax":"split"}}));for(const t of r.taxes){const l=r.lines.find(x=>x.item.startsWith(t.name));if(Math.round((l.b+l.s)*100)!==Math.round(t.amt*100))bad++}}ok(bad===0,"TS split halves add up to the exact tax for 100+ odd prices (no lost or extra cent)")}
+ // seller net sheet: the seller's share of a split tax is half; the choice moves the net by the right amount; buyer choice removes it
+ {const sn=SN({county:"Montgomery",price:450000}),sp=SN({county:"Montgomery",price:450000,taxPayers:{"County transfer tax":"seller"}}),sb=SN({county:"Montgomery",price:450000,taxPayers:{"County transfer tax":"buyer"}}),ss=SN({county:"Montgomery",price:450000,taxPayers:{"County transfer tax":"split"}});
+  const g=(r,re)=>{const x=r.gov.find(y=>re.test(y.item));return x?x.amt:0};
+  ok(near(g(sn,/County transfer/),2250)&&near(g(ss,/County transfer/),2250)&&near(g(sp,/County transfer/),4500)&&g(sb,/County transfer/)===0,"SN transfer tax: default split 2,250; seller 4,500; buyer 0");
+  ok(/County transfer tax \(split 50\/50\)/.test(ss.gov.map(x=>x.item).join("|"))&&near(sp.net,sn.net-2250)&&near(sb.net,sn.net+2250),"SN net moves by the seller's share; label says split 50/50");
+  ok(sn.calc.taxes.length>=2&&sn.calc.taxes.every(t=>t.payer===t.def),"SN result exposes the tax lines for the payer control")}
+}
 // toggles
 ok(SN({bpst:true,state:"FL",county:"Orange",price:400000,ownerPays:false}).totals.gov===0,"SN: buyer-pays-seller's-deed-tax toggle removes FL deed stamps from the seller");
 ok(SN({fthb:true,price:400000}).gov.some(g=>/State transfer/.test(g.item)&&near(g.amt,1000))&&near(SN({price:400000}).gov.find(g=>/State transfer/.test(g.item)).amt,1000),"SN MD state transfer at $400k = $1,000 (seller share)");
@@ -306,5 +348,26 @@ ok(SN({fees:[]}).totals.title===0&&near(SN({fees:[{name:"Custom",payer:"Seller",
   const pickS=a=>a.filter(x=>!/Settlement|Title & settlement fees|Net seller|Total/i.test(x));ok(JSON.stringify(pickS(sl1))===JSON.stringify(pickS(sl0)),"DOM seller net sheet: every other row identical");
   API.setFeeOverrides([]);ok(w.getElementById("sNet").textContent===sn0,"DOM seller net sheet back to the default net "+sn0);
   w.querySelector("[data-mode=quote]").click();w.querySelector("[data-t=purchase]").click();}
+ // per-tax payer control in the page (quote tab and seller net sheet)
+ {const clickPay=(box,name,v)=>[...w.querySelectorAll(`#${box} button[data-tax]`)].find(b=>b.dataset.tax===name&&b.dataset.v===v).click(),pressed=(box,name)=>[...w.querySelectorAll(`#${box} button[data-tax]`)].filter(b=>b.dataset.tax===name&&b.getAttribute("aria-pressed")==="true").map(b=>b.dataset.v).join(),led=()=>w.getElementById("ledger").textContent;
+  setv("state","MD");setv("zip","20850");w.querySelector("[data-t=purchase]").click();ok(w.getElementById("county").value==="Montgomery","DOM tax payer: ZIP 20850 -> Montgomery");
+  ok(!w.getElementById("taxPay").hidden&&pressed("taxPay","County transfer tax")==="split"&&/default: split 50\/50/.test(w.getElementById("taxPay").textContent),"DOM tax payer: control shown; MD transfer tax default is Split");
+  const dBuyer=w.getElementById("tB").textContent,dSeller=w.getElementById("tS").textContent,dAll=w.getElementById("tA").textContent;
+  clickPay("taxPay","County transfer tax","seller");ok(pressed("taxPay","County transfer tax")==="seller"&&w.getElementById("tA").textContent===dAll&&w.getElementById("tB").textContent!==dBuyer&&/County transfer tax \(paid by seller\)/.test(led()),"DOM tax payer: Seller moves the tax to the seller column; all-parties total unchanged");
+  const q1=w.getElementById("copy");clickPay("taxPay","County transfer tax","buyer");ok(pressed("taxPay","County transfer tax")==="buyer"&&/County transfer tax \(paid by buyer\)/.test(led()),"DOM tax payer: Buyer");
+  clickPay("taxPay","County transfer tax","split");ok(w.getElementById("tB").textContent===dBuyer&&w.getElementById("tS").textContent===dSeller&&/County transfer tax \(split 50\/50\)/.test(led()),"DOM tax payer: back to Split restores the exact default totals");
+  // the choice is in the saved-quote snapshot and in the copied text; it does not change anything for other counties
+  clickPay("taxPay","County recordation tax","buyer");const snap=d.window.CLA_QUOTE_API.snapshot();
+  ok(snap.inputs.taxPayers&&snap.inputs.taxPayers["County recordation tax"]==="buyer"&&snap.inputs.taxPayers["County transfer tax"]==="split"&&!snap.inputs.taxPayers["State transfer tax"],"DOM tax payer: saved-quote snapshot keeps the lines the person chose (and not the untouched ones)");
+  ok(snap.results.lines.some(l=>/County recordation tax \(paid by buyer\)/.test(l.item)&&l.s===0&&l.b>0)&&snap.results.lines.some(l=>/County transfer tax \(split 50\/50\)/.test(l.item)&&l.b>0&&l.s>0)&&/County transfer tax \(split 50\/50\)/.test(snap.results.text),"DOM tax payer: snapshot lines and Copy quote text carry the labels and both columns");
+  ok(Math.round((snap.results.totals.buyer+snap.results.totals.seller)*100)===Math.round(snap.results.totals.total*100),"DOM tax payer: snapshot totals add up");
+  setv("county","Frederick");ok(!w.getElementById("county").value||pressed("taxPay","County recordation tax")==="split","DOM tax payer: choices reset when the county changes");
+  setv("zip","20850");
+  // seller net sheet
+  w.querySelector("[data-mode=seller]").click();setv("s_zip","20850");ok(!w.getElementById("s_taxPay").hidden&&pressed("s_taxPay","County transfer tax")==="split","DOM seller net: control shown, default Split");
+  const net0=w.getElementById("sNet").textContent;clickPay("s_taxPay","County transfer tax","buyer");ok(w.getElementById("sNet").textContent!==net0&&!/County transfer tax/.test(w.getElementById("sLedger").textContent),"DOM seller net: Buyer removes the tax from the seller's costs");
+  clickPay("s_taxPay","County transfer tax","split");ok(w.getElementById("sNet").textContent===net0&&/County transfer tax \(split 50\/50\)/.test(w.getElementById("sLedger").textContent),"DOM seller net: Split restores the net and shows the label");
+  const sSnap=d.window.CLA_QUOTE_API.snapshot();ok(sSnap.quoteType==="seller_net"&&/County transfer tax \(split 50\/50\)/.test(sSnap.results.text)&&sSnap.results.lines.some(l=>/County transfer tax \(split 50\/50\)/.test(l.item)),"DOM seller net: snapshot and Copy summary carry the split label");
+  w.querySelector("[data-mode=quote]").click();w.querySelector("[data-t=refi]").click();ok(w.getElementById("taxPay").hidden,"DOM tax payer: no control on a refinance");w.querySelector("[data-t=purchase]").click()}
 ok(errs.length===0,"no DOM errors "+errs);
  if(fails){console.error(fails,"FAILED");process.exit(1)}console.log("ALL PASS")})();

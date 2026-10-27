@@ -82,6 +82,7 @@ with sync_playwright() as p:
     snap(pg, "calc-inputs", clip={"x": 0, "y": 0, "width": 1280, "height": 820}, fixed=True)
     snap(pg, "calc-results", clip=union(pg, [".hero", "#ledger", ".foot"]))
     snap(pg, "calc-top", clip={"x": 0, "y": 0, "width": 1280, "height": 330}, fixed=True)
+    snap(pg, "calc-tax-payer", sel="#taxPay", pad=14)   # Seller / Split / Buyer for each transfer and recordation tax (MD Montgomery sample)
     pg.click('#modes button[data-mode="seller"]'); pg.wait_for_timeout(500)
     snap(pg, "calc-seller", clip=union(pg, ["#mainS .col.in", "#mainS .col.out"]))
     ctx.close()

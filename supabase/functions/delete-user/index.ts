@@ -1,4 +1,4 @@
-// Supabase Edge Function: delete-user   (UNTESTED against a live project; NOT deployed)
+// Supabase Edge Function: delete-user   (deployed 2026-10-27, verify_jwt on; smoke-tested for refusals only)
 // Permanently delete a DISABLED user. The database function public.admin_delete_user() (migration 18) decides who may and does ALL the data work
 // in one transaction: only a disabled person; admins and super admins by the same reach as disabling (an admin never a super admin, nobody themselves);
 // the typed email must match; a rep with active clients needs a successor; it removes the profile (and with it the quotes the person owned and the

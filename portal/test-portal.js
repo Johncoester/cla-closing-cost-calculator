@@ -737,6 +737,24 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
           assert.strictEqual(JSON.stringify([std[0] - sp[0], std[1] - sp[1]]), JSON.stringify([dB, dS]), st + " totals differ by exactly the settlement-fee difference"); }
         ok("calculator + multi-state sets: the same rep's quotes use 900 / 500 in MD and VA, 1000 / 800 in FL and the standard 1075 / 670 in DC; each total differs from the standard total by exactly the settlement-fee difference (premiums and recording fees unchanged)"); dom.window.close();
       }
+      // transfer / recordation tax payer choice: saved with the quote, shown on the saved quote and in its print, and a seller net sheet snapshot too
+      {
+        const root = path.join(__dirname, ".."), idx = fs.readFileSync(path.join(root, "index.html"), "utf8"), M6 = mock();
+        const page = idx.replace(/<script src="https[^>]+><\/script>/, "").replace(/<link[^>]*fonts\.googleapis[^>]*>/, "").replace(/<script src="zip-county.js[^"]*"><\/script>/, "<script>" + fs.readFileSync(path.join(root, "zip-county.js"), "utf8") + "</script>")
+          .replace(/<script src="fee-snapshot.js[^"]*"><\/script>/, "<script>" + fs.readFileSync(path.join(root, "fee-snapshot.js"), "utf8") + "</script>").replace(/<script src="portal\/js\/portal-hook.js[^"]*" defer><\/script>/, "");
+        const dom = new JSDOM(page, { url: "http://localhost/index.html", runScripts: "dangerously", pretendToBeVisual: true, virtualConsole: new VirtualConsole(), beforeParse(win) { win.fetch = async () => ({ ok: false, status: 401, text: async () => "" }); } });
+        await tick(80); const dd = dom.window.document, W6 = dom.window; const z = dd.getElementById("zip"); z.value = "20850"; fire(W6, z, "input"); await tick(40);
+        const pay = (box, name, v) => [...dd.querySelectorAll("#" + box + " button[data-tax]")].find((b) => b.dataset.tax === name && b.dataset.v === v).click();
+        pay("taxPay", "County transfer tax", "seller"); pay("taxPay", "County recordation tax", "buyer");
+        await M6.as("sample.rep.jane@clatitle.com"); const snap = W6.CLA_QUOTE_API.snapshot(); assert.strictEqual(JSON.stringify(snap.inputs.taxPayers), JSON.stringify({ "County transfer tax": "seller", "County recordation tax": "buyer" }));
+        const sv = await M6.Ax.saveQuote(snap), back = await M6.Ax.getQuote(sv.id);
+        assert.strictEqual(JSON.stringify(back.inputs.taxPayers), JSON.stringify(snap.inputs.taxPayers)); assert.ok(back.results.lines.some((l) => /County transfer tax \(paid by seller\)/.test(l.item) && l.b === 0 && l.s > 0)); assert.ok(back.results.lines.some((l) => /County recordation tax \(paid by buyer\)/.test(l.item) && l.s === 0 && l.b > 0)); assert.match(back.results.text, /County transfer tax \(paid by seller\)/);
+        pay("taxPay", "County transfer tax", "split"); const sp = W6.CLA_QUOTE_API.snapshot(), tl = sp.results.lines.find((l) => /County transfer tax \(split 50\/50\)/.test(l.item));
+        assert.ok(tl && tl.b > 0 && Math.abs(tl.b - tl.s) <= 0.01); assert.strictEqual(Math.round((sp.results.totals.buyer + sp.results.totals.seller) * 100), Math.round(sp.results.totals.total * 100));
+        const up = await M6.Ax.updateQuote(sv.id, sp), back2 = await M6.Ax.getQuote(sv.id); assert.strictEqual(back2.inputs.taxPayers["County transfer tax"], "split"); assert.match(back2.results.text, /County transfer tax \(split 50\/50\)/);
+        ok("tax payer choice (mock): the Seller / Buyer / Split choices ride in the saved quote's inputs, its lines and its copied text; saving again after a change to Split stores the new choice, labelled (split 50/50), with the buyer and seller columns still adding to the total");
+        dom.window.close();
+      }
       // the admin screen
       {
         const RP = await renderPage("admin.html", "sample.robin.admin@clatitle.com", "#users tr"), $ = (i) => RP.d.getElementById(i), click = async (i, ms) => { $(i).click(); await tick(ms || 80); }, submit = async (i) => { fire(RP.win, $(i), "submit"); await tick(100); };
@@ -1216,7 +1234,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
 
     // cache-bust: every ?v= in index.html and TOUR_V agree
     const vs = [...idx.matchAll(/\?v=(\d{8}[a-z])/g)].map((m) => m[1]), pu = fs.readFileSync(path.join(__dirname, "js", "portal-ui.js"), "utf8");
-    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261027l" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261027l");
+    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261027m" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261027m");
     // the new elements are inert in print and add no external requests
     assert.ok(/@media print\{\s*@page\{margin:14mm\}\s*\.claChip\{display:none!important\}/.test(idx) && !/https?:\/\//.test(tj2)); ok("calculator tour: the chip is not printed; tour.js has no external libraries or CDN");
   }
