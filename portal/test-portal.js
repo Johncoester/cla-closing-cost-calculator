@@ -772,30 +772,56 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     assert.ok(H.d.querySelector("body > #claFeedbackLink") && kids.indexOf("claFeedbackLink") === -1 && kids.indexOf("claTourLink") > -1 && kids.indexOf("chip") > kids.indexOf("claTourLink")); ok("tour: the 'Take the tour' link sits before the profile chip in the header, and the Feedback bubble floats in the body without colliding"); H.dom.window.close();
     const G2 = await renderPage("login.html", null, "header"); assert.ok(!G2.d.getElementById("claTourLink")); ok("tour: no 'Take the tour' link for guests"); G2.dom.window.close();
     const PR = await renderPage("profile.html", "sample.new.client@example.com", "#claTourLink"); assert.ok(PR.d.getElementById("claTourLink") && !PR.d.getElementById("claTour") && PR.win.CLA.tourKind(await (async () => { const a = await PR.win.CLA.getAdapter(); return a.getMyProfile(); })()) === null); ok("tour: other pages (profile) have the link but never auto-start; the link sends you to your dashboard"); PR.dom.window.close();
-    // ---- Help page (portal/help.html): header link, signed-in guard, audience sections, pictures ----
-    { const hp = fs.readFileSync(path.join(__dirname, "help.html"), "utf8"), hook2 = fs.readFileSync(path.join(__dirname, "js", "portal-hook.js"), "utf8");
-      for (const [pg, who, w] of [["client.html", "sam.agent@example.com", "#claTourLink"], ["rep.html", "sample.rep.jane@clatitle.com", "#claTourLink"], ["admin.html", "sample.admin@clatitle.com", "#claTourLink"]]) {
-        const X = await renderPage(pg, who, w); const a = X.d.querySelector("header .hr a#helpLink"); const kk = [...X.d.querySelector("header .hr").children];
-        assert.ok(a && a.getAttribute("href") === "help.html" && a.textContent === "Help" && kk.indexOf(a) < kk.indexOf(X.d.getElementById("claTourLink")) && X.d.querySelector("header .hr .chip")); X.dom.window.close();
+    // ---- Help pages: client guide (help.html) and staff manual (staff-help.html) ----
+    { const rd = (f) => fs.readFileSync(path.join(__dirname, f), "utf8"), cg = rd("help.html"), sg = rd("staff-help.html"), hook2 = rd("js/portal-hook.js"), pui = rd("js/portal-ui.js");
+      const hrefOf = async (pg, who, w) => { const X = await renderPage(pg, who, w); const a = X.d.querySelector("header .hr a#helpLink"), kk = [...X.d.querySelector("header .hr").children];
+        const r = { href: a && a.getAttribute("href"), text: a && a.textContent, before: a && kk.indexOf(a) < kk.indexOf(X.d.getElementById("claTourLink")) }; X.dom.window.close(); return r; };
+      // header Help link routes by role
+      for (const [pg, who, w, want] of [["client.html", "sam.agent@example.com", "#claTourLink", "help.html"], ["rep.html", "sample.rep.jane@clatitle.com", "#claTourLink", "staff-help.html"], ["admin.html", "sample.admin@clatitle.com", "#claTourLink", "staff-help.html"], ["admin.html", "sample.robin.admin@clatitle.com", "#claTourLink", "staff-help.html"]]) {
+        const r = await hrefOf(pg, who, w); assert.ok(r.href === want && r.text === "Help" && r.before, who + " -> " + r.href);
       }
-      ok("help: a 'Help' link (help.html) is in the portal header for a client, a rep and an admin, before 'Take the tour'");
+      ok("help: the header Help link goes to the client guide for a client and to the staff manual for a rep, an admin and a super admin (before 'Take the tour')");
       const GH = await renderPage("login.html", null, "header"); assert.ok(!GH.d.getElementById("helpLink")); GH.dom.window.close(); ok("help: no Help link in the header for guests (sign-in page)");
-      assert.ok(/CLA\.boot\(null\)/.test(hp) && !/CLA\.boot\(false\)/.test(hp)); assert.ok(/id="claHelpLink"[^;]*help\.html/.test(hook2) && /me\.role/.test(hook2.slice(hook2.indexOf("claHelpLink") - 900, hook2.indexOf("claHelpLink")))); ok("help: help.html uses the signed-in guard (boot(null)) and stays hidden for guests; the calculator header link is added only where the account link is (signed in)");
+      assert.ok(/CLA\.helpHref = \(p\) => \(CLA\.isStaff\(p\) \? "staff-help\.html" : "help\.html"\)/.test(pui) && /claHelpLink[^;]*CLA\.helpHref\(me\)/.test(hook2)); ok("help: the calculator header link uses the same role routing (CLA.helpHref), and only where the account link is (signed in)");
+      // guards
       process.on("unhandledRejection", swallow);
-      { const HG = await renderPage("help.html", null, "main"); assert.ok(HG.d.getElementById("top").hidden && !HG.d.querySelector("header.top")); HG.dom.window.close(); }
+      { const G1 = await renderPage("help.html", null, "main"); assert.ok(G1.d.getElementById("top").hidden && !G1.d.querySelector("header.top")); G1.dom.window.close();
+        const G2 = await renderPage("staff-help.html", null, "main"); assert.ok(G2.d.getElementById("top").hidden && !G2.d.querySelector("header.top")); G2.dom.window.close(); }
       await new Promise((r) => setTimeout(r, 30)); process.removeListener("unhandledRejection", swallow);
+      ok("help: both pages stay hidden for guests (the sign-in guard sends them to login.html?next=...)");
+      assert.ok(/CLA\.boot\(null\)/.test(cg) && /CLA\.boot\(null\)/.test(sg) && /!CLA\.isStaff\(me\)\) \{ location\.replace\("help\.html"\)/.test(sg)); ok("help: the staff manual sends anyone who is not staff to the client guide; the client guide only needs a signed-in person");
+      { // a client opening the staff manual is redirected (jsdom cannot navigate: it records the call) and never sees the content
+        const reds = []; const SC = await renderPage("staff-help.html", "sam.agent@example.com", "header .hr .chip", null, null, "?x=1"); await tick(100);
+        assert.ok(SC.d.getElementById("top").hidden && [...SC.d.querySelectorAll(".help-sec")].every((e) => e.closest("main").hidden)); assert.ok(!SC.d.getElementById("audSeg") || SC.d.getElementById("audSeg").hidden); SC.dom.window.close(); }
+      ok("help: a client who opens staff-help.html is redirected: the staff content stays hidden");
+      // client guide for a client, rep and admin; staff manual for a rep and an admin
+      const shown = (X) => !X.d.getElementById("top").hidden;
+      for (const who of ["sam.agent@example.com", "sample.rep.jane@clatitle.com", "sample.admin@clatitle.com"]) { const X = await renderPage("help.html", who, "header .hr .chip"); assert.strictEqual(X.errs.length, 0, X.errs.join()); assert.ok(shown(X) && X.d.querySelectorAll(".help-sec").length === 9 && !X.d.getElementById("audSeg")); X.dom.window.close(); }
+      ok("help: any signed-in person can read the client guide (9 sections, no audience filter)");
       const secsOf = (X) => [...X.d.querySelectorAll(".help-sec")].filter((e) => !e.hidden);
-      const HC = await renderPage("help.html", "sam.agent@example.com", "header .hr .chip"); assert.strictEqual(HC.errs.length, 0, HC.errs.join()); assert.ok(HC.d.getElementById("audSeg").hidden && secsOf(HC).length > 0 && secsOf(HC).every((e) => e.dataset.aud === "E") && ![...HC.d.querySelectorAll("#tocList li")].some((li) => !li.hidden && li.dataset.aud !== "E")); HC.dom.window.close();
-      const HR = await renderPage("help.html", "sample.rep.jane@clatitle.com", "header .hr .chip"); assert.ok(secsOf(HR).some((e) => e.dataset.aud === "R") && secsOf(HR).every((e) => e.dataset.aud !== "A") && !HR.d.getElementById("audSeg").hidden); HR.dom.window.close();
-      const HA = await renderPage("help.html", "sample.admin@clatitle.com", "header .hr .chip"); const aud = new Set(secsOf(HA).map((e) => e.dataset.aud)); assert.ok(aud.has("E") && aud.has("R") && aud.has("A"));
+      const HR = await renderPage("staff-help.html", "sample.rep.jane@clatitle.com", "header .hr .chip"); assert.ok(shown(HR) && secsOf(HR).some((e) => e.dataset.aud === "R") && secsOf(HR).every((e) => e.dataset.aud !== "A") && !HR.d.getElementById("audSeg").hidden && HR.d.getElementById("clientGuideLink").getAttribute("href") === "help.html"); HR.dom.window.close();
+      const HA = await renderPage("staff-help.html", "sample.robin.admin@clatitle.com", "header .hr .chip"); assert.ok(shown(HA)); const aud = new Set(secsOf(HA).map((e) => e.dataset.aud)); assert.ok(aud.has("E") && aud.has("R") && aud.has("A"));
       HA.d.querySelector('#audSeg button[data-v="A"]').click(); assert.ok(secsOf(HA).length > 0 && secsOf(HA).every((e) => e.dataset.aud === "A")); HA.d.querySelector('#audSeg button[data-v="mine"]').click(); assert.ok(secsOf(HA).length > 3); HA.dom.window.close();
-      ok("help: a client sees only the Everyone sections, a rep adds Reps, an admin sees all and can filter by audience (the chips only appear for staff)");
-      const ids = [...hp.matchAll(/ id="([\w-]+)"/g)].map((m) => m[1]), tocLinks = [...hp.matchAll(/<a href="#([\w-]+)">/g)].map((m) => m[1]).filter((x) => x !== "top");
-      assert.ok(tocLinks.length >= 12 && tocLinks.every((x) => ids.includes(x)) && new Set(ids).size === ids.length); ok("help: every contents link points at a section; ids are unique");
-      const imgs = [...hp.matchAll(/<img src="(help\/img\/[\w-]+\.png)" alt="([^"]+)" width="(\d+)" height="(\d+)"/g)], dirImgs = fs.readdirSync(path.join(__dirname, "help", "img")).filter((f) => f.endsWith(".png"));
-      assert.ok(imgs.length >= 28 && imgs.every((m) => fs.existsSync(path.join(__dirname, m[1])) && m[2].length > 8 && +m[3] <= 1200) && dirImgs.length === new Set(imgs.map((m) => path.basename(m[1]))).size && !/<img(?![^>]*alt=)/.test(hp)); ok("help: every picture exists on disk, has alt text, is at most 1200px wide, and there are no unused files");
-      assert.ok(imgs.every((m) => fs.statSync(path.join(__dirname, m[1])).size < 200 * 1024)); ok("help: each picture is under 200 KB");
-      assert.ok(!/https?:\/\/(?!fonts\.googleapis)/.test(hp.replace(/quotes\.clatitle\.com/g, "")) && !/eyJ|service_role|apikey|password\s*[:=]/i.test(hp)); ok("help: no external links except the font, and no keys or passwords in the page");
+      ok("help: reps see the Everyone and Reps sections of the staff manual, admins see all and can filter; both have the 'See what clients see' link to help.html");
+      // the client guide has no staff terms anywhere in the file (text, comments, scripts, alt text, image paths)
+      const low = cg.toLowerCase();
+      for (const w of ["pricing table", "audit", "assign", "invite a client", "super admin", "admin", "staff", "discount", "tier", "fee set", "disable", "feedback", "rep dashboard", "rep pricing", "needs confirming", "help/staff", "staff-help", "clients", "internal"]) assert.ok(!low.includes(w), "client guide mentions: " + w);
+      ok("help: the client guide has none of the staff or pricing words (pricing table, audit, assign, invite a client, super admin, admin, staff, discount, tier, fee set, disable, feedback ...), nowhere in the file");
+      assert.ok(/special rate/i.test(cg) && /Saved to your account/.test(cg) && /Forgot password\?/.test(cg) && /Take the tour/.test(cg) && /24 hours/.test(cg)); ok("help: the client guide covers sign-in, forgot password, the special rate note, saving, and the tour");
+      assert.ok(/help\/staff\.css/.test(sg) && !/help\/staff\.css/.test(cg)); ok("help: staff-only styles load only on the staff manual");
+      // pictures
+      const imgsOf = (h) => [...h.matchAll(/<img src="(help\/(client|staff)\/[\w-]+\.png)" alt="([^"]+)" width="(\d+)" height="(\d+)"/g)];
+      const ci = imgsOf(cg), si = imgsOf(sg), cdir = fs.readdirSync(path.join(__dirname, "help", "client")).filter((f) => f.endsWith(".png")), sdir = fs.readdirSync(path.join(__dirname, "help", "staff")).filter((f) => f.endsWith(".png"));
+      assert.ok(ci.length >= 16 && ci.every((m) => m[2] === "client" && fs.existsSync(path.join(__dirname, m[1])) && m[3].length > 8 && +m[4] <= 1200)); ok("help: every client-guide picture comes from help/client, exists, has alt text and is at most 1200px wide");
+      assert.ok(si.length >= 30 && si.every((m) => fs.existsSync(path.join(__dirname, m[1])) && m[3].length > 8 && +m[4] <= 1200)); ok("help: every staff-manual picture exists, has alt text and is at most 1200px wide");
+      const usedC = new Set([...ci, ...si].filter((m) => m[2] === "client").map((m) => path.basename(m[1]))), usedS = new Set(si.filter((m) => m[2] === "staff").map((m) => path.basename(m[1])));
+      assert.ok(cdir.length === usedC.size && sdir.length === usedS.size && cdir.every((f) => !sdir.includes(f)) && !/<img(?![^>]*alt=)/.test(cg + sg)); ok("help: no unused or duplicate picture files; client and staff folders are separate");
+      assert.ok(!/(admin|rep-|pricing|feedback|audit)/.test(cdir.join(" "))); ok("help: the client picture folder holds no admin, rep, pricing, feedback or audit pictures");
+      assert.ok([...cdir.map((f) => "client/" + f), ...sdir.map((f) => "staff/" + f)].every((f) => fs.statSync(path.join(__dirname, "help", f)).size < 200 * 1024)); ok("help: each picture is under 200 KB");
+      assert.ok(![cg, sg].some((h) => /https?:\/\/(?!fonts\.googleapis)/.test(h.replace(/quotes\.clatitle\.com/g, "")) || /eyJ|service_role|apikey|password\s*[:=]/i.test(h))); ok("help: no external links except the font, and no keys or passwords in either page");
+      assert.ok(/not access control/.test(sg) && /fetched by anyone/.test(sg)); ok("help: the staff manual says plainly that static pages are public and the guard only controls what shows on screen");
+      const idsOf = (h) => [...h.matchAll(/ id="([\w-]+)"/g)].map((m) => m[1]), tocOf = (h) => [...h.matchAll(/<a href="#([\w-]+)">/g)].map((m) => m[1]).filter((x) => x !== "top");
+      for (const h of [cg, sg]) { const ids = idsOf(h); assert.ok(tocOf(h).length >= 9 && tocOf(h).every((x) => ids.includes(x)) && new Set(ids).size === ids.length); } ok("help: every contents link points at a section on both pages; ids are unique");
     }
     // files: no external libraries / CDN; motion respects prefers-reduced-motion
     const tj = fs.readFileSync(path.join(__dirname, "js", "tour.js"), "utf8"), tc = fs.readFileSync(path.join(__dirname, "tour.css"), "utf8");
@@ -1019,7 +1045,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
 
     // cache-bust: every ?v= in index.html and TOUR_V agree
     const vs = [...idx.matchAll(/\?v=(\d{8}[a-z])/g)].map((m) => m[1]), pu = fs.readFileSync(path.join(__dirname, "js", "portal-ui.js"), "utf8");
-    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261027e" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261027e");
+    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261027f" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261027f");
     // the new elements are inert in print and add no external requests
     assert.ok(/@media print\{\s*@page\{margin:14mm\}\s*\.claChip\{display:none!important\}/.test(idx) && !/https?:\/\//.test(tj2)); ok("calculator tour: the chip is not printed; tour.js has no external libraries or CDN");
   }

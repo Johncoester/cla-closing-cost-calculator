@@ -45,7 +45,7 @@
         const url = await A.getAvatarUrl(me);
         hr.insertAdjacentHTML("afterbegin", '<a class="claHdr" href="' + base + CLA.homeFor(me.role) + '">' + (url ? '<img src="' + esc(url) + '" alt="">' : "") + "<span>" + esc(CLA.fullName(me)) + " · My account</span></a>" +
           (CLA.isAdmin(me) && me.isRep ? '<a class="claHdr" id="claRepLink" href="' + base + 'rep.html"><span>Rep dashboard</span></a>' : "") +   // admin who also works as a rep
-          '<a class="claHdr" id="claHelpLink" href="' + base + 'help.html"><span>Help</span></a>');   // the in-portal user manual (signed-in people only)
+          '<a class="claHdr" id="claHelpLink" href="' + base + CLA.helpHref(me) + '"><span>Help</span></a>');   // clients: client guide, staff: staff manual (signed-in people only)
       } else {
         hr.insertAdjacentHTML("afterbegin", '<a class="btn sec" href="' + base + 'login.html?next=quote-saved.html">Log in</a>');
       }

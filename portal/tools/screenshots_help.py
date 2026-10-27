@@ -63,7 +63,7 @@ def calc(pg, zip_="20850", addr="123 Main St", city="Rockville"):
 with sync_playwright() as p:
     br = p.chromium.launch(channel="chrome", args=["--no-sandbox"])
     def newpage(w=1280, h=900):
-        ctx = br.new_context(viewport={"width": w, "height": h}); pg = ctx.new_page()
+        ctx = br.new_context(viewport={"width": w, "height": h}); ctx.add_init_script("document.addEventListener('DOMContentLoaded',()=>{const s=document.createElement('style');s.textContent='.demo{display:none!important}';document.head.appendChild(s)})"); pg = ctx.new_page()
         pg.on("pageerror", lambda e: errors.append(f"pageerror {e}"))
         return ctx, pg
 
@@ -85,11 +85,11 @@ with sync_playwright() as p:
     # ---- rep with special pricing (Jane: MD+VA 900 / 500) ----
     ctx, pg = newpage(1280, 900); login(pg, "sample.rep.jane@clatitle.com"); calc(pg)
     pg.wait_for_selector("#claSave_quote"); pg.wait_for_selector("[data-special]")
-    fb = doc_box(pg, "#fees"); snap(pg, "calc-special-fees", clip={"x": max(0, fb["x"] - 16), "y": max(0, fb["y"] - 56), "width": fb["width"] + 32, "height": 560})
+    fb = doc_box(pg, "#fees"); snap(pg, "rep-calc-special-fees", clip={"x": max(0, fb["x"] - 16), "y": max(0, fb["y"] - 56), "width": fb["width"] + 32, "height": 560})
     # change something so the quote auto-saves, then show the saved note
     pg.fill("#price", "525000"); pg.wait_for_timeout(3600)
-    snap(pg, "calc-saved", clip=union(pg, [".foot"], pad=20))
-    snap(pg, "calc-cobrand", clip={"x": 0, "y": 0, "width": 1280, "height": 270}, fixed=True)
+    snap(pg, "rep-calc-saved", clip=union(pg, [".foot"], pad=20))
+    snap(pg, "rep-calc-cobrand", clip={"x": 0, "y": 0, "width": 1280, "height": 270}, fixed=True)
     # feedback bubble: closed and open
     pg.evaluate("window.scrollTo(0,0)"); snap(pg, "feedback-bubble", clip={"x": 780, "y": 540, "width": 500, "height": 360}, fixed=True)
     pg.click("#claFeedbackLink"); pg.wait_for_timeout(700); pg.fill("#claFbMsg", "Example: the print view cuts off the footer on my laptop."); 
@@ -105,22 +105,32 @@ with sync_playwright() as p:
     snap(pg, "rep-invite", sel="#pClients section[data-tour='r-invite']")
     ctx.close()
 
-    # ---- client (Sam) dashboard, quote view, profile ----
+    # ---- client (Sam, Jane's client): header, dashboard, calculator while signed in, quote view, profile ----
     ctx, pg = newpage(1280, 900); login(pg, "sam.agent@example.com")
     if pg.locator("#claTour").count(): pg.keyboard.press("Escape")
+    hb = pg.evaluate("document.querySelector('header.top').getBoundingClientRect().bottom")
+    snap(pg, "client-header", clip={"x": 70, "y": 0, "width": 1140, "height": hb + 2}, fixed=True)
     snap(pg, "client-dashboard", clip=mainclip(pg, 640))
+    calc(pg); pg.wait_for_selector("#claSave_quote"); pg.wait_for_selector("[data-special]")
+    fb = doc_box(pg, "#fees"); snap(pg, "calc-special-fees", clip={"x": max(0, fb["x"] - 16), "y": max(0, fb["y"] - 56), "width": fb["width"] + 32, "height": 560})
+    pg.fill("#price", "525000"); pg.wait_for_timeout(3600)
+    snap(pg, "calc-saved", clip=union(pg, [".foot"], pad=20))
+    snap(pg, "calc-cobrand", clip={"x": 0, "y": 0, "width": 1280, "height": 270}, fixed=True)
     pg.goto(B + "portal/quote.html?id=00000000-0000-4000-8000-0000000000f01"); pg.wait_for_selector("#body:not([hidden])"); pg.wait_for_timeout(500)
-    snap(pg, "quote-view", clip={"x": 0, "y": 60, "width": 1440, "height": 900})
+    snap(pg, "quote-view", clip=mainclip(pg, 900))
     pg.goto(B + "portal/profile.html"); pg.wait_for_selector("#firstName"); pg.wait_for_timeout(500)
-    snap(pg, "profile", clip=mainclip(pg, 820))
-    # client calc has no feedback bubble but has Save
+    snap(pg, "profile", sel="section.card", pad=14)
+    h3 = doc_box(pg, "section.card:nth-of-type(2) h3"); cd = doc_box(pg, "section.card:nth-of-type(2)")   # the Company part only: the hints above it are for staff eyes too
+    snap(pg, "profile-company", clip={"x": cd["x"], "y": h3["y"] - 14, "width": cd["width"], "height": cd["y"] + cd["height"] - (h3["y"] - 14)})
     ctx.close()
 
     # ---- guided tour (new client Nia: starts by itself) ----
     ctx, pg = newpage(1280, 900); login(pg, "sample.new.client@example.com"); pg.wait_for_selector("#claTour"); pg.wait_for_timeout(500)
     snap(pg, "tour-client-step1", clip={"x": 0, "y": 0, "width": 1280, "height": 760}, fixed=True)
     pg.click("#claTourNext"); pg.click("#claTourNext"); pg.wait_for_timeout(500)
-    snap(pg, "tour-client-step3", clip={"x": 0, "y": 0, "width": 1280, "height": 760}, fixed=True); pg.keyboard.press("Escape"); ctx.close()
+    snap(pg, "tour-client-step3", clip={"x": 0, "y": 0, "width": 1280, "height": 760}, fixed=True)
+    for _ in range(3): pg.click("#claTourNext")
+    pg.wait_for_timeout(500); snap(pg, "tour-client-rep", clip={"x": 0, "y": 0, "width": 1280, "height": 760}, fixed=True); pg.keyboard.press("Escape"); ctx.close()
     ctx, pg = newpage(1280, 900); calc(pg); pg.click("#claCalcTourLink"); pg.wait_for_selector("#claTour"); pg.click("#claTourNext"); pg.click("#claTourNext"); pg.click("#claTourNext"); pg.wait_for_timeout(500)
     snap(pg, "tour-calculator", clip={"x": 0, "y": 0, "width": 1280, "height": 800}, fixed=True); ctx.close()
 

@@ -43,6 +43,8 @@
     target.id === actor.id ? "You cannot change your own account." :
     "Only a super admin can change a super admin.";
   // Staff = admin, super admin or rep BY ROLE (an active account). Clients / realtors and guests are never staff. Same rule as private.is_staff().
+  // Help: clients read the client guide (help.html); reps, admins and super admins read the staff manual (staff-help.html)
+  CLA.helpHref = (p) => (CLA.isStaff(p) ? "staff-help.html" : "help.html");
   CLA.isStaff = (p) => !!p && (p.role === "super_admin" || p.role === "admin" || p.role === "rep") && (!p.status || p.status === "active");
   // ---- staff feedback: a "Feedback" button in the header. Staff only: others never even download the widget. ----
   CLA.FEEDBACK_V = "20261025g";   // cache-bust for feedback-widget.js / .css; bump with the ?v= in index.html
@@ -56,7 +58,7 @@
   };
   // ---- guided tour (js/tour.js + tour.css; loaded only when someone is about to see it) ----
   // Each tour lives on the person's own dashboard: admin.html (admin / super admin), rep.html (rep), client.html (client / realtor).
-  CLA.TOUR_V = "20261027e";   // cache-bust for tour.js / tour.css; bump with the ?v= in index.html
+  CLA.TOUR_V = "20261027f";   // cache-bust for tour.js / tour.css; bump with the ?v= in index.html
   CLA.tourKind = (me) => { const f = location.pathname.split("/").pop(); return !me ? null : f === "admin.html" && CLA.isAdmin(me) ? "admin" : f === "rep.html" && CLA.isRep(me) ? "rep" : f === "client.html" && me.role === "client" ? "client" : null; };
   CLA.loadTour = () => CLA.startTour ? Promise.resolve() : new Promise((res, rej) => { const s = document.createElement("script"); s.src = "js/tour.js?v=" + CLA.TOUR_V; s.onload = res; s.onerror = () => rej(new Error("load")); document.head.appendChild(s); });
   // Called by each dashboard once it has drawn itself. Starts the tour on its own ONLY for a person who has never seen it (profiles.tour_seen_at is NULL,
@@ -106,7 +108,7 @@
       const url = await A.getAvatarUrl(profile);
       right = '<a class="navlink" href="../index.html">Calculator</a><a class="navlink"' + (CLA.isAdmin(profile) && profile.isRep ? ' data-tour="h-admin"' : "") + ' href="' + CLA.homeFor(profile.role) + '">' + (CLA.isAdmin(profile) && profile.isRep ? "Admin dashboard" : "Dashboard") + "</a>" +
         (CLA.isAdmin(profile) && profile.isRep ? '<a class="navlink" id="repLink" href="rep.html">Rep dashboard</a>' : "") +
-        '<a class="navlink" id="helpLink" data-tour="h-help" href="help.html">Help</a>' +
+        '<a class="navlink" id="helpLink" data-tour="h-help" href="' + CLA.helpHref(profile) + '">Help</a>' +
         '<button class="claTourLink" id="claTourLink" type="button">Take the tour</button>' +
         '<a class="chip" data-tour="h-profile" href="profile.html">' + CLA.avatarImg(url, profile, "sm") + '<span>' + CLA.esc(CLA.fullName(profile)) + '<small>' + CLA.roleLabel(profile.role, profile) + "</small></span></a>" +
         '<button class="btn sec" id="signOut" type="button">Sign out</button>';

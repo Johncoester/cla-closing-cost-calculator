@@ -1,0 +1,4 @@
+/* Staff manual only (portal/staff-help.html): audience badges and the audience filter. */
+.badge.audE{background:#e4f2cc;color:#35560b}.badge.audR{background:#111;color:var(--g)}.badge.audA{background:var(--g);color:#000}
+#audSeg{margin-bottom:16px}
+.help .clientlink{margin:0 0 16px;max-width:80ch}

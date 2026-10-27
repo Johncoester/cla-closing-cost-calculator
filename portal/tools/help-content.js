@@ -50,7 +50,7 @@ sec("getting-started", 2, "Getting started", "E", "Sign in, accept an invitation
   { t: "p", x: "Open your name in the top bar. First and last name are required. Phone is required for reps. Your cell phone is optional and must be a US number; it is shown to your assigned rep or clients and to CLA admins. Clients also add company details that print on their quotes. To change your sign-in email, ask a CLA admin." },
   { t: "p", x: "A photo is optional. Use a JPEG or PNG up to 2 MB; the portal crops it to a centered square and shrinks it to 512 pixels. iPhone HEIC photos are refused for now. Until you add one, a plain placeholder picture is used." },
   { t: "img", f: "profile.png", cap: "Profile page with the photo box and details.", alt: "Profile page" },
-  { t: "p", x: "This manual is always one click away: choose Help in the top bar of any portal page, or next to your name in the calculator header.", helpOnly: true },
+  { t: "p", x: "This staff manual is one click away: choose Help in the top bar of any portal page, or next to your name in the calculator header. Clients get their own shorter client guide from the same Help link; staff can read it too (see the link at the top of this page).", helpOnly: true },
   { t: "h3", x: "The guided tour" },
   { t: "p", x: "A short click-through in John's voice. In the portal it starts by itself the first time you open your dashboard after finishing your profile, with 6 to 7 steps for your role. Replay it any time with Take the tour in the top bar. The calculator has its own tour (about 13 to 15 steps) for anyone, signed in or not: use Take the tour in the calculator header or the \"New here?\" chip. Skip with Skip tour or Esc; Back and Next or the arrow keys move." },
   { t: "img", f: "tour-client-step3.png", cap: "A guided tour step in the portal: a spotlight on the element and a short note.", alt: "Guided tour popup over the client dashboard" },
@@ -173,13 +173,13 @@ sec("calculator", 4, "Using the calculator step by step", "E", "Everything on th
     "Guest: the button says Log in to save. After you sign in, a confirmation page saves the quote you were working on.",
     "Copy quote puts a plain-text version on your clipboard to paste into an email. Print / Save PDF opens your browser's print dialog and prints a clean copy.",
   ] },
-  { t: "img", f: "calc-saved.png", cap: "After a change, a signed-in quote saves by itself.", alt: "Saved to your account note under the buttons" },
+  { t: "img", f: "rep-calc-saved.png", cap: "After a change, a signed-in quote saves by itself.", alt: "Saved to your account note under the buttons" },
   { t: "h3", x: "Photos on quotes" },
   { t: "p", x: "Signed-in clients and reps see a co-branded bar under the mode switch: the client's photo, name and company on one side, and their CLA rep's photo, name and cell phone (or office phone) on the other, with \"Prepared with C.L.A. Title & Escrow\". It also prints. A plain placeholder picture shows until someone adds a photo. A plain admin has no photo bar; an admin who also works as a rep gets one like a rep." },
-  { t: "img", f: "calc-cobrand.png", cap: "The co-branded bar shows photos, names and phone numbers.", alt: "Calculator with photo bar for a rep" },
+  { t: "img", f: "rep-calc-cobrand.png", cap: "The co-branded bar shows photos, names and phone numbers.", alt: "Calculator with photo bar for a rep" },
   { t: "h3", x: "Special rate" },
   { t: "p", x: "If your pricing includes a lower settlement fee, the CLA fees panel shows the lower amount with \"(special rate, standard $...)\" beside it. Only CLA's settlement fee changes. Printed, copied and saved quotes show the amount without the word special. See section 8." },
-  { t: "img", f: "calc-special-fees.png", cap: "A signed-in rep with special pricing sees the special rate note (demo data).", alt: "CLA fees panel with special rate notes" },
+  { t: "img", f: "rep-calc-special-fees.png", cap: "A signed-in rep with special pricing sees the special rate note (demo data).", alt: "CLA fees panel with special rate notes" },
 ]);
 
 sec("quotes", 5, "Quotes in the portal", "E", "Saving, finding and who can see which quotes.", [
@@ -420,7 +420,7 @@ const NEEDS = [
   "The standard fee amounts quoted here come from the built-in snapshot; the live sheet is the real source.",
   "Recording fee watch schedule and where its report goes are from John's brief only; there is no setting for it in this code.",
   "Which other underwriters will be added; the snapshot lists one.",
-  "Should clients be able to open this Help page, and should reps and clients see the admin sections?",
+  "Please read the client guide (the link at the top of this page) and tell John if any wording should change, especially what clients are told about contacting CLA when they have no rep (the portal has no general CLA phone or email for clients; it only shows their rep).",
   "Whether the 30-day auto-delete is final (the notes ask counsel to confirm).",
 ];
 

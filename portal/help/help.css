@@ -7,7 +7,6 @@ main.help{max-width:980px}
 .hsh{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px}
 .hsh h2{margin:0;font-size:21px;letter-spacing:-.015em;display:flex;align-items:center;gap:10px}
 .hsh .num{width:30px;height:30px;border-radius:9px;background:var(--g);display:inline-grid;place-items:center;font-size:14px;font-weight:800;flex:none}
-.badge.audE{background:#e4f2cc;color:#35560b}.badge.audR{background:#111;color:var(--g)}.badge.audA{background:var(--g);color:#000}
 .help .lead{margin:0 0 14px;color:var(--mut);font-size:15px}
 .help h3{margin:22px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut)}
 .help p{margin:0 0 12px;max-width:78ch;font-size:14.5px;line-height:1.55}
@@ -26,6 +25,5 @@ main.help{max-width:980px}
 .help .helpnote{max-width:80ch}
 .help code{background:#eef1e8;padding:1px 5px;border-radius:5px;font-size:12.5px}
 .help .totop{margin:14px 0 0;font-size:12.5px}
-#audSeg{margin-bottom:16px}
 @media(max-width:700px){.help .toc ol{columns:1}.hsh h2{font-size:18px}.help th,.help td{padding:8px 10px}.help .tablewrap table{min-width:480px}}
 @media print{.help-sec{break-inside:auto;box-shadow:none;border:1px solid #bbb}.help figure.shot{break-inside:avoid}.noprint{display:none!important}.help .toc{display:none}}
