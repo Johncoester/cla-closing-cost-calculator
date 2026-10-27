@@ -796,8 +796,8 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
       ok("help: a client who opens staff-help.html is redirected: the staff content stays hidden");
       // client guide for a client, rep and admin; staff manual for a rep and an admin
       const shown = (X) => !X.d.getElementById("top").hidden;
-      for (const who of ["sam.agent@example.com", "sample.rep.jane@clatitle.com", "sample.admin@clatitle.com"]) { const X = await renderPage("help.html", who, "header .hr .chip"); assert.strictEqual(X.errs.length, 0, X.errs.join()); assert.ok(shown(X) && X.d.querySelectorAll(".help-sec").length === 9 && !X.d.getElementById("audSeg")); X.dom.window.close(); }
-      ok("help: any signed-in person can read the client guide (9 sections, no audience filter)");
+      for (const who of ["sam.agent@example.com", "sample.rep.jane@clatitle.com", "sample.admin@clatitle.com"]) { const X = await renderPage("help.html", who, "header .hr .chip"); assert.strictEqual(X.errs.length, 0, X.errs.join()); assert.ok(shown(X) && X.d.querySelectorAll(".help-sec").length === 12 && !X.d.getElementById("audSeg")); X.dom.window.close(); }
+      ok("help: any signed-in person can read the client guide (12 sections, no audience filter)");
       const secsOf = (X) => [...X.d.querySelectorAll(".help-sec")].filter((e) => !e.hidden);
       const HR = await renderPage("staff-help.html", "sample.rep.jane@clatitle.com", "header .hr .chip"); assert.ok(shown(HR) && secsOf(HR).some((e) => e.dataset.aud === "R") && secsOf(HR).every((e) => e.dataset.aud !== "A") && !HR.d.getElementById("audSeg").hidden && HR.d.getElementById("clientGuideLink").getAttribute("href") === "help.html"); HR.dom.window.close();
       const HA = await renderPage("staff-help.html", "sample.robin.admin@clatitle.com", "header .hr .chip"); assert.ok(shown(HA)); const aud = new Set(secsOf(HA).map((e) => e.dataset.aud)); assert.ok(aud.has("E") && aud.has("R") && aud.has("A"));
@@ -805,9 +805,14 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
       ok("help: reps see the Everyone and Reps sections of the staff manual, admins see all and can filter; both have the 'See what clients see' link to help.html");
       // the client guide has no staff terms anywhere in the file (text, comments, scripts, alt text, image paths)
       const low = cg.toLowerCase();
-      for (const w of ["pricing table", "audit", "assign", "invite a client", "super admin", "admin", "staff", "discount", "tier", "fee set", "disable", "feedback", "rep dashboard", "rep pricing", "needs confirming", "help/staff", "staff-help", "clients", "internal"]) assert.ok(!low.includes(w), "client guide mentions: " + w);
-      ok("help: the client guide has none of the staff or pricing words (pricing table, audit, assign, invite a client, super admin, admin, staff, discount, tier, fee set, disable, feedback ...), nowhere in the file");
-      assert.ok(/special rate/i.test(cg) && /Saved to your account/.test(cg) && /Forgot password\?/.test(cg) && /Take the tour/.test(cg) && /24 hours/.test(cg)); ok("help: the client guide covers sign-in, forgot password, the special rate note, saving, and the tour");
+      for (const w of ["pricing table", "audit", "assign", "invite a client", "super admin", "admin", "staff", "discount", "tier", "fee set", "disable", "feedback", "rep dashboard", "rep pricing", "needs confirming", "help/staff", "staff-help", "clients", "internal", "special rate", "standard fee", "pricing", "cheaper", "markup", "waive"]) assert.ok(!low.includes(w), "client guide mentions: " + w);
+      // no talk of rates or amounts: judged on the VISIBLE text and the picture captions / alt text (the plain word "rate" must not appear at all)
+      const vis = cg.replace(/<script[\s\S]*?<\/script>/g, " ").replace(/<style[\s\S]*?<\/style>/g, " ").replace(/<[^>]+>/g, " ") + " " + [...cg.matchAll(/alt="([^"]*)"/g)].map((m) => m[1]).join(" ");
+      assert.ok(!/\brates?\b/i.test(cg) && !/\bspecial\s+(rate|price|pricing|fee)/i.test(cg) && !/\bstandard\s+(rate|price|pricing|fee)/i.test(cg), "client guide talks about rates");
+      assert.ok(!/\$\s?\d/.test(vis) && !/\b\d+(\.\d+)?\s?%/.test(vis) && !/\b\d{1,3}(,\d{3})+\b/.test(vis), "client guide shows an amount: " + (vis.match(/\$\s?\d[\d,.]*/) || [])[0]);
+      ok("help: the client guide has none of the staff, pricing or rate words (pricing table, audit, assign, admin, staff, discount, special rate, standard fee, pricing, the word rate ...), no dollar amounts, and no percentages, anywhere in the file");
+      assert.ok(/Saved to your account/.test(cg) && /Forgot password\?/.test(cg) && /Take the tour/.test(cg) && /24 hours/.test(cg) && /Print \/ Save PDF/.test(cg) && /Copy quote/.test(cg) && /Save as new quote/.test(cg) && /View \/ print/.test(cg) && /valid until/.test(cg) && /estimate is not a guarantee/i.test(cg)); ok("help: the client guide covers sign-in, forgot password, getting an estimate, what results mean, saving, printing / saving a PDF, copying, opening and deleting quotes, expiry, the tour");
+      assert.ok(/id="Print \/ Save PDF"|Print \/ Save PDF/.test(rd("../index.html")) && /id="copy"/.test(rd("../index.html")) && /id="print"/.test(rd("quote.html")) && !/mailto:[^"]*quote|navigator\.share|download=/i.test(rd("../index.html") + rd("quote.html"))); ok("help: what the guide says is offered (Print / Save PDF, Copy quote) exists in the code, and there is no email / share / download button for it to deny");
       assert.ok(/help\/staff\.css/.test(sg) && !/help\/staff\.css/.test(cg)); ok("help: staff-only styles load only on the staff manual");
       // pictures
       const imgsOf = (h) => [...h.matchAll(/<img src="(help\/(client|staff)\/[\w-]+\.png)" alt="([^"]+)" width="(\d+)" height="(\d+)"/g)];
@@ -816,7 +821,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
       assert.ok(si.length >= 30 && si.every((m) => fs.existsSync(path.join(__dirname, m[1])) && m[3].length > 8 && +m[4] <= 1200)); ok("help: every staff-manual picture exists, has alt text and is at most 1200px wide");
       const usedC = new Set([...ci, ...si].filter((m) => m[2] === "client").map((m) => path.basename(m[1]))), usedS = new Set(si.filter((m) => m[2] === "staff").map((m) => path.basename(m[1])));
       assert.ok(cdir.length === usedC.size && sdir.length === usedS.size && cdir.every((f) => !sdir.includes(f)) && !/<img(?![^>]*alt=)/.test(cg + sg)); ok("help: no unused or duplicate picture files; client and staff folders are separate");
-      assert.ok(!/(admin|rep-|pricing|feedback|audit)/.test(cdir.join(" "))); ok("help: the client picture folder holds no admin, rep, pricing, feedback or audit pictures");
+      assert.ok(!/(admin|rep-|pricing|feedback|audit|special)/.test(cdir.join(" "))); ok("help: the client picture folder holds no admin, rep, pricing, special-rate, feedback or audit pictures"); assert.ok(ci.every((m) => m[2] === "client") && !ci.some((m) => /special|rep-|admin|pricing/.test(m[1]))); ok("help: no client-guide picture comes from the staff folder");
       assert.ok([...cdir.map((f) => "client/" + f), ...sdir.map((f) => "staff/" + f)].every((f) => fs.statSync(path.join(__dirname, "help", f)).size < 200 * 1024)); ok("help: each picture is under 200 KB");
       assert.ok(![cg, sg].some((h) => /https?:\/\/(?!fonts\.googleapis)/.test(h.replace(/quotes\.clatitle\.com/g, "")) || /eyJ|service_role|apikey|password\s*[:=]/i.test(h))); ok("help: no external links except the font, and no keys or passwords in either page");
       assert.ok(/not access control/.test(sg) && /fetched by anyone/.test(sg)); ok("help: the staff manual says plainly that static pages are public and the guard only controls what shows on screen");
@@ -1045,7 +1050,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
 
     // cache-bust: every ?v= in index.html and TOUR_V agree
     const vs = [...idx.matchAll(/\?v=(\d{8}[a-z])/g)].map((m) => m[1]), pu = fs.readFileSync(path.join(__dirname, "js", "portal-ui.js"), "utf8");
-    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261027f" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261027f");
+    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261027g" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261027g");
     // the new elements are inert in print and add no external requests
     assert.ok(/@media print\{\s*@page\{margin:14mm\}\s*\.claChip\{display:none!important\}/.test(idx) && !/https?:\/\//.test(tj2)); ok("calculator tour: the chip is not printed; tour.js has no external libraries or CDN");
   }

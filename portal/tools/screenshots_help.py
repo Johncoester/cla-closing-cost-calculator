@@ -30,9 +30,12 @@ def doc_box(pg, sel):
     """bounding box of the first match in DOCUMENT coordinates (viewport box + scroll offset)"""
     return pg.evaluate("s=>{const e=document.querySelector(s);e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect();return {x:r.x+scrollX,y:r.y+scrollY,width:r.width,height:r.height}}", sel)
 
+MASK = False
+MASK_JS = """()=>{const w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);let n;while(n=w.nextNode()){const t=n.nodeValue;if(/\\$\\s?\\d/.test(t))n.nodeValue=t.replace(/\\$\\s?[\\d,]+(\\.\\d+)?/g,m=>m.replace(/\\d/g,"0"))}}"""
 def snap(pg, name, sel=None, pad=12, clip=None, fixed=False):
     """clip = document coordinates (full-page shot). fixed=True: the picture is of something fixed on the screen (bubble, dialog, tour); the page is scrolled to the top and clip is in viewport coordinates."""
     pg.wait_for_timeout(450)
+    if MASK: pg.evaluate(MASK_JS)   # client / guest pictures: every dollar figure becomes zeros (no amounts in the client guide)
     path = f"{OUT}/{name}.png"
     if sel:
         b = doc_box(pg, sel); clip = {"x": max(0, b["x"] - pad), "y": max(0, b["y"] - pad), "width": min(b["width"] + 2 * pad, 1440), "height": b["height"] + 2 * pad}
@@ -74,15 +77,17 @@ with sync_playwright() as p:
     snap(pg, "forgot", clip={"x": 0, "y": 0, "width": 1100, "height": 480}); ctx.close()
 
     # ---- calculator as a guest: inputs, results, seller net sheet ----
+    MASK = True
     ctx, pg = newpage(1280, 900); calc(pg)
-    snap(pg, "calc-inputs", clip={"x": 0, "y": 0, "width": 1280, "height": 960}, fixed=True)
+    snap(pg, "calc-inputs", clip={"x": 0, "y": 0, "width": 1280, "height": 820}, fixed=True)
     snap(pg, "calc-results", clip=union(pg, [".hero", "#ledger", ".foot"]))
     snap(pg, "calc-top", clip={"x": 0, "y": 0, "width": 1280, "height": 330}, fixed=True)
     pg.click('#modes button[data-mode="seller"]'); pg.wait_for_timeout(500)
     snap(pg, "calc-seller", clip=union(pg, ["#mainS .col.in", "#mainS .col.out"]))
     ctx.close()
 
-    # ---- rep with special pricing (Jane: MD+VA 900 / 500) ----
+    # ---- rep with special pricing (Jane: MD+VA 900 / 500): staff picture only, never masked ----
+    MASK = False
     ctx, pg = newpage(1280, 900); login(pg, "sample.rep.jane@clatitle.com"); calc(pg)
     pg.wait_for_selector("#claSave_quote"); pg.wait_for_selector("[data-special]")
     fb = doc_box(pg, "#fees"); snap(pg, "rep-calc-special-fees", clip={"x": max(0, fb["x"] - 16), "y": max(0, fb["y"] - 56), "width": fb["width"] + 32, "height": 560})
@@ -105,14 +110,14 @@ with sync_playwright() as p:
     snap(pg, "rep-invite", sel="#pClients section[data-tour='r-invite']")
     ctx.close()
 
+    MASK = True
     # ---- client (Sam, Jane's client): header, dashboard, calculator while signed in, quote view, profile ----
     ctx, pg = newpage(1280, 900); login(pg, "sam.agent@example.com")
     if pg.locator("#claTour").count(): pg.keyboard.press("Escape")
     hb = pg.evaluate("document.querySelector('header.top').getBoundingClientRect().bottom")
     snap(pg, "client-header", clip={"x": 70, "y": 0, "width": 1140, "height": hb + 2}, fixed=True)
     snap(pg, "client-dashboard", clip=mainclip(pg, 640))
-    calc(pg); pg.wait_for_selector("#claSave_quote"); pg.wait_for_selector("[data-special]")
-    fb = doc_box(pg, "#fees"); snap(pg, "calc-special-fees", clip={"x": max(0, fb["x"] - 16), "y": max(0, fb["y"] - 56), "width": fb["width"] + 32, "height": 560})
+    calc(pg); pg.wait_for_selector("#claSave_quote")
     pg.fill("#price", "525000"); pg.wait_for_timeout(3600)
     snap(pg, "calc-saved", clip=union(pg, [".foot"], pad=20))
     snap(pg, "calc-cobrand", clip={"x": 0, "y": 0, "width": 1280, "height": 270}, fixed=True)
@@ -134,6 +139,7 @@ with sync_playwright() as p:
     ctx, pg = newpage(1280, 900); calc(pg); pg.click("#claCalcTourLink"); pg.wait_for_selector("#claTour"); pg.click("#claTourNext"); pg.click("#claTourNext"); pg.click("#claTourNext"); pg.wait_for_timeout(500)
     snap(pg, "tour-calculator", clip={"x": 0, "y": 0, "width": 1280, "height": 800}, fixed=True); ctx.close()
 
+    MASK = False
     # ---- admin (Alex, super admin who also reps) ----
     ctx, pg = newpage(1440, 1300); login(pg, "sample.admin@clatitle.com")
     if pg.locator("#claTour").count(): pg.keyboard.press("Escape")
