@@ -5,7 +5,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="portal.css">
 <script src="config.js"></script>
-<script src="../fee-snapshot.js?v=20261027j"></script>
+<script src="../fee-snapshot.js?v=20261027l"></script>
 <script src="js/mock-data.js"></script><script src="js/mock-adapter.js"></script><script src="js/supabase-adapter.js"></script><script src="js/auth-adapter.js"></script><script src="js/portal-ui.js"></script>
 </head><body>
 <main class="pg">
@@ -28,6 +28,14 @@
 <div class="seg" id="tabs" role="tablist"></div>
 
 <section class="card flush" id="pUsers" data-tour="a-users"><div class="sh"><h2>Users</h2><div class="grow"><span class="sum" id="uCount"></span></div></div>
+ <div class="ufilters" id="uFilters" role="search" aria-label="Filter the users list">
+  <input type="text" id="uSearch" placeholder="Search name, email, company" aria-label="Search users" autocomplete="off">
+  <label>Role <select id="uRole" aria-label="Filter by role"><option value="">All roles</option><option value="super_admin">Super admin</option><option value="admin">Admin</option><option value="rep">Rep</option><option value="client">Client</option></select></label>
+  <label>Status <select id="uStatus" aria-label="Filter by status"><option value="">All</option><option value="active">Active (not disabled)</option><option value="disabled">Disabled</option><option value="never">Invited, never signed in</option></select></label>
+  <button class="btn o sm" type="button" id="uClear" hidden>Clear filters</button>
+  <span class="sum" id="uShown" aria-live="polite"></span>
+ </div>
+ <div class="sum ufnote" id="uNote" hidden>“Rep” includes admins and super admins who also work as a rep (they keep their Admin label in the table).</div>
  <div class="tablewrap"><table><thead><tr><th>Person</th><th>Cell</th><th>Role</th><th>Rep</th><th>Status</th><th></th></tr></thead><tbody id="users"></tbody></table></div></section>
 <section class="card flush" id="pQuotes" hidden><div class="sh"><h2>All saved quotes</h2><div class="grow"><input type="text" id="qFilter" placeholder="Search client, rep, address" style="min-height:36px;width:260px" aria-label="Filter quotes"></div></div>
  <div class="tablewrap"><table><thead><tr><th>Client / owner</th><th>Rep</th><th>Quote</th><th class="num">Price</th><th>Saved</th><th></th></tr></thead><tbody id="quotes"></tbody></table></div></section>
@@ -114,13 +122,22 @@
   const adminRole = (r) => r === "admin" || r === "super_admin";
   const cnt = (f) => users.filter(f).length;
 
-  async function loadUsers() {
-    users = await A.adminListUsers(); asg = await A.adminListAssignments();
+  // ---- filters (role, status, search). "Rep" = people who work as reps: reps AND admins / super admins with "also works as a rep" (same as CLA.isRep). ----
+  const fv = () => ({ q: $("uSearch").value.trim().toLowerCase(), role: $("uRole").value, st: $("uStatus").value });
+  const userMatches = (u, f) => {
+    if (f.role === "rep" ? !CLA.isRep(u) : f.role && u.role !== f.role) return false;
+    if (f.st === "disabled" ? u.status === "active" : f.st === "active" ? u.status !== "active" : f.st === "never" ? !(u.status === "active" && u.lastSignInAt === null) : false) return false;
+    return !f.q || [CLA.fullName(u), u.email, u.companyName || ""].join(" ").toLowerCase().includes(f.q);
+  };
+  async function loadUsers(refetch) {
+    if (refetch !== false) { users = await A.adminListUsers(); asg = await A.adminListAssignments(); }
     const sup = cnt((u) => u.role === "super_admin"), adm = cnt((u) => u.role === "admin"), alsoRep = cnt((u) => adminRole(u.role) && u.isRep);
     $("uCount").textContent = users.length + " users · " + cnt((u) => u.role === "rep") + " reps · " + sup + " super admin" + (sup === 1 ? "" : "s") + " · " + adm + " admin" + (adm === 1 ? "" : "s") + " · " + cnt((u) => u.role === "client") + " clients" + (alsoRep ? " · " + alsoRep + " admin" + (alsoRep === 1 ? "" : "s") + " also work" + (alsoRep === 1 ? "s" : "") + " as rep" + (alsoRep === 1 ? "" : "s") : "");
     // tooltip text lives in data-tip (shown by CSS on hover / keyboard focus, see .tip in portal.css; also works on a disabled button's wrapper)
     const tip = (t) => t ? ' data-tip="' + esc(t) + '" tabindex="0"' : "";
-    $("users").innerHTML = users.map((u) => {
+    const f = fv(), shown = users.filter((u) => userMatches(u, f)), filtered = !!(f.q || f.role || f.st);
+    $("uShown").textContent = filtered ? "Showing " + shown.length + " of " + users.length : ""; $("uClear").hidden = !filtered; $("uNote").hidden = f.role !== "rep";
+    $("users").innerHTML = !shown.length ? '<tr><td colspan="6" class="empty">No users match these filters.</td></tr>' : shown.map((u) => {
       const a = asg.find((x) => x.active && x.clientUserId === u.id), rep = a && uById(a.repId);
       // "Active" only means "not disabled" (a profile is active from invite time). lastSignInAt === null = invited but has never signed in (migration 15);
       // undefined = unknown (migration not applied), which stays plain "Active" rather than guessing.
@@ -136,7 +153,8 @@
         : block ? '<span class="badge admin tip"' + tip(block) + ">" + esc(CLA.roleLabel(u.role)) + "</span>"
         : '<select data-tour="u-role" data-role="' + esc(u.id) + '" aria-label="Role" style="min-height:34px;padding:4px 30px 4px 10px;font-size:13px;width:auto">' + (isSuper ? ["super_admin", "admin", "rep", "client"] : u.role === "admin" ? ["admin", "rep", "client"] : ["rep", "client"]).map((r) => '<option value="' + r + '"' + (r === u.role ? " selected" : "") + ">" + CLA.roleLabel(r) + "</option>").join("") + "</select>";
       const btn = '<button class="btn ' + (u.status === "active" ? "danger" : "o") + ' sm" data-st="' + esc(u.id) + '" data-to="' + (u.status === "active" ? "disabled" : "active") + '" type="button"' + (block ? ' disabled aria-disabled="true"' : "") + ">" + (u.status === "active" ? "Disable" : "Re-enable") + "</button>";
-      const action = mine ? "" : block ? '<span class="tip"' + tip(block) + ">" + btn + "</span>" : btn;   // the tooltip sits on a wrapper: a disabled button gets no hover / focus events
+      const del = u.status !== "active" ? '<button class="btn danger sm" data-del="' + esc(u.id) + '" type="button"' + (block ? ' disabled aria-disabled="true"' : "") + ' title="Permanently delete this disabled user">Delete…</button>' : "";   // only for a DISABLED person
+      const action = mine ? "" : '<span class="acts">' + (block ? '<span class="tip"' + tip(block) + ">" + btn + del + "</span>" : btn + del) + "</span>";   // the tooltip sits on a wrapper: a disabled button gets no hover / focus events
       return "<tr><td><div class='who'>" + CLA.avImg(u, "sm") + "<div><b>" + esc(CLA.fullName(u)) + "</b><span>" + esc(u.email) + (u.companyName && u.role === "client" ? " · " + esc(u.companyName) : "") + "</span></div></div></td><td>" + (CLA.telLink(u.cellPhone) || '<span class="sum">—</span>') + "</td><td>" + roleSel + alsoBox + "</td><td>" + (u.role === "client" ? (rep ? esc(CLA.fullName(rep)) : '<span class="badge warn">Unassigned</span>') : "—") + "</td><td>" + st + '</td><td class="num">' + action + "</td></tr>";
     }).join("");
     CLA.fillAvatars(A, $("users"));
@@ -183,7 +201,45 @@
       if (!succ) { await loadUsers(); return; }   // cancel: nothing changes, the dropdown snaps back
     } else if (!confirm("Change this person's role to " + CLA.roleLabel(s.value) + "?")) { await loadUsers(); return; }
     try { await A.adminSetRole(s.dataset.role, s.value, succ); CLA.toast(succ ? "Realtors moved. Role changed" : "Role changed"); } catch (ex) { CLA.toast(ex.message); } await loadUsers(); };
-  $("users").onclick = async (e) => { const b = e.target.closest("[data-st]"); if (!b) return;
+  // ---- delete a disabled user for good (migration 18). Type their email to confirm; a rep with active clients must name a successor. ----
+  const owned = (list, id) => list.filter((q) => q.ownerId === id).length, repOn = (list, id) => list.filter((q) => q.repId === id && q.ownerId !== id).length;
+  async function confirmDelete(u) {
+    let qs = []; try { qs = await A.adminListQuotes(); } catch (e) {}
+    const clients = activeClientsOf(u), n = clients.length, mineQ = owned(qs, u.id), asRep = repOn(qs, u.id);
+    const reps = users.filter((x) => CLA.isRep(x) && x.status === "active" && x.id !== u.id);
+    const name = CLA.fullName(u), noun = n + " realtor" + (n === 1 ? "" : "s");
+    return new Promise((resolve) => {
+      const ovl = document.createElement("div"); ovl.className = "ovl";
+      ovl.innerHTML = '<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="delT" id="delDlg"><h2 id="delT">Delete ' + esc(name) + ' for good?</h2>' +
+        '<p class="sub"><b>' + esc(u.email) + "</b> is disabled. Deleting removes the account permanently. This cannot be undone.</p>" +
+        '<ul class="delList"><li><b>Deleted:</b> the account and sign-in, the profile details and photo, and ' + (mineQ ? "the " + mineQ + " saved quote" + (mineQ === 1 ? "" : "s") + " they own" : "any saved quotes they own (none right now)") + ".</li>" +
+        (n ? "<li><b>Moved:</b> their " + esc(noun) + " (" + clients.slice(0, 3).map(clientName).map(esc).join(", ") + (n > 3 ? " and " + (n - 3) + " more" : "") + ") go to the rep you choose below.</li>" : "") +
+        "<li><b>Kept:</b> the audit log (with a “user deleted” record: email, role, who deleted them and when), feedback they sent (shown without a name)" + (asRep ? ", and " + asRep + " quote" + (asRep === 1 ? "" : "s") + " where they were the rep (their name is just removed)" : "") + ".</li>" +
+        "<li>The same email can be invited again later as a brand-new account.</li></ul>" +
+        (n ? (reps.length ? '<label for="delRep">New rep for their ' + esc(noun) + '</label><select id="delRep">' + reps.map((r) => '<option value="' + esc(r.id) + '">' + esc(CLA.fullName(r)) + (CLA.isAdmin(r) ? " (admin + rep)" : "") + " · " + activeClientsOf(r).length + " now</option>").join("") + "</select>"
+          : '<p class="msg err" style="display:block" role="alert">There is no other active rep to take over their realtors. Invite or enable a rep first.</p>') : "") +
+        '<label for="delConfirm" style="margin-top:12px">Type <b>' + esc(u.email) + '</b> to confirm</label><input type="text" id="delConfirm" class="delConfirm" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="delErr">' +
+        '<div class="delErr" id="delErr" role="alert"></div>' +
+        '<div style="display:flex;gap:10px;margin-top:12px;justify-content:flex-end"><button class="btn danger" id="delOk" type="button" disabled' + (n && !reps.length ? ' aria-disabled="true"' : "") + '>Delete permanently</button><button class="btn o" id="delNo" type="button">Cancel</button></div></div>';
+      const done = (v) => { document.removeEventListener("keydown", key); ovl.remove(); resolve(v); };
+      const key = (e) => { if (e.key === "Escape") done(null); };
+      document.addEventListener("keydown", key); ovl.onclick = (e) => { if (e.target === ovl) done(null); }; document.body.appendChild(ovl);
+      const inp = ovl.querySelector("#delConfirm"), ok = ovl.querySelector("#delOk"), match = () => inp.value.trim().toLowerCase() === u.email.toLowerCase() && !(n && !reps.length);
+      inp.oninput = () => { ok.disabled = !match(); }; inp.focus();
+      ovl.querySelector("#delNo").onclick = () => done(null);
+      ok.onclick = async () => { if (!match()) return; ok.disabled = true; ovl.querySelector("#delErr").textContent = "";
+        try { const r = await A.adminDeleteUser(u.id, inp.value.trim(), n ? ovl.querySelector("#delRep").value : null); done(r || {}); }
+        catch (ex) { ovl.querySelector("#delErr").textContent = ex.message; ok.disabled = !match(); } };
+    });
+  }
+  const filterEls = ["uSearch", "uRole", "uStatus"];
+  filterEls.forEach((id) => { $(id).addEventListener("input", () => loadUsers(false)); $(id).addEventListener("change", () => loadUsers(false)); });
+  $("uClear").onclick = () => { $("uSearch").value = ""; $("uRole").value = ""; $("uStatus").value = ""; loadUsers(false); };
+  $("users").onclick = async (e) => {
+    const d = e.target.closest("[data-del]");
+    if (d) { const u = uById(d.dataset.del); if (!u) return; const r = await confirmDelete(u);
+      if (r) { CLA.toast(u.email + " deleted" + (r.clients_moved ? ". " + r.clients_moved + " realtor" + (r.clients_moved === 1 ? "" : "s") + " moved" : "")); await loadUsers(); } return; }
+    const b = e.target.closest("[data-st]"); if (!b) return;
     try { await A.adminSetStatus(b.dataset.st, b.dataset.to); CLA.toast(b.dataset.to === "disabled" ? "User disabled" : "User re-enabled"); } catch (ex) { CLA.toast(ex.message); } await loadUsers(); };
 
   async function loadQuotes() {

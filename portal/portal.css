@@ -146,3 +146,8 @@ tr.click{cursor:pointer}tr.click:hover td{background:#fafcf6}
 .ovl{position:fixed;inset:0;background:rgba(17,17,17,.5);display:flex;align-items:center;justify-content:center;z-index:60;padding:16px}
 .dlg{background:#fff;border-radius:16px;padding:24px;max-width:480px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,.3)}
 .dlg h2{margin:0 0 6px}.dlg select{width:100%}
+
+/* admin Users tab: filters, and the delete dialog */
+.ufilters{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:12px 24px;border-bottom:1px solid var(--line);background:#fff}.ufilters input[type=text]{min-height:36px;width:240px}.ufilters label{display:flex;align-items:center;gap:6px;font-size:13px;margin:0;font-weight:600}.ufilters select{min-height:36px;width:auto;padding:4px 30px 4px 10px;font-size:13px}.ufilters .sum{margin-left:auto}.ufnote{padding:8px 24px;border-bottom:1px solid var(--line);background:#fafcf6}
+.acts{display:inline-flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.dlg .delList{margin:8px 0 12px;padding-left:18px;font-size:13.5px}.dlg .delList li{margin:3px 0}.dlg .delConfirm{font-family:ui-monospace,Menlo,monospace}.dlg .delErr{color:#a31616;font-size:13px;min-height:18px;margin-top:6px}
+@media (max-width:640px){.ufilters{padding:12px 16px}.ufilters input[type=text]{width:100%}.ufilters .sum{margin-left:0;width:100%}}

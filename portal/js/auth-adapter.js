@@ -56,6 +56,11 @@
  *                                            repId may be any rep OR an admin who also works as a rep
  *   adminSetStatus(userId, "active"|"disabled")   admin: reps and clients only. super admin: anyone but themselves.
  *                                            Never leaves zero ACTIVE super admins (rejected by the database)
+ *   adminDeleteUser(userId, confirmEmail, reassignTo?)  PERMANENT (migration 18 + the delete-user Edge Function). Only a person who is already DISABLED, never yourself, never the last
+ *                                            active super admin. Admin: reps, clients and other admins (never a super admin). Super admin: anyone else. confirmEmail must equal
+ *                                            the person's email (the dialog makes you type it). reassignTo: REQUIRED when they are a rep with ACTIVE clients (an active rep takes them).
+ *                                            Deletes the profile, the quotes they owned and their photo; keeps others' quotes (rep cleared), feedback (no name) and the audit log (+ a
+ *                                            user_deleted row). Returns {email, role, quotes_deleted, quotes_detached, clients_moved, feedback_kept, photo}.
  *   adminSetRole(userId, role, reassignTo?)  admin: rep / client for reps, clients and other admins. super admin: any role for anyone but themselves.
  *                                            (role "rep" sets isRep, "client" clears it; admin / super_admin keep whatever they had)
  *                                            reassignTo: REQUIRED when the change leaves someone with ACTIVE clients unable to be a rep (that is: to "client");

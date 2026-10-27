@@ -13,7 +13,7 @@
     });
     const must = ({ data, error }) => { if (error) throw new Error(friendly(error)); return data; };
     // the database's own refusals (migrations 6 and 10) are written for people: show them, capitalized
-    const ownRefusal = (m) => /^(only a super admin|only an admin|you cannot|there must always|reps can only|this person has|reassign this person|choose a different rep|the rep who takes over|you have sent a lot|category must|message is|status must|note is too)/i.test(m) ? m.charAt(0).toUpperCase() + m.slice(1) + (/[.!?]$/.test(m) ? "" : ".") : null;
+    const ownRefusal = (m) => /^(only a super admin|only an admin|you cannot|there must always|reps can only|this person has|this person still has|disable this person first|the email you typed|reassign this person|choose a different rep|the rep who takes over|you have sent a lot|category must|message is|status must|note is too)/i.test(m) ? m.charAt(0).toUpperCase() + m.slice(1) + (/[.!?]$/.test(m) ? "" : ".") : null;
     function friendly(e) {
       const m = e.message || String(e);
       if (/Invalid login credentials/i.test(m)) return "Invalid email or password.";
@@ -195,6 +195,8 @@
       async adminListQuotes() { return must(await sb.from("quotes").select("*").order("created_at", { ascending: false })).map(toQuote); },
       async adminInvite(o) { return fn("invite-user", { email: o.email, role: o.role, repId: o.repId || null, isRep: (o.role === "super_admin" || o.role === "admin") && !!o.isRep, cellPhone: await invitedCell(o.cellPhone), redirectTo: redirectBase() + "?invite=1" }); },
       async adminSetStatus(id, status) { return fn("set-user-status", { userId: id, status }); },
+      // permanent: only a disabled user (migration 18 + the delete-user Edge Function); confirmEmail = the email typed in the dialog; reassignTo = successor rep when they have active clients
+      async adminDeleteUser(id, confirmEmail, reassignTo) { const r = await fn("delete-user", { userId: id, confirmEmail, reassignTo: reassignTo || null }); return (r && r.summary) || {}; },
       // reassignTo: when the change stops someone who has active clients from being a rep, the rep who takes those clients over (migration 12)
       async adminSetRole(id, role, reassignTo) { must(await sb.rpc("admin_set_role", Object.assign({ p_user: id, p_role: role }, reassignTo ? { p_reassign_to: reassignTo } : {}))); },
       // ---- staff feedback (migration 13): writes only through the RPCs; reads through RLS (own rows; admin and super admin all) ----

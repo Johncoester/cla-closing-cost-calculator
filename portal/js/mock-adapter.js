@@ -179,6 +179,34 @@
         const before = t.status; t.status = status;
         log(s, u.id, status === "disabled" ? "user_disabled" : "user_enabled", "profile", id, { before, after: status }); save(s);
       },
+      // delete a DISABLED user for good (migration 18, admin_delete_user + the delete-user function). Same rules, same order of checks, same answer.
+      async adminDeleteUser(id, confirmEmail, reassignTo) {
+        const s = load(), u = needAdmin(s); if (!id) err("User is required.");
+        if (id === u.id) err("You cannot delete yourself.");
+        const t = s.users.find((x) => x.id === id) || err("No such user.");
+        if (!isSuper(u) && t.role === "super_admin") err("Only a super admin can delete a super admin.");
+        if (t.status !== "disabled") err("Disable this person first: only a disabled user can be deleted.");
+        if (lc(confirmEmail) !== t.email) err("The email you typed does not match this person's email.");
+        const n = activeClients(s, id).length; let moved = 0;
+        if (n) {
+          if (!reassignTo) err("This person still has " + n + " active client(s): choose another rep to take them over.");
+          moved = moveClients(s, u, id, reassignTo);
+        }
+        const mine = s.quotes.filter((q) => q.ownerId === id), detached = s.quotes.filter((q) => q.repId === id && q.ownerId !== id);
+        const fb = (s.feedback || []).filter((f) => f.userId === id), had = !!s.photos[id];
+        const pm = (s.pricingMembers || []).find((m) => m.email === t.email), pt = pm && (s.pricingTables || []).find((x) => x.id === pm.tableId);
+        s.assignments = s.assignments.filter((a) => a.repId !== id && a.clientEmail !== t.email && a.clientUserId !== id);
+        s.invitations = s.invitations.filter((i) => i.email !== t.email); s.pricingMembers = (s.pricingMembers || []).filter((m) => m.email !== t.email);
+        log(s, u.id, "user_deleted", "profile", id, { email: t.email, role: t.role, name: CLA.fullName(t), was_rep: isRep(t), deleted_by_email: u.email, quotes_deleted: mine.length, quotes_detached: detached.length,
+          clients_moved: moved, moved_to: moved ? reassignTo : null, feedback_kept: fb.length, photo: had, pricing_table: pt ? pt.name : null });
+        // what the cascades and "set null" foreign keys do
+        s.quotes = s.quotes.filter((q) => q.ownerId !== id); detached.forEach((q) => { q.repId = null; });
+        fb.forEach((f) => { f.userId = null; }); delete s.photos[id];
+        s.assignments.forEach((a) => { if (a.assignedBy === id) a.assignedBy = null; }); s.invitations.forEach((i) => { if (i.invitedBy === id) i.invitedBy = null; });
+        s.users.forEach((x) => { if (x.invitedBy === id) x.invitedBy = null; });
+        s.users = s.users.filter((x) => x.id !== id); save(s);
+        return { email: t.email, role: t.role, quotes_deleted: mine.length, quotes_detached: detached.length, clients_moved: moved, feedback_kept: fb.length, photo: had };
+      },
       async adminSetRole(id, role, reassignTo) {
         const s = load(), u = needAdmin(s); if (id === u.id) err("You cannot change your own role.");
         const t = s.users.find((x) => x.id === id) || err("No such user.");

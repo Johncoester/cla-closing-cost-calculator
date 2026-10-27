@@ -514,6 +514,68 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     }
 
 
+    // ================= delete a disabled user (migration 18) + the Users-tab filters =================
+    {
+      const wx = boot(), Ax = wx.CLA.createMockAdapter({}), as = async (email) => { wx.localStorage.removeItem("cla_portal_mock_session"); await Ax.signIn(email, "x"); };
+      const ids = (k) => "00000000-0000-4000-8000-0000000000" + k, rej = async (p, re, name) => { try { await p; assert.fail("should have thrown: " + name); } catch (e) { assert.ok(re.test(e.message), name + " (" + e.message + ")"); } };
+      const ROBIN = "sample.robin.admin@clatitle.com", ALEX = "sample.admin@clatitle.com";
+      await as(ROBIN);
+      await rej(Ax.adminDeleteUser(ids("c1"), "sam.agent@example.com"), /disable this person first/i, "delete: an active person is refused");
+      await rej(Ax.adminDeleteUser(ids("a2"), ROBIN), /yourself|your own/i, "delete: not yourself");
+      await rej(Ax.adminDeleteUser(ids("a1"), ALEX), /super admin/i, "delete: an admin cannot delete a super admin");
+      await rej(Ax.adminDeleteUser(ids("c4"), "wrong@example.com"), /email you typed/i, "delete: the typed email must match");
+      assert.ok((await Ax.adminListUsers()).some((u) => u.id === ids("c4"))); ok("delete (mock): refusals change nothing");
+      const r1 = await Ax.adminDeleteUser(ids("c4"), "  Dee.Disabled@Example.com ");
+      assert.strictEqual(r1.email, "dee.disabled@example.com"); assert.strictEqual(r1.role, "client");
+      assert.ok(!(await Ax.adminListUsers()).some((u) => u.id === ids("c4"))); assert.ok(!(await Ax.adminListAssignments()).some((a) => a.clientEmail === "dee.disabled@example.com")); ok("delete (mock): an admin deletes a disabled client (typed email, any case) and the realtor link goes");
+      const au = (await Ax.adminAuditLog(50)).find((a) => a.action === "user_deleted");
+      assert.ok(au && au.details.email === "dee.disabled@example.com" && au.details.role === "client" && au.details.deleted_by_email === ROBIN); ok("delete (mock): the audit log keeps email, role, who deleted them");
+      await Ax.adminInvite({ email: "dee.disabled@example.com", role: "client", firstName: "Dee" }); ok("delete (mock): the same email can be invited again");
+      // a rep with active clients: disable first, choose a successor
+      const q0 = (await Ax.adminListQuotes()).find((q) => q.repId === ids("b2") && q.ownerId !== ids("b2"));
+      await Ax.adminSetStatus(ids("b2"), "disabled");
+      await rej(Ax.adminDeleteUser(ids("b2"), "sample.rep.marcus@clatitle.com"), /still has|reassign|another rep|successor/i, "delete: a rep with active clients needs a successor");
+      const r2 = await Ax.adminDeleteUser(ids("b2"), "sample.rep.marcus@clatitle.com", ids("b1"));
+      assert.ok(r2.clients_moved >= 2); const cl = (await Ax.adminListAssignments()).filter((a) => a.repId === ids("b1")).map((a) => a.clientEmail);
+      assert.ok(cl.includes("omar.broker@example.com") && cl.includes("nina.newagent@example.com")); ok("delete (mock): a rep's clients move to the chosen rep");
+      if (q0) assert.strictEqual((await Ax.adminListQuotes()).find((q) => q.id === q0.id).repId, null), ok("delete (mock): quotes the rep handled for others stay, with the rep name removed");
+      assert.ok((await Ax.adminListFeedback()).filter((f) => f.id === "fb3").every((f) => f.userId === null)); ok("delete (mock): feedback is kept, without a name");
+      // admin may delete another (disabled) admin; never a super admin
+      await Ax.adminSetStatus(ids("a3"), "disabled"); await Ax.adminDeleteUser(ids("a3"), "sample.casey.admin@clatitle.com"); ok("delete (mock): an admin can delete another disabled admin (same reach as disable)");
+      await as("sample.rep.jane@clatitle.com"); await rej(Ax.adminDeleteUser(ids("c3"), "pat.homes@example.com"), /admin/i, "delete: a rep cannot");
+      await as(ALEX); await Ax.adminSetStatus(ids("a2"), "disabled"); await Ax.adminDeleteUser(ids("a2"), ROBIN); ok("delete (mock): a super admin can delete a disabled admin");
+      // supabase adapter -> the Edge Function
+      const sc = []; const S2 = await wx.CLA.createSupabaseAdapter({ url: "u", anonKey: "k" }, { createClient: () => ({ auth: { getSession: async () => ({ data: { session: { user: { id: ids("a1") } } } }) },
+        functions: { invoke: async (n, o) => { sc.push([n, o]); return { data: { ok: true, summary: { email: "x@y.com", clients_moved: 1 } }, error: null }; } } }) });
+      const sr = await S2.adminDeleteUser("u1", "x@y.com", "r1"); assert.strictEqual(sc[0][0], "delete-user"); assert.deepStrictEqual(JSON.parse(JSON.stringify(sc[0][1].body)), { userId: "u1", confirmEmail: "x@y.com", reassignTo: "r1" }); assert.strictEqual(sr.clients_moved, 1); ok("delete (supabase): goes through the delete-user Edge Function with the typed email");
+      // admin screen: the Delete button + confirm dialog, and the filters
+      const RA = await renderPage("admin.html", ROBIN, "#users tr"), da = RA.d, rows = () => [...da.querySelectorAll("#users tr")], txt = (t) => t.textContent;
+      assert.strictEqual(RA.errs.length, 0, RA.errs.join());
+      const total = rows().length; assert.ok(total >= 10); assert.strictEqual(da.getElementById("uShown").textContent, "");
+      const delBtns = [...da.querySelectorAll("#users [data-del]")]; assert.strictEqual(delBtns.length, 1); assert.ok(/Dee/.test(txt(delBtns[0].closest("tr")))); ok("users tab: the Delete button is only on the disabled person");
+      const roleSel = da.getElementById("uRole"), stSel = da.getElementById("uStatus"), search = da.getElementById("uSearch"), setv = (el, v) => { el.value = v; fire(RA.win, el, "input"); fire(RA.win, el, "change"); };
+      setv(roleSel, "super_admin"); assert.strictEqual(rows().length, 1); assert.ok(/Alex/.test(txt(rows()[0]))); assert.match(da.getElementById("uShown").textContent, /Showing 1 of \d+/);
+      setv(roleSel, "admin"); assert.ok(rows().length >= 2 && rows().every((t) => /Admin/.test(txt(t)))); assert.ok(da.getElementById("uNote").hidden);
+      setv(roleSel, "rep"); const repRows = rows().map(txt).join("|"); assert.ok(/Jane/.test(repRows) && /Marcus/.test(repRows) && /Alex/.test(repRows) && !/Sam/.test(repRows)); assert.ok(!da.getElementById("uNote").hidden); ok("users tab: role filter; Rep includes the admin who also works as a rep, with a note");
+      setv(roleSel, "client"); assert.ok(rows().every((t) => !/Jane|Alex/.test(txt(t.querySelector("td"))))); assert.ok(rows().length >= 5);
+      setv(roleSel, ""); setv(stSel, "disabled"); assert.strictEqual(rows().length, 1); assert.ok(/Dee/.test(txt(rows()[0])) && !!rows()[0].querySelector("[data-del]"));
+      setv(stSel, "never"); assert.ok(rows().length >= 2 && rows().every((t) => /never signed in/i.test(txt(t)))); setv(stSel, "active"); assert.ok(rows().length >= 8 && !rows().some((t) => /Dee/.test(txt(t))));
+      setv(stSel, ""); setv(roleSel, "client"); setv(search, "bright"); assert.strictEqual(rows().length, 1); assert.ok(/Quinn/.test(txt(rows()[0]))); ok("users tab: status filter, and the search works together with the role filter");
+      setv(search, "zzzz"); assert.match(txt(da.getElementById("users")), /No users match/); assert.ok(!da.getElementById("uClear").hidden);
+      da.getElementById("uClear").click(); assert.strictEqual(rows().length, total); assert.ok(da.getElementById("uClear").hidden); assert.strictEqual(roleSel.value, ""); ok("users tab: Clear filters restores the full list");
+      da.querySelector("#users [data-del]").click(); await tick(60);
+      const dlg = da.getElementById("delDlg"); assert.ok(dlg && /Delete Dee Disabled/.test(dlg.textContent) && /dee\.disabled@example\.com/.test(dlg.textContent) && /audit log/.test(dlg.textContent) && /invited again/.test(dlg.textContent));
+      const okb = da.getElementById("delOk"), inp = da.getElementById("delConfirm"); assert.ok(okb.disabled); inp.value = "dee.disabled@exampl"; fire(RA.win, inp, "input"); assert.ok(okb.disabled); inp.value = "DEE.disabled@example.com"; fire(RA.win, inp, "input"); assert.ok(!okb.disabled); ok("users tab: the delete dialog needs the exact email typed before the button works");
+      okb.click(); await tick(120); assert.ok(!da.getElementById("delDlg")); assert.ok(!rows().some((t) => /Dee/.test(txt(t)))); assert.strictEqual(RA.errs.length, 0, RA.errs.join()); ok("users tab: confirming deletes the person and refreshes the list");
+      // a disabled rep with clients: the dialog asks for a successor
+      const RB = await renderPage("admin.html", ALEX, "#users tr", async (A) => { await A.adminSetStatus(ids("b1"), "disabled"); }), db = RB.d;
+      db.querySelector("#users [data-del]").click(); await tick(60); assert.ok(db.getElementById("delRep") && /realtor/.test(db.getElementById("delDlg").textContent)); const opts = [...db.getElementById("delRep").options].map((o) => o.textContent); assert.ok(opts.some((t) => /Marcus/.test(t)) && !opts.some((t) => /Jane/.test(t))); ok("users tab: deleting a rep with clients asks which rep takes them over");
+      db.getElementById("delNo").click(); assert.ok(!db.getElementById("delDlg")); assert.ok(RB.errs.length === 0);
+      // an admin sees a disabled super admin's Delete button greyed out
+      const RC = await renderPage("admin.html", ROBIN, "#users tr", async (A) => { await A.adminSetStatus(ids("a1"), "disabled"); }).catch(() => null);
+      if (RC) { const b = [...RC.d.querySelectorAll("#users [data-del]")].find((x) => /Alex/.test(txt(x.closest("tr")))); assert.ok(!b || b.disabled); ok("users tab: an admin cannot use Delete on a super admin"); }
+    }
+
     // ================= named PRICING TABLES for the settlement fee (migration 16) =================
     {
       const mock = () => { const wx = boot(), Ax = wx.CLA.createMockAdapter({}); return { wx, Ax, as: async (email) => { wx.localStorage.removeItem("cla_portal_mock_session"); await Ax.signIn(email, "x"); } }; };
@@ -1154,7 +1216,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
 
     // cache-bust: every ?v= in index.html and TOUR_V agree
     const vs = [...idx.matchAll(/\?v=(\d{8}[a-z])/g)].map((m) => m[1]), pu = fs.readFileSync(path.join(__dirname, "js", "portal-ui.js"), "utf8");
-    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261027j" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261027j");
+    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261027l" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261027l");
     // the new elements are inert in print and add no external requests
     assert.ok(/@media print\{\s*@page\{margin:14mm\}\s*\.claChip\{display:none!important\}/.test(idx) && !/https?:\/\//.test(tj2)); ok("calculator tour: the chip is not printed; tour.js has no external libraries or CDN");
   }

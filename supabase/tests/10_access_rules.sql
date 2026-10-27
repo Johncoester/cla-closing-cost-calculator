@@ -1808,6 +1808,128 @@ select tests.is('the old rules still hold: an admin (a2) still cannot approve (4
   tests.v(tests.id('a2'), $$select public.admin_set_feedback_status('$$ || (select id from fb_ids where k = 'g2') || $$', 'approved')::text$$) || '/' ||
   tests.v(tests.id('d1'), $$select public.admin_set_feedback_status('$$ || (select id from fb_ids where k = 'g3') || $$', 'notified')::text$$), 'ERR:42501/ERR:22023');
 
+-- ---------------- delete a user (migration 18) ----------------
+-- cast: f4 client (assigned to Jane, 2 quotes, photo, pricing-table member) | f5 rep (3 clients: f6, f7 and a pending email; own quote, a client quote, 2 feedback notes,
+-- a pricing member, an invitation he sent, a photo) | f8 admin | ea second super admin | f9 ACTIVE client (never disabled). a1 = super admin, a2 = admin Robin.
+insert into public.invitations (email, role, is_rep) values
+  ('del.client@example.com', 'client', false), ('del.rep@clatitle.com', 'rep', true), ('del.c1@example.com', 'client', false), ('del.c2@example.com', 'client', false),
+  ('del.admin@clatitle.com', 'admin', false), ('del.super@clatitle.com', 'super_admin', false), ('del.active@example.com', 'client', false);
+insert into auth.users (id, email) values
+  (tests.id('f4'), 'del.client@example.com'), (tests.id('f5'), 'del.rep@clatitle.com'), (tests.id('f6'), 'del.c1@example.com'), (tests.id('f7'), 'del.c2@example.com'),
+  (tests.id('f8'), 'del.admin@clatitle.com'), (tests.id('ea'), 'del.super@clatitle.com'), (tests.id('f9'), 'del.active@example.com');
+update public.profiles set first_name = 'Del', last_name = 'Person', phone = '301-555-0100' where email like 'del.%';
+insert into public.assignments (client_email, rep_id) values ('del.client@example.com', tests.id('b1')),
+  ('del.c1@example.com', tests.id('f5')), ('del.c2@example.com', tests.id('f5')), ('del.pending@example.com', tests.id('f5')), ('del.active@example.com', tests.id('b1'));
+insert into public.quotes (owner_id, quote_type, label) values
+  (tests.id('f4'), 'buyer', 'f4 quote 1'), (tests.id('f4'), 'buyer', 'f4 quote 2'),
+  (tests.id('f5'), 'buyer', 'rep own quote'), (tests.id('f6'), 'buyer', 'client of the rep'), (tests.id('f9'), 'buyer', 'active client quote');
+insert into public.photos (owner_id, storage_path, mime_type, size_bytes) values
+  (tests.id('f4'), tests.id('f4')::text || '/avatar', 'image/png', 100), (tests.id('f5'), tests.id('f5')::text || '/avatar', 'image/png', 100);
+insert into public.feedback (user_id, role_at_submit, category, message) values (tests.id('f5'), 'rep', 'idea', 'from the rep one'), (tests.id('f5'), 'rep', 'bug', 'from the rep two');
+insert into public.pricing_tables (name) values ('Del Test A'), ('Del Test B');
+insert into public.pricing_table_members (table_id, email) values ((select id from public.pricing_tables where name = 'Del Test A'), 'del.client@example.com'), ((select id from public.pricing_tables where name = 'Del Test B'), 'del.rep@clatitle.com');
+insert into public.invitations (email, role, invited_by, is_rep) values ('sent.by.rep@example.com', 'client', tests.id('f5'), false);
+insert into public.assignments (client_email, rep_id, assigned_by) values ('del.byadmin@example.com', tests.id('b1'), tests.id('f8'));
+create temp table del_before as select
+  (select count(*) from public.profiles) as profiles, (select count(*) from public.quotes) as quotes, (select count(*) from public.audit_log where action = 'user_deleted') as dels;
+select tests.is('delete user: set-up has 7 new people and 5 new quotes', (select count(*)::text from public.profiles where email like 'del.%') || '/' || (select count(*)::text from public.quotes where label in ('f4 quote 1','f4 quote 2','rep own quote','client of the rep','active client quote')), '7/5');
+select tests.is('delete user: the new rep quote of a client carries the rep (f5) before the delete',
+  tests.sq($q$select (rep_id = '$q$ || tests.id('f5') || $q$')::text from public.quotes where label = 'client of the rep'$q$), 'true');
+
+-- disable the four people the usual way (the RPC the set-user-status function calls)
+select tests.is('delete user: disabling goes through the existing RPC (f4 and f5 by the admin, f8 by the super admin, ea by the super admin)',
+  tests.rpc(tests.id('a2'), $$public.admin_set_status('$$ || tests.id('f4') || $$', 'disabled')$$) || '/' ||
+  tests.rpc(tests.id('a2'), $$public.admin_set_status('$$ || tests.id('f5') || $$', 'disabled')$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_set_status('$$ || tests.id('f8') || $$', 'disabled')$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_set_status('$$ || tests.id('ea') || $$', 'disabled')$$), '///');
+
+-- refusals: nothing changes
+select tests.is('delete user: an ACTIVE person cannot be deleted (55000: disable first), even with the right email',
+  tests.rpc(tests.id('a1'), $$public.admin_delete_user('$$ || tests.id('f9') || $$', 'del.active@example.com')$$) || '/' ||
+  tests.rpc(tests.id('a2'), $$public.admin_delete_user('$$ || tests.id('f9') || $$', 'del.active@example.com')$$), 'ERR:55000/ERR:55000');
+select tests.is('delete user: the typed email must match (22023); case and spaces do not matter, a different email, an empty one and null do',
+  tests.rpc(tests.id('a2'), $$public.admin_delete_user('$$ || tests.id('f4') || $$', 'someone.else@example.com')$$) || '/' ||
+  tests.rpc(tests.id('a2'), $$public.admin_delete_user('$$ || tests.id('f4') || $$', '')$$) || '/' ||
+  tests.rpc(tests.id('a2'), $$public.admin_delete_user('$$ || tests.id('f4') || $$', null)$$), 'ERR:22023/ERR:22023/ERR:22023');
+select tests.is('delete user: you cannot delete yourself (42501), an unknown id is P0002, a null id 22023',
+  tests.rpc(tests.id('a2'), $$public.admin_delete_user('$$ || tests.id('a2') || $$', 'sample.robin.admin@clatitle.com')$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_delete_user('$$ || tests.id('a1') || $$', 'sample.admin@clatitle.com')$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_delete_user('00000000-0000-4000-8000-00000000fffe', 'x@example.com')$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_delete_user(null, 'x@example.com')$$), 'ERR:42501/ERR:42501/ERR:P0002/ERR:22023');
+select tests.is('delete user: an admin can NOT delete a super admin, not even a disabled one (42501); the super admin still exists',
+  tests.rpc(tests.id('a2'), $$public.admin_delete_user('$$ || tests.id('ea') || $$', 'del.super@clatitle.com')$$) || '/' ||
+  tests.sq($q$select count(*)::text from public.profiles where email = 'del.super@clatitle.com'$q$), 'ERR:42501/1');
+select tests.is('delete user: a rep, a client, a disabled user and a signed-out call cannot delete anyone (42501)',
+  tests.rpc(tests.id('b1'), $$public.admin_delete_user('$$ || tests.id('f4') || $$', 'del.client@example.com')$$) || '/' ||
+  tests.rpc(tests.id('c1'), $$public.admin_delete_user('$$ || tests.id('f4') || $$', 'del.client@example.com')$$) || '/' ||
+  tests.rpc(tests.id('a9'), $$public.admin_delete_user('$$ || tests.id('f4') || $$', 'del.client@example.com')$$) || '/' ||
+  tests.rpc(null, $$public.admin_delete_user('$$ || tests.id('f4') || $$', 'del.client@example.com')$$), 'ERR:42501/ERR:42501/ERR:42501/ERR:42501');
+select tests.is('delete user: a rep with ACTIVE clients needs a successor (23514); the successor must be an active rep (a client, a disabled rep and the person themselves are refused, 23514)',
+  tests.rpc(tests.id('a1'), $$public.admin_delete_user('$$ || tests.id('f5') || $$', 'del.rep@clatitle.com')$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_delete_user('$$ || tests.id('f5') || $$', 'del.rep@clatitle.com', '$$ || tests.id('c1') || $$')$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_delete_user('$$ || tests.id('f5') || $$', 'del.rep@clatitle.com', '$$ || tests.id('f4') || $$')$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_delete_user('$$ || tests.id('f5') || $$', 'del.rep@clatitle.com', '$$ || tests.id('f5') || $$')$$), 'ERR:23514/ERR:23514/ERR:23514/ERR:23514');
+select tests.is('delete user: after all those refusals nothing changed (same number of people and quotes, no user_deleted row, the rep still has his 3 active clients)',
+  ((select count(*) from public.profiles) = (select profiles from del_before))::text || '/' || ((select count(*) from public.quotes) = (select quotes from del_before))::text || '/' ||
+  (select count(*)::text from public.audit_log where action = 'user_deleted') || '/' || (select count(*)::text from public.assignments where rep_id = tests.id('f5') and active), 'true/true/0/3');
+
+-- a client, deleted by an ADMIN
+select tests.is('delete user: an ADMIN (a2) deletes a disabled client; the email check ignores case and spaces; the answer says what happened',
+  tests.rpc(tests.id('a2'), $$public.admin_delete_user('$$ || tests.id('f4') || $$', '  DEL.Client@Example.com ')$$),
+  '{"role": "client", "email": "del.client@example.com", "photo": true, "clients_moved": 0, "feedback_kept": 0, "quotes_deleted": 2, "quotes_detached": 0}');
+select tests.is('delete user: the client is gone: profile, their 2 quotes, photo row, assignment, pricing-table membership; other people''s data is untouched',
+  tests.sq($q$select (select count(*) from public.profiles where id = '$q$ || tests.id('f4') || $q$')::text || '/' ||
+    (select count(*) from public.quotes where label like 'f4 quote%')::text || '/' || (select count(*) from public.photos where owner_id = '$q$ || tests.id('f4') || $q$')::text || '/' ||
+    (select count(*) from public.assignments where client_email = 'del.client@example.com')::text || '/' || (select count(*) from public.pricing_table_members where email = 'del.client@example.com')::text || '/' ||
+    (select count(*) from public.invitations where email = 'del.client@example.com')::text || '/' || (select count(*) from public.quotes where label = 'active client quote')::text$q$), '0/0/0/0/0/0/1');
+select tests.is('delete user: the audit log keeps the record: ONE user_deleted row with the email, role, name, who deleted (id and email) and the counts',
+  (select count(*)::text || '/' || min(actor_id::text) || '/' || min(details ->> 'email') || '/' || min(details ->> 'role') || '/' || min(details ->> 'name') || '/' || min(details ->> 'deleted_by_email') || '/' || min(details ->> 'quotes_deleted') || '/' || min(details ->> 'pricing_table')
+     from public.audit_log where action = 'user_deleted' and target_id = tests.id('f4')),
+  '1/' || tests.id('a2')::text || '/del.client@example.com/client/Del Person/sample.robin.admin@clatitle.com/2/Del Test A');
+select tests.is('delete user: older audit rows about the person stay (the disable row still names the old id)',
+  (select count(*)::text from public.audit_log where action = 'user_disabled' and target_id = tests.id('f4')), '1');
+select tests.is('delete user: the same email can be invited again right away (a fresh account; the old assignment is gone, a new one starts)',
+  tests.rpc(tests.id('a2'), $$(public.create_invitation('del.client@example.com', 'client', '$$ || tests.id('b2') || $$')).email$$) || '/' ||
+  tests.sq($q$select count(*)::text from public.assignments where client_email = 'del.client@example.com' and active and rep_id = '$q$ || tests.id('b2') || $q$'$q$), 'del.client@example.com/1');
+
+-- a rep with clients, deleted by a SUPER ADMIN, successor Marcus (b2)
+select tests.is('delete user: a rep with 3 active clients (one has no account yet) is deleted by a super admin with Marcus as successor; the answer counts it all',
+  tests.rpc(tests.id('a1'), $$public.admin_delete_user('$$ || tests.id('f5') || $$', 'del.rep@clatitle.com', '$$ || tests.id('b2') || $$')$$),
+  '{"role": "rep", "email": "del.rep@clatitle.com", "photo": true, "clients_moved": 3, "feedback_kept": 2, "quotes_deleted": 1, "quotes_detached": 1}');
+select tests.is('delete user: all 3 clients are now Marcus''s (active), and nobody points at the deleted rep any more',
+  tests.sq($q$select string_agg(client_email, ',' order by client_email) from public.assignments where active and rep_id = '$q$ || tests.id('b2') || $q$' and client_email in ('del.c1@example.com','del.c2@example.com','del.pending@example.com')$q$) || '/' ||
+  tests.sq($q$select count(*)::text from public.assignments where rep_id = '$q$ || tests.id('f5') || $q$'$q$), 'del.c1@example.com,del.c2@example.com,del.pending@example.com/0');
+select tests.is('delete user: the rep''s own quote is gone; the client''s quote stays, with no rep (rep_id null), and the NEW rep can read it',
+  tests.sq($q$select count(*)::text from public.quotes where label = 'rep own quote'$q$) || '/' ||
+  tests.sq($q$select (rep_id is null)::text from public.quotes where label = 'client of the rep'$q$) || '/' ||
+  tests.q(tests.id('b2'), $q$select 1 from public.quotes where label = 'client of the rep'$q$) || '/' ||
+  tests.q(tests.id('b1'), $q$select 1 from public.quotes where label = 'client of the rep'$q$), '0/true/1/0');
+select tests.is('delete user: the rep''s feedback stays (2 notes), now without a person; their invitation stays with no inviter; pricing membership and profile are gone',
+  tests.sq($q$select count(*)::text from public.feedback where message like 'from the rep %' and user_id is null$q$) || '/' ||
+  tests.sq($q$select count(*)::text from public.invitations where email = 'sent.by.rep@example.com' and invited_by is null$q$) || '/' ||
+  tests.sq($q$select count(*)::text from public.pricing_table_members where email = 'del.rep@clatitle.com'$q$) || '/' ||
+  tests.sq($q$select count(*)::text from public.profiles where id = '$q$ || tests.id('f5') || $q$'$q$), '2/1/0/0');
+select tests.is('delete user: the audit row names the successor and the counts (clients_moved 3, moved_to Marcus, feedback_kept 2, quotes_detached 1) and the super admin as the deleter',
+  (select details ->> 'clients_moved' || '/' || (details ->> 'moved_to') || '/' || (details ->> 'feedback_kept') || '/' || (details ->> 'quotes_detached') || '/' || (details ->> 'was_rep') || '/' || actor_id::text
+     from public.audit_log where action = 'user_deleted' and target_id = tests.id('f5')),
+  '3/' || tests.id('b2')::text || '/2/1/true/' || tests.id('a1')::text);
+
+-- an admin, and a super admin
+select tests.is('delete user: an ADMIN may delete another (disabled) ADMIN (same reach as disabling); a super admin may delete a disabled super admin',
+  tests.rpc(tests.id('a2'), $$(public.admin_delete_user('$$ || tests.id('f8') || $$', 'del.admin@clatitle.com') ->> 'role')$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$(public.admin_delete_user('$$ || tests.id('ea') || $$', 'del.super@clatitle.com') ->> 'role')$$) || '/' ||
+  tests.sq($q$select count(*)::text from public.profiles where email in ('del.admin@clatitle.com', 'del.super@clatitle.com')$q$), 'admin/super_admin/0');
+select tests.is('delete user: an assignment the deleted admin made stays, with nobody as the maker, and the foreign-key clearing wrote no assignment_changed noise',
+  tests.sq($q$select count(*)::text from public.assignments where client_email = 'del.byadmin@example.com' and assigned_by is null and active and rep_id = '$q$ || tests.id('b1') || $q$'$q$) || '/' ||
+  tests.sq($q$select count(*)::text from public.audit_log where action = 'assignment_changed' and at >= now() - interval '1 minute' and details ->> 'client_email' = 'del.byadmin@example.com'$q$), '1/1');
+select tests.is('delete user: exactly one user_deleted audit row per person (4), never an update or delete of the log',
+  (select count(*)::text from public.audit_log where action = 'user_deleted') || '/' || (select dels::text from del_before), '4/0');
+select tests.is('delete user: the active person (f9) and their quote were never touched; the profile count only dropped by the 4 deleted people (+1 re-invited is not a profile yet)',
+  tests.sq($q$select count(*)::text from public.profiles where id = '$q$ || tests.id('f9') || $q$' and status = 'active'$q$) || '/' ||
+  ((select profiles from del_before) - (select count(*) from public.profiles))::text, '1/4');
+select tests.is('function privileges: anon cannot run admin_delete_user, authenticated can',
+  (not has_function_privilege('anon', 'public.admin_delete_user(uuid, text, uuid)', 'execute') and has_function_privilege('authenticated', 'public.admin_delete_user(uuid, text, uuid)', 'execute'))::text, 'true');
+
 -- ---------------- privileges ----------------
 select tests.is('function privileges: anon cannot run the admin RPCs, authenticated can',
   (select (not has_function_privilege('anon', 'public.admin_set_role(uuid, public.user_role, uuid)', 'execute')

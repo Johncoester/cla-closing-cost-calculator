@@ -201,6 +201,21 @@ The sender sees what happened to their note, inside the portal. **No e-mail or m
 - **Apply live (when approved):** run `20261027000017_feedback_status_updates.sql` once (SQL editor), then deploy the site (`?v=20261027j`). The older site keeps working before the migration, but the new panel needs the new columns, so apply the migration first. Rollback of the site is `git revert`; the migration is additive (new columns and functions; the status constraint only gains `shipped`).
 - **Screens:** `portal/tools/screenshots_feedback_status.py`.
 
+## Delete a disabled user (migration 18) and the Users-tab filters
+
+**Status: built and tested locally on branch `delete-user`. NOT applied live, edge function NOT deployed.**
+
+- **Who:** super admins and admins, with the same reach as Disable (`private.can_manage_user`): never yourself, never the last active super admin, and an admin never a super admin (an admin may delete another admin). The person must be **disabled** first.
+- **RPC** `admin_delete_user(p_user, p_confirm_email, p_reassign_to default null)` (security definer; admins only). Refusals in order: not admin 42501, no target 22023, yourself 42501, unknown P0002, admin vs super admin 42501, not disabled 55000, email mismatch 22023 (case / spaces ignored), last active super admin 55000, active clients and no successor 23514 (successor via `private.move_rep_clients`).
+- **Deleted:** the profile (cascades: quotes they own, photo row), their assignments (as rep or as client), invitations and pricing-table membership for their email. The Edge Function `delete-user` then removes `avatars/<id>/avatar` and the auth user (so the email can be invited again).
+- **Kept:** the audit log, plus a `user_deleted` row (email, role, name, was_rep, deleted_by_email, counts, successor, pricing table); feedback (author cleared); other people's quotes where this person was the rep (`rep_id` cleared, name removed); `assigned_by` / `invited_by` references cleared.
+- **Triggers touched:** `quotes_set_expiry` (rep_id may go to null only when that rep no longer exists), `assignments_before` / `assignments_after` (clearing only `assigned_by` is not re-validated or audited). `audit_action_known` gains `user_deleted` (and `feedback_shipped`, missing from the list before).
+- **Edge Function** `supabase/functions/delete-user`: runs the RPC as the caller first (so a refused request never touches auth), then storage + auth user (retried once); finishes a half-done delete if the typed email matches a banned leftover auth user.
+- **UI (admin Users tab):** a **Delete...** button only on disabled rows (greyed with a tooltip when the actor may not manage that person; none on your own row). The dialog lists deleted / moved / kept, asks for a successor rep when needed, and enables **Delete permanently** only when the exact email is typed.
+- **Filters (Users tab):** Role (All, Super admin, Admin, Rep, Client), Status (All, Active (not disabled), Disabled, Invited never signed in) and a search (name, email, company), combined, with "Showing N of M" and Clear filters. **Rep includes admins / super admins who also work as a rep** (`CLA.isRep`); a note appears under the filters. They keep their Admin label in the table.
+- **Tests:** `10_access_rules.sql` (delete section), `95_upgrade_from_17.sql` (upgrade check 9), `test-portal.js` (mock + supabase adapter + admin screen + filters). Screens: `portal/tools/screenshots_delete_user.py`.
+- **Apply live (when approved):** run `20261027000018_delete_user.sql` once (SQL editor), deploy the `delete-user` function (`supabase functions deploy delete-user`), then deploy the site (`?v=20261027l`). Before the migration the Delete button errors harmlessly (the function is missing).
+
 ## Guided tour (migration 14)
 
 A short click-through for NEW people, in John's voice ("Here's where you'll..."), 6-7 steps per role. It starts by itself the first time someone opens their dashboard after finishing their profile, and anyone can replay it from **Take the tour** in the header (it sits next to the Feedback button for staff: Feedback, Take the tour, profile, Sign out).
@@ -227,7 +242,7 @@ The same engine also runs on the public calculator, for **anyone** (guest or sig
 - **Tabs:** the Seller Net Sheet step opens that tab and puts the person's own tab back afterwards (also if they skip or press Esc). The tour never clicks Purchase / Cash / Refinance, because switching those rebuilds the documents and endorsements and would discard edits; it only points at them. No fee or number is changed.
 - **The chip:** shown only to someone who has not dismissed it. The x, starting the tour from the chip or from the header link all store `cla_calc_tour_chip = "1"` in `localStorage`, so it never comes back. If browser storage is blocked the chip is not shown at all. It does not print.
 - **Phones:** the box is a bottom sheet (also for the centred welcome note); on desktop a tall target (the breakdown) gets the box beside it instead of on top of it.
-- **Cache-bust:** `?v=20261027j` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
+- **Cache-bust:** `?v=20261027l` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
 - **Tests:** the "calculator tour" block in `portal/test-portal.js` (link, step counts, targets, skipping, tab restore, chip persistence, phone sheet, versions). Screenshots: `portal/tools/screenshots_calculator_tour.py`.
 
 ## What is mocked, what is real
@@ -282,7 +297,7 @@ Must be written: (a) an **API layer** (API Gateway + Lambda), because browsers c
 
 ## Rep pricing tables: settlement fee only (migration 16, local branch `rep-pricing`, not applied live)
 Named **pricing tables** (e.g. "Marvin's Pricing") hold lower **settlement fees**, as **fee sets** that cover any selection of states (MD+VA, FL, all states...) (`Settlement Fee to CLA Title & Escrow` only; premiums and recording fees can never change); admins and super admins add a rep's or an individual client's **email** to a table on the admin page's **Rep pricing** tab. One email, one table.
-Design, the one rule for whose fee a person gets (own email's table first, else the assigned rep's table, else standard), tests, and how to apply: see [`REP-PRICING.md`](REP-PRICING.md). Cache-bust `?v=20261027j`.
+Design, the one rule for whose fee a person gets (own email's table first, else the assigned rep's table, else standard), tests, and how to apply: see [`REP-PRICING.md`](REP-PRICING.md). Cache-bust `?v=20261027l`.
 
 ## In-portal Help: client guide and staff manual (local branch `help-manual`, not pushed)
 Two pages, both **generated** by `node portal/tools/build-help.js` (do not edit the HTML by hand):
@@ -291,4 +306,4 @@ Two pages, both **generated** by `node portal/tools/build-help.js` (do not edit 
 - **Header Help link** (`CLA.helpHref` in `portal-ui.js`; the calculator header link in `portal-hook.js` uses the same function): clients go to `help.html`, reps, admins and super admins to `staff-help.html`. Signed-in users only.
 - **Guards:** both pages use `CLA.boot(null)` (signed-out visitors go to `login.html?next=...`) and stay hidden until then. `staff-help.html` sends a client to `help.html`. **Be honest about what that is:** static pages can be fetched by anyone who knows the URL; the guard decides what a signed-in person sees on screen, it is not access control. Neither page has a key, a secret or customer data (the pictures use made-up sample people).
 - **Pictures:** `python3 portal/tools/screenshots_help.py` (serves this repo on a local port with the mock config forced, hides the demo banner), then `python3 portal/tools/optimize_help_images.py`, which sorts them into `help/client/` (used by the client guide) and `help/staff/` (everything else the staff manual uses) and removes anything unused.
-- Cache-bust letter: `20261027j` (see above).
+- Cache-bust letter: `20261027l` (see above).

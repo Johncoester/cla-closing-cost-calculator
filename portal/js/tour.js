@@ -33,7 +33,7 @@
     const T = (target, title, text, more) => Object.assign({ target, title, text }, more || {});
     if (kind === "admin") return [
       T('[data-tour="a-welcome"]', "Welcome to the admin dashboard", "Hi, I'm John. Here's where you'll look after people, assignments and feedback. This takes about a minute, and you can skip any time."),
-      T('[data-tour="a-users"]', "Everyone with an account", "Every rep, client and admin is listed here with their role and status. Use Disable to stop someone signing in (their data stays), and Re-enable to bring them back."),
+      T('[data-tour="a-users"]', "Everyone with an account", "Every rep, client and admin is listed here with their role and status. Narrow the list with the Role, Status and search boxes. Use Disable to stop someone signing in (their data stays), and Re-enable to bring them back. A disabled person can also be deleted for good."),
       T('[data-tour="u-role"]', "Change a role", (isSuper ? "As a super admin you can set anyone's role. " : "You can move reps, clients and other admins up or down, but only a super admin can promote an admin or touch a super admin. ") +
         "If you move a rep who has clients, you'll pick who takes them over, so nobody is left without a rep."),
       T('[data-tour="u-also"]', "Also works as a rep", "Switch this on for an admin who also looks after clients (they need an @clatitle.com email). Then they get a Rep dashboard as well."),
