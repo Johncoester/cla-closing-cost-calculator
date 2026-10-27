@@ -91,6 +91,14 @@
       { id: "fb2", createdAt: iso(2), userId: id("a2"), roleAtSubmit: "admin", category: "idea", message: "Could the Users table have a search box? With more reps it gets long.", pagePath: "/portal/admin.html", status: "notified", notifiedAt: iso(2), decidedAt: null, decidedNote: null },
       { id: "fb3", createdAt: iso(1), userId: id("b2"), roleAtSubmit: "rep", category: "question", message: "Where do I change my cell number so it shows on the quotes?", pagePath: "/portal/rep.html", status: "approved", notifiedAt: iso(1), decidedAt: iso(1), decidedNote: "Profile page, top right. Added a tip to the dashboard." },
     ];
-    return { version: 6, users, assignments, quotes, audit, photos, invitations, feedback };
+    // starter pricing tables (migration 16), all fake: "Marvin's Pricing" (Marcus, plus an email with no portal account yet) and "Jane's Pricing" (Jane)
+    const PT = (n, name) => ({ id: "pt" + n, name, createdBy: id("a1"), createdAt: iso(3), updatedAt: iso(1) });
+    const pricingTables = [PT(1, "Marvin's Pricing"), PT(2, "Jane's Pricing")];
+    const PF = (n, t, st, tx, pb, amt) => ({ id: "pf" + n, tableId: "pt" + t, state: st, transaction: tx, paidBy: pb, amount: amt, updatedAt: iso(1), updatedBy: id("a1") });
+    const pricingFees = [PF(1, 1, "*", "purchase", "buyer", 950), PF(2, 1, "*", "purchase", "seller", 600), PF(3, 1, "*", "refi", "buyer", 350),
+      PF(4, 2, "MD", "purchase", "buyer", 900), PF(5, 2, "MD", "purchase", "seller", 500)];
+    const PM = (n, t, email) => ({ id: "pm" + n, tableId: "pt" + t, email, addedBy: id("a1"), addedAt: iso(2) });
+    const pricingMembers = [PM(1, 1, "sample.rep.marcus@clatitle.com"), PM(2, 1, "marvin.newhire@clatitle.com"), PM(3, 2, "sample.rep.jane@clatitle.com")];
+    return { version: 7, users, assignments, quotes, audit, photos, invitations, feedback, pricingTables, pricingFees, pricingMembers };
   };
 })();

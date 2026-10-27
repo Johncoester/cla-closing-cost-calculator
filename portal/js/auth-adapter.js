@@ -76,14 +76,22 @@
  *   adminSetFeedbackStatus(id, status, note?)   SUPER ADMIN ONLY. status: approved|dismissed; note optional (<= 1000 chars). 'new' and 'notified' are set by the assistant, not here.
  *   Feedback = {id, createdAt, userId, roleAtSubmit, category, message, pagePath, status: new|notified|approved|dismissed, notifiedAt, decidedAt, decidedNote}
  *   The message is USER CONTENT: put it on the page with textContent / CLA.esc(), never as raw HTML.
- *  Rep special SETTLEMENT fee (migration 16; table rep_fee_overrides). ONLY CLA's "Settlement Fee to CLA Title & Escrow" line; premiums / recording fees can never be stored.
- *   Override = {id, repId, state: "*"|"MD"|"VA"|"DC"|"FL" ("*" = every state; a state row beats it), transaction: "purchase"|"refi", paidBy: "buyer"|"seller" (a refi borrower is "buyer"; no refi/seller), amount, updatedAt, updatedBy}
- *   getMyFeeOverrides()                   -> [{state, transaction, paidBy, amount}]  what the CALCULATOR applies for the current user: a rep (or admin who also reps) gets their own rows,
- *                                            a client their active rep's rows, anyone else []  (the one rule: private.pricing_rep_for() in the database)
- *   adminListRepFeeOverrides()            -> Override[]  ADMIN or SUPER ADMIN: every row
- *   adminSetRepFeeOverride({repId, state, transaction, paidBy, amount})   ADMIN or SUPER ADMIN. Upsert (one row per rep + state + transaction + side). Target must be a rep (or admin who also reps).
- *                                            amount 0..99999.99 (0 = waived), rounded to the cent. Audited as rep_fee_changed (before / after).
- *   adminClearRepFeeOverride({repId, state, transaction, paidBy})         ADMIN or SUPER ADMIN. Back to the standard fee. A missing row is a quiet no-op.
+ *  Named PRICING TABLES for the CLA settlement fee (migration 16: pricing_tables, pricing_table_fees, pricing_table_members).
+ *   ONLY CLA's "Settlement Fee to CLA Title & Escrow" line; premiums / recording fees can never be stored. A table has a unique name ("Marvin's Pricing"),
+ *   settlement fees, and a member list of rep EMAILS (lower-case, @clatitle.com; one email in at most ONE table; may be added before the rep has an account).
+ *   Fee = {id, tableId, state: "*"|"MD"|"VA"|"DC"|"FL" ("*" = every state; a state row beats it), transaction: "purchase"|"refi", paidBy: "buyer"|"seller" (a refi borrower is "buyer"; no refi/seller), amount, updatedAt, updatedBy}
+ *   getMyFeeOverrides()                   -> [{state, transaction, paidBy, amount}]  what the CALCULATOR applies for the current user: a rep (or admin who also reps) whose EMAIL is in a table gets that table's fees,
+ *                                            a client the fees of the table their active rep is in, anyone else []  (the one rule: private.pricing_rep_for() in the database)
+ *   adminListPricingTables()              -> {tables: [{id, name, createdAt, updatedAt}], fees: Fee[], members: [{id, tableId, email, addedAt}]}   ADMIN or SUPER ADMIN
+ *   adminCreatePricingTable(name)         -> {id}   name 1-80 chars, unique ignoring case (throws a readable message)
+ *   adminRenamePricingTable(id, name)
+ *   adminDeletePricingTable(id)           deletes the table's fees and member list: those people are back on standard fees (the screen asks first)
+ *   adminSetPricingFee({tableId, state, transaction, paidBy, amount})   upsert; amount 0..99999.99 (0 = waived), rounded to the cent
+ *   adminClearPricingFee({tableId, state, transaction, paidBy})        back to the standard fee for that line; a missing row is a quiet no-op
+ *   adminAddPricingMember(tableId, email, {move}?) -> "added" | "moved" | "already"   an email already in ANOTHER table throws 'x@clatitle.com is already in pricing table "Name".'
+ *                                            unless {move: true}; @clatitle.com only; an existing CLIENT account is refused; no account needed yet
+ *   adminRemovePricingMember(tableId, email)   quiet no-op if the email is not in that table
+ *   Every change is audited as pricing_table_changed (details.op: create | rename | delete | fee_set | fee_clear | member_add | member_move | member_remove).
  *   adminLogQuoteView(quoteId)
  *
  * Profile : {id, role, isRep, status, email, firstName, lastName, phone, cellPhone, companyName, companyPhone,

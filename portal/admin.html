@@ -5,7 +5,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="portal.css">
 <script src="config.js"></script>
-<script src="../fee-snapshot.js?v=20261027a"></script>
+<script src="../fee-snapshot.js?v=20261027b"></script>
 <script src="js/mock-data.js"></script><script src="js/mock-adapter.js"></script><script src="js/supabase-adapter.js"></script><script src="js/auth-adapter.js"></script><script src="js/portal-ui.js"></script>
 </head><body>
 <main class="pg">
@@ -42,17 +42,40 @@
 <section class="card flush" id="pAudit" hidden><div class="sh"><h2>Audit log</h2><div class="grow"><span class="sum">Read only, newest first</span></div></div>
  <div class="tablewrap"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Details</th></tr></thead><tbody id="auditRows"></tbody></table></div></section>
 <div id="pPricing" class="stack" data-tour="a-pricing" hidden>
- <section class="card"><h2>Rep special pricing: settlement fee only</h2>
-  <p class="sub">Give one rep a lower <b>Settlement Fee to CLA Title &amp; Escrow</b>. It applies to that rep's own quotes and to the quotes of the clients (realtors) assigned to that rep. Title insurance premiums, recording fees, taxes and every other fee never change. Leave a box empty to keep the standard fee.</p>
-  <div id="pErr" class="msg err" role="alert"></div><div id="pOk" class="msg ok" role="status"></div>
-  <div class="row"><div><label for="pRep">Rep</label><select id="pRep"></select></div><div><label for="pState">Applies to</label><select id="pState"><option value="*">All states</option><option value="MD">Maryland only</option><option value="VA">Virginia only</option><option value="DC">Washington, DC only</option><option value="FL">Florida only</option></select></div></div>
-  <div class="tablewrap"><table><thead><tr><th>Settlement fee</th><th class="num">Standard fee</th><th class="num">Special fee for this rep</th></tr></thead>
-   <tbody id="pSlots"></tbody></table></div>
-  <p class="sum" id="pStdNote" style="margin:10px 0 0"></p>
-  <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap"><button class="btn" id="pSave" type="button">Save special pricing</button><button class="btn o" id="pClear" type="button">Back to standard for this selection</button></div>
- </section>
- <section class="card flush"><div class="sh"><h2>Reps with special pricing</h2><div class="grow"><span class="sum" id="pCount"></span></div></div>
-  <div class="tablewrap"><table><thead><tr><th>Rep</th><th>Applies to</th><th>Settlement fee</th><th class="num">Standard</th><th class="num">Special</th><th>Changed</th><th></th></tr></thead><tbody id="pRows"></tbody></table></div></section>
+ <div id="ptListView" class="stack">
+  <div id="ptLoadErr" class="msg err" role="alert"></div>
+  <section class="card"><div style="display:flex;gap:16px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap"><div style="flex:1;min-width:260px"><h2>Pricing tables: CLA settlement fee only</h2>
+   <p class="sub" style="margin:0">A pricing table is a named set of lower <b>Settlement Fee to CLA Title &amp; Escrow</b> amounts, for example "Marvin's Pricing". Add a rep's email to a table and that rep's quotes, and the quotes of the clients (realtors) assigned to that rep, use the table's fees. Title insurance premiums, recording fees, taxes and every other fee never change. Anyone not in a table pays the standard fees.</p></div>
+   <button class="btn" id="ptNew" type="button">New pricing table</button></div>
+   <form id="ptNewForm" hidden novalidate style="margin-top:16px"><div id="ptNewErr" class="msg err" role="alert"></div>
+    <div class="row" style="grid-template-columns:minmax(0,1fr) auto auto;align-items:end;margin-bottom:0"><div><label for="ptNewName">Pricing name</label><input type="text" id="ptNewName" maxlength="80" autocomplete="off" placeholder="Marvin's Pricing"></div>
+     <button class="btn" type="submit">Create table</button><button class="btn o" id="ptNewCancel" type="button">Cancel</button></div></form></section>
+  <section class="card flush"><div class="sh"><h2>Your pricing tables</h2><div class="grow"><span class="sum" id="ptCount"></span></div></div>
+   <div class="tablewrap"><table><thead><tr><th>Pricing table</th><th>Settlement fees set</th><th>Members (rep emails)</th><th></th></tr></thead><tbody id="ptRows"></tbody></table></div></section>
+ </div>
+ <div id="ptDetailView" class="stack" hidden>
+  <section class="card"><div style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+    <div><button class="btn o" id="ptBack" type="button" style="min-height:34px;padding:4px 12px">&larr; All pricing tables</button></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn o" id="ptRename" type="button">Rename</button><button class="btn o" id="ptDelete" type="button" style="color:#b3261e">Delete table</button></div></div>
+   <h2 id="ptTitle" style="margin:16px 0 4px"></h2><p class="sub" id="ptSub" style="margin:0"></p>
+   <form id="ptRenameForm" hidden novalidate style="margin-top:14px"><div class="row" style="grid-template-columns:minmax(0,1fr) auto auto;align-items:end;margin-bottom:0"><div><label for="ptRenameName">New name</label><input type="text" id="ptRenameName" maxlength="80" autocomplete="off"></div>
+     <button class="btn" type="submit">Save name</button><button class="btn o" id="ptRenameCancel" type="button">Cancel</button></div></form>
+   <div id="pErr" class="msg err" role="alert" style="margin-top:12px"></div><div id="pOk" class="msg ok" role="status" style="margin-top:12px"></div></section>
+  <section class="card"><h2>Settlement fees in this table</h2>
+   <p class="sub">Leave a box empty to keep the standard fee for that line.</p>
+   <div class="row" style="grid-template-columns:minmax(0,320px)"><div><label for="pState">Applies to</label><select id="pState"><option value="*">All states</option><option value="MD">Maryland only</option><option value="VA">Virginia only</option><option value="DC">Washington, DC only</option><option value="FL">Florida only</option></select></div></div>
+   <div class="tablewrap"><table><thead><tr><th>Settlement fee</th><th class="num">Standard fee</th><th class="num">This table</th></tr></thead><tbody id="pSlots"></tbody></table></div>
+   <p class="sum" id="pStdNote" style="margin:10px 0 0"></p>
+   <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap"><button class="btn" id="pSave" type="button">Save fees</button><button class="btn o" id="pClear" type="button">Back to standard for this selection</button></div>
+   <h3 style="margin:22px 0 8px;font-size:15px">Fees set in this table</h3>
+   <div class="tablewrap"><table><thead><tr><th>Applies to</th><th>Settlement fee</th><th class="num">Standard</th><th class="num">This table</th><th></th></tr></thead><tbody id="pRows"></tbody></table></div></section>
+  <section class="card"><h2>Members: reps who use this table</h2>
+   <p class="sub">Add a rep by email. One email can be in only one pricing table. You can add an email before the rep has a portal account: the fees apply as soon as they sign in with it.</p>
+   <div id="mErr" class="msg err" role="alert"></div><div id="mOk" class="msg ok" role="status"></div>
+   <div id="mMove" class="msg err" hidden role="alert" style="display:none"><span id="mMoveTxt"></span> <button class="btn" id="mMoveBtn" type="button" style="min-height:32px;padding:4px 12px;margin-left:8px">Move to this table</button> <button class="btn o" id="mMoveNo" type="button" style="min-height:32px;padding:4px 12px">Cancel</button></div>
+   <form id="mForm" novalidate class="row" style="grid-template-columns:minmax(0,1fr) auto;align-items:end;margin-bottom:12px"><div><label for="mEmail">Rep email</label><input type="email" id="mEmail" autocomplete="off" placeholder="name@clatitle.com"></div><button class="btn" id="mAdd" type="submit">Add</button></form>
+   <div class="tablewrap"><table><thead><tr><th>Email</th><th>Portal account</th><th>Role</th><th></th></tr></thead><tbody id="mRows"></tbody></table></div></section>
+ </div>
 </div>
 <section class="card flush" id="pFeedback" data-tour="a-feedback" hidden><div class="sh"><h2>Staff feedback</h2><div class="grow" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;align-items:center">
   <label class="vh" for="fStatus">Status</label><select id="fStatus" style="min-height:36px;width:auto"><option value="">All statuses</option><option value="new">New</option><option value="notified">Notified</option><option value="approved">Approved</option><option value="dismissed">Dismissed</option></select>
@@ -195,10 +218,14 @@
     try { await A.adminReassign(em, $("aRep").value); $("aOk").textContent = "Saved. " + em + " now belongs to " + nm($("aRep").value) + "."; $("aEmail").value = ""; await loadAsg(); await loadUsers(); }
     catch (ex) { $("aErr").textContent = ex.message; } };
 
-  // ---- Rep pricing (migration 16): the settlement fee only. Admins and super admins (this whole page is admin-only; the database re-checks every write). ----
+  // ---- Rep pricing: named pricing tables for the settlement fee (migration 16). Admins and super admins (this whole page is admin-only; the database re-checks every write). ----
   const SLOTS = [["purchase", "buyer", "Purchase / cash: buyer pays"], ["purchase", "seller", "Purchase / cash: seller pays"], ["refi", "buyer", "Refinance: borrower pays"]];
   const STATE_NAME = { "*": "All states", MD: "Maryland", VA: "Virginia", DC: "Washington, DC", FL: "Florida" };
-  let ovs = [];
+  const ROLE_NAME = { rep: "Sales rep", admin: "Admin", super_admin: "Super admin", client: "Client" };
+  let PT = { tables: [], fees: [], members: [] }, openId = null;
+  const clearMsgs = () => { ["ptLoadErr", "pErr", "pOk", "mErr", "mOk", "ptNewErr"].forEach((i) => ($(i).textContent = "")); hideMove(); };
+  const hideMove = () => { $("mMove").hidden = true; $("mMove").style.display = "none"; pendingMove = null; };
+  let pendingMove = null;
   // standard settlement fee for a slot, from the built-in fee snapshot (the calculator uses the live fee sheet; they match unless the sheet changed since the snapshot)
   const stdFees = (st, tx, side) => {
     const rows = ((window.CLA_FEES_SNAPSHOT || {}).CLA_Fees || []).slice(1).filter((r) => String(r[0]).toUpperCase() === "Y" && /^settlement fee to cla title/i.test(r[2]) && String(r[3]).toLowerCase() === (tx === "refi" ? "refi" : "purchase") &&
@@ -206,52 +233,96 @@
     return [...new Set(rows.map((r) => +r[4]))];
   };
   const stdText = (st, tx, side) => { const v = stdFees(st, tx, side); return v.length ? v.map(CLA.money).join(" / ") : "—"; };
-  const repChoices = () => users.filter((u) => u.status === "active" && (u.role === "rep" || (adminRole(u.role) && u.isRep)));
-  function drawSlots() {
-    const rep = $("pRep").value, st = $("pState").value;
-    $("pSlots").innerHTML = SLOTS.map(([tx, side, label]) => { const o = ovs.find((x) => x.repId === rep && x.state === st && x.transaction === tx && x.paidBy === side);
-      return "<tr><td>" + esc(label) + '</td><td class="num">' + esc(stdText(st, tx, side)) + '</td><td class="num"><input type="text" inputmode="decimal" data-tx="' + tx + '" data-side="' + side + '" aria-label="Special fee, ' + esc(label) + '" placeholder="Standard" value="' + (o ? o.amount.toFixed(2) : "") + '" style="min-height:36px;width:130px;text-align:right"></td></tr>'; }).join("");
-    $("pStdNote").textContent = st === "*" ? "A fee set for one state beats the all-states fee. Standard fees shown come from the built-in fee snapshot; the calculator uses the live fee sheet." : "Applies only in " + STATE_NAME[st] + " and beats an all-states fee for the same line.";
-  }
-  function drawOverrides() {
-    const rows = ovs.slice().sort((a, b) => nm(a.repId).localeCompare(nm(b.repId)) || a.state.localeCompare(b.state) || a.transaction.localeCompare(b.transaction) || a.paidBy.localeCompare(b.paidBy));
-    $("pCount").textContent = new Set(rows.map((o) => o.repId)).size + " rep(s) · " + rows.length + " special fee" + (rows.length === 1 ? "" : "s");
-    $("pRows").innerHTML = rows.length ? rows.map((o) => { const lbl = (SLOTS.find((x) => x[0] === o.transaction && x[1] === o.paidBy) || [, , o.transaction + " / " + o.paidBy])[2];
-      return "<tr><td>" + esc(nm(o.repId)) + "</td><td>" + esc(STATE_NAME[o.state] || o.state) + "</td><td>" + esc(lbl) + '</td><td class="num">' + esc(stdText(o.state, o.transaction, o.paidBy)) + '</td><td class="num"><b>' + CLA.money(o.amount) + "</b></td><td>" + CLA.date(o.updatedAt) +
-        '</td><td><button type="button" class="btn o" data-clear="' + esc(o.id) + '" style="min-height:32px;padding:4px 12px">Clear</button></td></tr>'; }).join("")
-      : '<tr><td colspan="7" class="sum">No rep has special pricing. Everyone pays the standard settlement fee.</td></tr>';
-  }
+  const tbl = (id) => PT.tables.find((t) => t.id === id), tFees = (id) => PT.fees.filter((f) => f.tableId === id), tMembers = (id) => PT.members.filter((m) => m.tableId === id);
+  const slotLabel = (tx, side) => (SLOTS.find((x) => x[0] === tx && x[1] === side) || [, , tx + " / " + side])[2];
   async function loadPricing() {
     if (!users.length) users = await A.adminListUsers();
-    try { ovs = await A.adminListRepFeeOverrides(); } catch (ex) { $("pErr").textContent = "Special pricing could not be loaded (" + ex.message + "). If migration 16 has not been applied to the database yet, that is why."; ovs = []; }
-    const keep = $("pRep").value, reps = repChoices();
-    $("pRep").innerHTML = reps.map((u) => '<option value="' + esc(u.id) + '">' + esc(CLA.fullName(u)) + (u.role === "rep" ? "" : " (" + (u.role === "super_admin" ? "super admin" : "admin") + " who reps)") + "</option>").join("");
-    if (keep && reps.some((u) => u.id === keep)) $("pRep").value = keep;
-    drawSlots(); drawOverrides();
+    try { PT = await A.adminListPricingTables(); } catch (ex) { PT = { tables: [], fees: [], members: [] }; $("ptLoadErr").textContent = "Pricing tables could not be loaded (" + ex.message + "). If migration 16 has not been applied to the database yet, that is why."; }
+    if (openId && !tbl(openId)) openId = null;
+    drawList(); if (openId) drawDetail(); showView();
   }
-  $("pRep").onchange = $("pState").onchange = () => { $("pErr").textContent = ""; $("pOk").textContent = ""; drawSlots(); };
-  $("pSave").onclick = async () => { $("pErr").textContent = ""; $("pOk").textContent = ""; const rep = $("pRep").value, st = $("pState").value;
-    if (!rep) { $("pErr").textContent = "Choose a rep."; return; }
-    const jobs = [];
+  function showView() { $("ptListView").hidden = !!openId; $("ptDetailView").hidden = !openId; }
+  function drawList() {
+    const rows = PT.tables.slice().sort((a, b) => a.name.localeCompare(b.name));
+    $("ptCount").textContent = rows.length + " table" + (rows.length === 1 ? "" : "s") + " · " + PT.members.length + " rep email" + (PT.members.length === 1 ? "" : "s") + " assigned";
+    $("ptRows").innerHTML = rows.length ? rows.map((t) => { const f = tFees(t.id), m = tMembers(t.id);
+      return '<tr><td><b>' + esc(t.name) + "</b></td><td>" + (f.length ? f.length + " fee" + (f.length === 1 ? "" : "s") : '<span class="sum">None yet (standard fees)</span>') + "</td><td>" +
+        (m.length ? m.map((x) => esc(x.email)).join("<br>") : '<span class="sum">No members yet</span>') + '</td><td style="text-align:right"><button type="button" class="btn o" data-open="' + esc(t.id) + '" style="min-height:34px;padding:4px 14px">Open</button></td></tr>'; }).join("")
+      : '<tr><td colspan="4" class="sum">No pricing tables yet. Everyone pays the standard settlement fee. Click "New pricing table" to start.</td></tr>';
+  }
+  function drawDetail() {
+    const t = tbl(openId); if (!t) return;
+    $("ptTitle").textContent = t.name; $("ptSub").textContent = tFees(t.id).length + " settlement fee" + (tFees(t.id).length === 1 ? "" : "s") + " set · " + tMembers(t.id).length + " member" + (tMembers(t.id).length === 1 ? "" : "s") + " · created " + CLA.date(t.createdAt);
+    drawSlots(); drawFees(); drawMembers();
+  }
+  function drawSlots() {
+    const st = $("pState").value;
+    $("pSlots").innerHTML = SLOTS.map(([tx, side, label]) => { const o = PT.fees.find((x) => x.tableId === openId && x.state === st && x.transaction === tx && x.paidBy === side);
+      return "<tr><td>" + esc(label) + '</td><td class="num">' + esc(stdText(st, tx, side)) + '</td><td class="num"><input type="text" inputmode="decimal" data-tx="' + tx + '" data-side="' + side + '" aria-label="Fee in this table, ' + esc(label) + '" placeholder="Standard" value="' + (o ? o.amount.toFixed(2) : "") + '" style="min-height:36px;width:130px;text-align:right"></td></tr>'; }).join("");
+    $("pStdNote").textContent = st === "*" ? "A fee set for one state beats the all-states fee for the same line. Standard fees shown come from the built-in fee snapshot; the calculator uses the live fee sheet." : "Applies only in " + STATE_NAME[st] + " and beats an all-states fee for the same line.";
+  }
+  function drawFees() {
+    const rows = tFees(openId).sort((a, b) => a.state.localeCompare(b.state) || a.transaction.localeCompare(b.transaction) || a.paidBy.localeCompare(b.paidBy));
+    $("pRows").innerHTML = rows.length ? rows.map((o) => "<tr><td>" + esc(STATE_NAME[o.state] || o.state) + "</td><td>" + esc(slotLabel(o.transaction, o.paidBy)) + '</td><td class="num">' + esc(stdText(o.state, o.transaction, o.paidBy)) + '</td><td class="num"><b>' + CLA.money(o.amount) +
+      '</b></td><td style="text-align:right"><button type="button" class="btn o" data-clearfee="' + esc(o.id) + '" style="min-height:32px;padding:4px 12px">Clear</button></td></tr>').join("")
+      : '<tr><td colspan="5" class="sum">No fees set yet: members of this table pay the standard fees.</td></tr>';
+  }
+  function drawMembers() {
+    const rows = tMembers(openId).sort((a, b) => a.email.localeCompare(b.email));
+    $("mRows").innerHTML = rows.length ? rows.map((m) => { const u = users.find((x) => x.email === m.email);
+      const acct = !u ? '<span class="badge warn">No portal account yet</span> <span class="sum">Pricing applies once they sign in with this email.</span>' : (u.status !== "active" ? '<span class="badge off">Disabled</span> ' : '<span class="badge">Has an account</span> ') + esc(CLA.fullName(u));
+      const role = !u ? '<span class="sum">—</span>' : esc(CLA.roleLabel(u.role)) + (adminRole(u.role) && !u.isRep ? ' <span class="sum">(not set to work as a rep: no pricing until a super admin turns that on)</span>' : "");
+      return "<tr><td>" + esc(m.email) + "</td><td>" + acct + "</td><td>" + role + '</td><td style="text-align:right"><button type="button" class="btn o" data-rm="' + esc(m.email) + '" style="min-height:32px;padding:4px 12px">Remove</button></td></tr>'; }).join("")
+      : '<tr><td colspan="4" class="sum">No members yet. Type a rep\'s email above and click Add.</td></tr>';
+  }
+  function openTable(id) { openId = id; $("pState").value = "*"; $("ptRenameForm").hidden = true; clearMsgs(); drawDetail(); showView(); window.scrollTo(0, 0); }
+  $("ptRows").onclick = (e) => { const b = e.target.closest("[data-open]"); if (b) openTable(b.dataset.open); };
+  $("ptBack").onclick = async () => { openId = null; clearMsgs(); await loadPricing(); };
+  // new table: asks for a name
+  $("ptNew").onclick = () => { $("ptNewForm").hidden = false; $("ptNewName").value = ""; $("ptNewErr").textContent = ""; $("ptNewName").focus(); };
+  $("ptNewCancel").onclick = () => { $("ptNewForm").hidden = true; };
+  $("ptNewForm").onsubmit = async (e) => { e.preventDefault(); $("ptNewErr").textContent = "";
+    try { const r = await A.adminCreatePricingTable($("ptNewName").value); $("ptNewForm").hidden = true; await loadPricing(); openTable(r.id); $("pOk").textContent = "Created. Now set the settlement fees and add the reps who use this table."; }
+    catch (ex) { $("ptNewErr").textContent = ex.message; } };
+  // rename / delete
+  $("ptRename").onclick = () => { $("ptRenameForm").hidden = false; $("ptRenameName").value = tbl(openId).name; $("ptRenameName").focus(); $("ptRenameName").select(); };
+  $("ptRenameCancel").onclick = () => { $("ptRenameForm").hidden = true; };
+  $("ptRenameForm").onsubmit = async (e) => { e.preventDefault(); clearMsgs();
+    try { await A.adminRenamePricingTable(openId, $("ptRenameName").value); $("ptRenameForm").hidden = true; await loadPricing(); $("pOk").textContent = "Renamed."; } catch (ex) { $("pErr").textContent = ex.message; } };
+  $("ptDelete").onclick = async () => { const t = tbl(openId), m = tMembers(openId).length; clearMsgs();
+    if (!confirm('Delete the pricing table "' + t.name + '"?\n\n' + (m ? m + " rep email" + (m === 1 ? "" : "s") + " will go back to the standard fees. " : "") + "This cannot be undone.")) return;
+    try { await A.adminDeletePricingTable(openId); openId = null; await loadPricing(); } catch (ex) { $("pErr").textContent = ex.message; } };
+  // fees
+  $("pState").onchange = () => { clearMsgs(); drawSlots(); };
+  $("pSave").onclick = async () => { clearMsgs(); const st = $("pState").value, jobs = [];
     for (const inp of $("pSlots").querySelectorAll("input")) {
-      const tx = inp.dataset.tx, side = inp.dataset.side, v = inp.value.replace(/[$,\s]/g, ""), cur = ovs.find((x) => x.repId === rep && x.state === st && x.transaction === tx && x.paidBy === side);
-      if (v === "") { if (cur) jobs.push(["clear", { repId: rep, state: st, transaction: tx, paidBy: side }]); continue; }
+      const tx = inp.dataset.tx, side = inp.dataset.side, v = inp.value.replace(/[$,\s]/g, ""), cur = PT.fees.find((x) => x.tableId === openId && x.state === st && x.transaction === tx && x.paidBy === side);
+      if (v === "") { if (cur) jobs.push(["clear", { tableId: openId, state: st, transaction: tx, paidBy: side }]); continue; }
       const n = Number(v); if (!isFinite(n) || n < 0 || n > 99999.99) { $("pErr").textContent = "Enter a dollar amount from 0 to 99,999.99 (or leave the box empty for the standard fee)."; inp.focus(); return; }
-      if (!cur || Math.round(n * 100) !== Math.round(cur.amount * 100)) jobs.push(["set", { repId: rep, state: st, transaction: tx, paidBy: side, amount: Math.round(n * 100) / 100 }]);
+      if (!cur || Math.round(n * 100) !== Math.round(cur.amount * 100)) jobs.push(["set", { tableId: openId, state: st, transaction: tx, paidBy: side, amount: Math.round(n * 100) / 100 }]);
     }
     if (!jobs.length) { $("pOk").textContent = "Nothing to change."; return; }
-    try { for (const [k, o] of jobs) await (k === "set" ? A.adminSetRepFeeOverride(o) : A.adminClearRepFeeOverride(o));
-      $("pOk").textContent = "Saved. " + nm(rep) + (st === "*" ? " (all states)" : " (" + STATE_NAME[st] + ")") + ": " + jobs.length + " change" + (jobs.length === 1 ? "" : "s") + ". New quotes use it right away."; }
+    try { for (const [k, o] of jobs) await (k === "set" ? A.adminSetPricingFee(o) : A.adminClearPricingFee(o));
+      $("pOk").textContent = "Saved " + tbl(openId).name + " (" + STATE_NAME[st] + "): " + jobs.length + " change" + (jobs.length === 1 ? "" : "s") + ". New quotes by its members use it right away."; }
     catch (ex) { $("pErr").textContent = ex.message; }
-    await loadPricing(); };
-  $("pClear").onclick = async () => { $("pErr").textContent = ""; $("pOk").textContent = ""; const rep = $("pRep").value, st = $("pState").value, mine = ovs.filter((x) => x.repId === rep && x.state === st);
-    if (!mine.length) { $("pOk").textContent = "Already on standard pricing for this selection."; return; }
-    try { for (const o of mine) await A.adminClearRepFeeOverride({ repId: rep, state: st, transaction: o.transaction, paidBy: o.paidBy }); $("pOk").textContent = nm(rep) + " is back to the standard settlement fee" + (st === "*" ? " (all states)." : " in " + STATE_NAME[st] + "."); }
-    catch (ex) { $("pErr").textContent = ex.message; }
-    await loadPricing(); };
-  $("pRows").onclick = async (e) => { const b = e.target.closest("[data-clear]"); if (!b) return; const o = ovs.find((x) => x.id === b.dataset.clear); if (!o) return; $("pErr").textContent = ""; $("pOk").textContent = "";
-    try { await A.adminClearRepFeeOverride({ repId: o.repId, state: o.state, transaction: o.transaction, paidBy: o.paidBy }); $("pOk").textContent = "Cleared. " + nm(o.repId) + " is back to the standard fee for that line."; } catch (ex) { $("pErr").textContent = ex.message; }
-    await loadPricing(); };
+    const ok = $("pOk").textContent, er = $("pErr").textContent; await loadPricing(); $("pOk").textContent = ok; if (er) $("pErr").textContent = er; };
+  $("pClear").onclick = async () => { clearMsgs(); const st = $("pState").value, mine = PT.fees.filter((x) => x.tableId === openId && x.state === st);
+    if (!mine.length) { $("pOk").textContent = "Already standard for this selection."; return; }
+    try { for (const o of mine) await A.adminClearPricingFee({ tableId: openId, state: st, transaction: o.transaction, paidBy: o.paidBy }); $("pOk").textContent = "Back to the standard settlement fee for " + STATE_NAME[st] + "."; } catch (ex) { $("pErr").textContent = ex.message; }
+    const ok = $("pOk").textContent, er = $("pErr").textContent; await loadPricing(); $("pOk").textContent = ok; if (er) $("pErr").textContent = er; };
+  $("pRows").onclick = async (e) => { const b = e.target.closest("[data-clearfee]"); if (!b) return; const o = PT.fees.find((x) => x.id === b.dataset.clearfee); if (!o) return; clearMsgs();
+    try { await A.adminClearPricingFee({ tableId: o.tableId, state: o.state, transaction: o.transaction, paidBy: o.paidBy }); $("pOk").textContent = "Cleared: back to the standard fee for that line."; } catch (ex) { $("pErr").textContent = ex.message; }
+    const ok = $("pOk").textContent, er = $("pErr").textContent; await loadPricing(); $("pOk").textContent = ok; if (er) $("pErr").textContent = er; };
+  // members (by email)
+  const addMember = async (email, move) => { clearMsgs();
+    try { const r = await A.adminAddPricingMember(openId, email, { move }); $("mEmail").value = "";
+      await loadPricing(); $("mOk").textContent = r === "already" ? email.trim().toLowerCase() + " is already in this table." : r === "moved" ? "Moved " + email.trim().toLowerCase() + " to " + tbl(openId).name + "." : "Added " + email.trim().toLowerCase() + ". " + (users.some((u) => u.email === email.trim().toLowerCase()) ? "Their quotes use this table's fees right away." : "They have no portal account yet: the fees apply once they sign in with this email."); }
+    catch (ex) { if (/already in pricing table/.test(ex.message)) { pendingMove = email; $("mMoveTxt").textContent = ex.message + " An email can be in only one table."; $("mMove").hidden = false; $("mMove").style.display = ""; } else $("mErr").textContent = ex.message; } };
+  $("mForm").onsubmit = (e) => { e.preventDefault(); const v = $("mEmail").value.trim(); if (!v) { clearMsgs(); $("mErr").textContent = "Enter the rep's email address."; return; } addMember(v, false); };
+  $("mMoveBtn").onclick = () => { const e = pendingMove; if (e) addMember(e, true); };
+  $("mMoveNo").onclick = () => { hideMove(); };
+  $("mRows").onclick = async (e) => { const b = e.target.closest("[data-rm]"); if (!b) return; clearMsgs();
+    try { await A.adminRemovePricingMember(openId, b.dataset.rm); await loadPricing(); $("mOk").textContent = "Removed " + b.dataset.rm + ": back to the standard fees."; } catch (ex) { $("mErr").textContent = ex.message; } };
 
   async function loadAudit() {
     const rows = await A.adminAuditLog(100);

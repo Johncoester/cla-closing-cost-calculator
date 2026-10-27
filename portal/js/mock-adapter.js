@@ -10,7 +10,7 @@
 
   CLA.createMockAdapter = function () {
     const load = () => {
-      try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.version === 6) return s; } catch (e) {}
+      try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.version === 7) return s; } catch (e) {}
       const s = CLA.MOCK_SEED(); localStorage.setItem(KEY, JSON.stringify(s)); return s;
     };
     const save = (s) => localStorage.setItem(KEY, JSON.stringify(s));
@@ -42,6 +42,9 @@
     };
     const lastSuper = (s, t) => t.role === "super_admin" && t.status === "active" && !s.users.some((x) => x.id !== t.id && x.role === "super_admin" && x.status === "active");
     const LAST = "There must always be at least one active super admin."; 
+    // pricing tables (migration 16)
+    const pricingName = (n) => { const v = String(n == null ? "" : n).trim().replace(/\s+/g, " "); if (!v) err("A pricing table needs a name."); if (v.length > 80) err("The name is too long (80 characters at most)."); return v; };
+    const pricingTable = (s, id) => (s.pricingTables || []).find((t) => t.id === id) || err("No such pricing table.");
     const complete = (p) => !!(p.firstName && p.lastName && (!isRep(p) || p.phone));
 
     function me(s) {
@@ -228,19 +231,38 @@
         const before = f.status; f.status = status; f.decidedAt = new Date().toISOString(); f.decidedNote = n;
         log(s, u.id, "feedback_decided", "feedback", id, { before, after: status }); save(s);
       },
-      // ---- rep special SETTLEMENT fee (migration 16). Same rules as rep_fee_overrides, private.pricing_rep_for(), the admin RPCs and get_my_fee_overrides(). ----
-      // The ONE rule for whose special fee a person gets: a rep (or an admin who also reps) -> their own; a client -> their active rep's; anyone else -> none.
-      // (To make clients pay standard fees, change the `repId` line in getMyFeeOverrides below, and private.pricing_rep_for() in the database.)
+      // ---- named PRICING TABLES for the settlement fee (migration 16: pricing_tables, pricing_table_fees, pricing_table_members) ----
+      // Same rules as the RLS, the admin RPCs, private.pricing_rep_for() / pricing_table_for() and get_my_fee_overrides().
+      // The ONE rule for whose pricing a person gets: a rep (or an admin who also reps) -> their own; a client -> their active rep's; anyone else -> standard.
+      // (To make clients pay standard fees, change the `repUser` line in getMyFeeOverrides below, and private.pricing_rep_for() in the database.)
       async getMyFeeOverrides() {
-        const s = load(), u = need(s), repId = isRep(u) ? u.id : u.role === "client" ? (repOf(s, u.id) || {}).id : null;
-        return clone((s.feeOverrides || []).filter((o) => repId && o.repId === repId)).map((o) => ({ state: o.state, transaction: o.transaction, paidBy: o.paidBy, amount: o.amount }));
+        const s = load(), u = need(s), repUser = isRep(u) ? u : u.role === "client" ? repOf(s, u.id) : null;
+        const m = repUser && (s.pricingMembers || []).find((x) => x.email === lc(repUser.email));
+        return clone((s.pricingFees || []).filter((f) => m && f.tableId === m.tableId)).map((f) => ({ state: f.state, transaction: f.transaction, paidBy: f.paidBy, amount: f.amount }));
       },
-      async adminListRepFeeOverrides() { const s = load(); needAdmin(s); return clone(s.feeOverrides || []); },
-      async adminSetRepFeeOverride(o) {
-        const s = load(), u = needAdmin(s); o = o || {};
+      async adminListPricingTables() { const s = load(); needAdmin(s); return clone({ tables: s.pricingTables || [], fees: s.pricingFees || [], members: s.pricingMembers || [] }); },
+      async adminCreatePricingTable(name) {
+        const s = load(), u = needAdmin(s), n = pricingName(name); s.pricingTables = s.pricingTables || [];
+        if (s.pricingTables.some((t) => t.name.toLowerCase() === n.toLowerCase())) err('A pricing table named "' + n + '" already exists.');
+        const now = new Date().toISOString(), t = { id: uid(), name: n, createdBy: u.id, createdAt: now, updatedAt: now };
+        s.pricingTables.push(t); log(s, u.id, "pricing_table_changed", "pricing_table", t.id, { op: "create", name: n }); save(s); return { id: t.id };
+      },
+      async adminRenamePricingTable(id, name) {
+        const s = load(), u = needAdmin(s), t = pricingTable(s, id), n = pricingName(name);
+        if ((s.pricingTables || []).some((x) => x.id !== id && x.name.toLowerCase() === n.toLowerCase())) err('A pricing table named "' + n + '" already exists.');
+        if (n === t.name) return; const old = t.name; t.name = n; t.updatedAt = new Date().toISOString();
+        log(s, u.id, "pricing_table_changed", "pricing_table", id, { op: "rename", before: old, after: n }); save(s);
+      },
+      // deleting a table deletes its fees and member list: those people are back on the standard fees
+      async adminDeletePricingTable(id) {
+        const s = load(), u = needAdmin(s), t = pricingTable(s, id);
+        const nf = (s.pricingFees || []).filter((f) => f.tableId === id).length, nm = (s.pricingMembers || []).filter((m) => m.tableId === id).length;
+        s.pricingTables = s.pricingTables.filter((x) => x.id !== id); s.pricingFees = (s.pricingFees || []).filter((f) => f.tableId !== id); s.pricingMembers = (s.pricingMembers || []).filter((m) => m.tableId !== id);
+        log(s, u.id, "pricing_table_changed", "pricing_table", id, { op: "delete", name: t.name, fees_removed: nf, members_released: nm }); save(s);
+      },
+      async adminSetPricingFee(o) {
+        const s = load(), u = needAdmin(s); o = o || {}; const t = pricingTable(s, o.tableId);
         const st = String(o.state || "*").trim().toUpperCase() || "*", tx = String(o.transaction || "").trim().toLowerCase(), pb = String(o.paidBy || "").trim().toLowerCase();
-        const t = s.users.find((x) => x.id === o.repId) || err("No such user.");
-        if (!isRep(t)) err("Special pricing is only for reps (or an admin who also works as a rep).");
         if (!["*", "MD", "VA", "DC", "FL"].includes(st)) err("State must be all states, MD, VA, DC or FL.");
         if (!["purchase", "refi"].includes(tx)) err("Transaction must be purchase or refi.");
         if (!["buyer", "seller"].includes(pb)) err("Paid by must be buyer or seller.");
@@ -248,22 +270,42 @@
         const raw = typeof o.amount === "string" ? o.amount.replace(/[$,\s]/g, "") : o.amount;
         const n = raw === "" || raw === null || raw === undefined ? NaN : Number(raw);
         if (!isFinite(n) || n < 0 || n > 99999.99) err("Amount must be between $0 and $99,999.99.");
-        const amount = Math.round(n * 100) / 100;
-        s.feeOverrides = s.feeOverrides || [];
-        const row = s.feeOverrides.find((x) => x.repId === t.id && x.state === st && x.transaction === tx && x.paidBy === pb), old = row ? row.amount : null;
+        const amount = Math.round(n * 100) / 100; s.pricingFees = s.pricingFees || [];
+        const row = s.pricingFees.find((x) => x.tableId === t.id && x.state === st && x.transaction === tx && x.paidBy === pb), old = row ? row.amount : null;
         if (row) { row.amount = amount; row.updatedAt = new Date().toISOString(); row.updatedBy = u.id; }
-        else s.feeOverrides.push({ id: uid(), repId: t.id, state: st, transaction: tx, paidBy: pb, amount, updatedAt: new Date().toISOString(), updatedBy: u.id });
-        if (old !== amount) log(s, u.id, "rep_fee_changed", "profile", t.id, { fee: "settlement", state: st, transaction: tx, paid_by: pb, before: old, after: amount });
+        else s.pricingFees.push({ id: uid(), tableId: t.id, state: st, transaction: tx, paidBy: pb, amount, updatedAt: new Date().toISOString(), updatedBy: u.id });
+        if (old !== amount) log(s, u.id, "pricing_table_changed", "pricing_table", t.id, { op: "fee_set", table: t.name, fee: "settlement", state: st, transaction: tx, paid_by: pb, before: old, after: amount });
         save(s);
       },
-      async adminClearRepFeeOverride(o) {
-        const s = load(), u = needAdmin(s); o = o || {};
+      async adminClearPricingFee(o) {
+        const s = load(), u = needAdmin(s); o = o || {}; const t = pricingTable(s, o.tableId);
         const st = String(o.state || "*").trim().toUpperCase() || "*", tx = String(o.transaction || "").trim().toLowerCase(), pb = String(o.paidBy || "").trim().toLowerCase();
-        s.feeOverrides = s.feeOverrides || [];
-        const i = s.feeOverrides.findIndex((x) => x.repId === o.repId && x.state === st && x.transaction === tx && x.paidBy === pb);
-        if (i < 0) return;
-        const old = s.feeOverrides[i].amount; s.feeOverrides.splice(i, 1);
-        log(s, u.id, "rep_fee_changed", "profile", o.repId, { fee: "settlement", state: st, transaction: tx, paid_by: pb, before: old, after: null }); save(s);
+        const i = (s.pricingFees || []).findIndex((x) => x.tableId === t.id && x.state === st && x.transaction === tx && x.paidBy === pb); if (i < 0) return;
+        const old = s.pricingFees[i].amount; s.pricingFees.splice(i, 1);
+        log(s, u.id, "pricing_table_changed", "pricing_table", t.id, { op: "fee_clear", table: t.name, fee: "settlement", state: st, transaction: tx, paid_by: pb, before: old, after: null }); save(s);
+      },
+      // Members are EMAILS (lower-cased, trimmed, @clatitle.com), one email in at most ONE table; the person need not have an account yet.
+      // Returns "added" | "moved" | "already". An email that is in ANOTHER table is refused with a message naming it, unless opts.move.
+      async adminAddPricingMember(tableId, email, opts) {
+        const s = load(), u = needAdmin(s), t = pricingTable(s, tableId), e = lc(email); s.pricingMembers = s.pricingMembers || [];
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) err("Enter a valid email address.");
+        if (!/^[^@\s]+@clatitle\.com$/.test(e)) err("Reps use an @clatitle.com email address.");
+        const acct = s.users.find((x) => x.email === e); if (acct && acct.role === "client") err("That email belongs to a client (realtor) account: add their rep instead.");
+        const cur = s.pricingMembers.find((m) => m.email === e);
+        if (cur) {
+          if (cur.tableId === t.id) return "already";
+          const from = s.pricingTables.find((x) => x.id === cur.tableId);
+          if (!(opts && opts.move)) err(e + ' is already in pricing table "' + (from ? from.name : "another table") + '".');
+          cur.tableId = t.id; cur.addedBy = u.id; cur.addedAt = new Date().toISOString();
+          log(s, u.id, "pricing_table_changed", "pricing_table", t.id, { op: "member_move", email: e, table: t.name, from_table: from ? from.name : null, from_table_id: from ? from.id : null }); save(s); return "moved";
+        }
+        s.pricingMembers.push({ id: uid(), tableId: t.id, email: e, addedBy: u.id, addedAt: new Date().toISOString() });
+        log(s, u.id, "pricing_table_changed", "pricing_table", t.id, { op: "member_add", email: e, table: t.name }); save(s); return "added";
+      },
+      async adminRemovePricingMember(tableId, email) {
+        const s = load(), u = needAdmin(s), t = pricingTable(s, tableId), e = lc(email);
+        const i = (s.pricingMembers || []).findIndex((m) => m.tableId === t.id && m.email === e); if (i < 0) return;
+        s.pricingMembers.splice(i, 1); log(s, u.id, "pricing_table_changed", "pricing_table", t.id, { op: "member_remove", email: e, table: t.name }); save(s);
       },
       async adminAuditLog(limit) { const s = load(); needAdmin(s); return clone(s.audit.slice(0, limit || 100)); },
       async adminLogQuoteView(id) { const s = load(), u = need(s); if (!isAdminRole(u)) return; log(s, u.id, "quote_viewed_by_admin", "quote", id, {}); save(s); },

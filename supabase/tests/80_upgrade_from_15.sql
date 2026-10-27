@@ -1,6 +1,6 @@
 -- =====================================================================
 -- Upgrade check: a database in the LIVE state (migrations 1-15 applied, with data: a super admin who also reps, an admin, a rep with
--- a client, a client, feedback, audit history) gets migration 16 (per-rep special settlement fee) on top, as one plain transaction, and again.
+-- a client, a client, feedback, audit history) gets migration 16 (named pricing tables for the settlement fee) on top, as one plain transaction, and again.
 -- Nothing existing changes; the new table starts empty (= standard fees for everyone); a repeat run changes nothing.
 -- Loaded by run-tests.sh into a fresh database after migrations 1-15.
 -- =====================================================================
@@ -39,36 +39,41 @@ create temp table before_counts as select
   (select count(*) from public.profiles) p, (select count(*) from public.quotes) q, (select count(*) from public.assignments) a,
   (select count(*) from public.invitations) i, (select count(*) from public.audit_log) l, (select count(*) from public.feedback) f,
   (select string_agg(id::text || is_complete::text, ',' order by id) from public.profiles) comp;
-select tests.is('before: no rep_fee_overrides table yet', (to_regclass('public.rep_fee_overrides') is null)::text, 'true');
+select tests.is('before: no pricing tables yet', (to_regclass('public.pricing_tables') is null and to_regclass('public.pricing_table_fees') is null and to_regclass('public.pricing_table_members') is null)::text, 'true');
 
 -- the upgrade, as Supabase runs it: one transaction
 begin;
 \i :migration16
 commit;
-select tests.is('the table exists, is empty (= standard fees for everyone), and has RLS on',
-  (select count(*)::text from public.rep_fee_overrides) || '/' || (select relrowsecurity::text from pg_class where oid = 'public.rep_fee_overrides'::regclass), '0/true');
+select tests.is('the three tables exist, are empty (= standard fees for everyone), and have RLS on',
+  (select count(*)::text from public.pricing_tables) || '/' || (select count(*)::text from public.pricing_table_fees) || '/' || (select count(*)::text from public.pricing_table_members) || '/' ||
+  (select count(*)::text from pg_class where oid in ('public.pricing_tables'::regclass, 'public.pricing_table_fees'::regclass, 'public.pricing_table_members'::regclass) and relrowsecurity), '0/0/0/3');
 select tests.is('nothing lost or changed: profiles, quotes, assignments, invitations, feedback, audit rows, is_complete',
   (select (p = (select count(*) from public.profiles) and q = (select count(*) from public.quotes) and a = (select count(*) from public.assignments)
        and i = (select count(*) from public.invitations) and l = (select count(*) from public.audit_log) and f = (select count(*) from public.feedback)
        and comp = (select string_agg(id::text || is_complete::text, ',' order by id) from public.profiles))::text from before_counts), 'true');
-select tests.is('nobody has an override: the old rep, the old rep''s client and the admin all get no rows (standard fees)',
-  tests.v(tests.id('b1'), 'select count(*)::text from public.get_my_fee_overrides()') || '/' || tests.v(tests.id('c1'), 'select count(*)::text from public.get_my_fee_overrides()') || '/' ||
-  tests.v(tests.id('a2'), 'select count(*)::text from public.get_my_fee_overrides()'), '0/0/0');
+create function tests.ov(uid uuid) returns text language sql as $$
+  select tests.v(uid, $q$select coalesce(string_agg(state || ':' || transaction || ':' || paid_by || ':' || amount, ',' order by state, transaction, paid_by), '') from public.get_my_fee_overrides()$q$) $$;
+select tests.is('nobody is in a table: the old rep, the old rep''s client and the admin all get no rows (standard fees)',
+  tests.ov(tests.id('b1')) || '|' || tests.ov(tests.id('c1')) || '|' || tests.ov(tests.id('a2')), '||');
 
 -- it works on the migrated database
-select tests.is('a super admin sets a fee for the old rep; the old rep and the rep''s client both see it; the admin who is not a rep does not',
-  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', '*', 'purchase', 'buyer', 950)::text$$) || '/' ||
-  tests.v(tests.id('b1'), 'select amount::text from public.get_my_fee_overrides()') || '/' || tests.v(tests.id('c1'), 'select amount::text from public.get_my_fee_overrides()') || '/' ||
-  tests.v(tests.id('a2'), 'select count(*)::text from public.get_my_fee_overrides()'), '/950.00/950.00/0');
+create temp table pt (id uuid);
+insert into pt select nullif(tests.v(tests.id('a1'), $$select public.admin_create_pricing_table('Marvin''s Pricing')::text$$), '')::uuid;
+select tests.is('a super admin creates "Marvin''s Pricing", sets a fee and adds the old rep by email (any case); the rep and the rep''s client both get it; the admin who is not a rep does not',
+  tests.v(tests.id('a1'), $$select public.admin_set_pricing_fee('$$ || (select id from pt) || $$', '*', 'purchase', 'buyer', 950)::text$$) || '/' ||
+  tests.v(tests.id('a1'), $$select public.admin_add_pricing_member('$$ || (select id from pt) || $$', 'OLD.REP@clatitle.com')::text$$) || '/' ||
+  tests.ov(tests.id('b1')) || '/' || tests.ov(tests.id('c1')) || '/' || tests.ov(tests.id('a2')), '/added/*:purchase:buyer:950.00/*:purchase:buyer:950.00/');
 
 -- the file run again (safe to repeat): data kept, nothing duplicated
 begin;
 \i :migration16
 commit;
-select tests.is('a repeat run keeps the row and the audit entry, and adds nothing',
-  (select count(*)::text from public.rep_fee_overrides) || '/' || (select count(*)::text from public.audit_log where action = 'rep_fee_changed'), '1/1');
+select tests.is('a repeat run keeps the table, the fee and the member, and the audit entries, and adds nothing',
+  (select count(*)::text from public.pricing_tables) || '/' || (select count(*)::text from public.pricing_table_fees) || '/' || (select count(*)::text from public.pricing_table_members) || '/' ||
+  (select count(*)::text from public.audit_log where action = 'pricing_table_changed'), '1/1/1/3');
 select tests.is('the audit action list still accepts the older actions and the new one',
-  tests.p($$insert into public.audit_log (action, target_type) values ('feedback_submitted', 'x')$$) || '/' || tests.p($$insert into public.audit_log (action, target_type) values ('rep_fee_changed', 'x')$$) || '/' ||
+  tests.p($$insert into public.audit_log (action, target_type) values ('feedback_submitted', 'x')$$) || '/' || tests.p($$insert into public.audit_log (action, target_type) values ('pricing_table_changed', 'x')$$) || '/' ||
   tests.p($$insert into public.audit_log (action, target_type) values ('something_else', 'x')$$), 'ok/ok/ERR:23514');
 select tests.is('earlier behaviour intact: staff send feedback, a client cannot',
   (case when tests.v(tests.id('b1'), $$select public.submit_feedback('bug', 'still works')::text$$) ~ '^[0-9a-f-]{36}$' then 'ok' else 'bad' end) || '/' ||

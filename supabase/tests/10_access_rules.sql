@@ -1392,128 +1392,224 @@ select tests.is('tour: privileges: anon cannot run mark_tour_seen, authenticated
 drop table tour_before;
 
 -- =====================================================================
--- Migration 16: per-rep special SETTLEMENT fee (rep_fee_overrides). Settlement fee ONLY; premiums / recording can never be stored.
--- Jane b1 and Marcus b2 are reps, Sam c1 is Jane's client, Omar c5 is Marcus's, Pat c3 / Dee c4 are other clients, Alex a1 is a super admin
--- who also reps, Robin a2 and Pia d1 are admins (Pia is not a rep), a9 is disabled.
+-- Migration 16: NAMED PRICING TABLES for the settlement fee ("Marvin's Pricing"): pricing_tables, pricing_table_fees, pricing_table_members.
+-- Settlement fee ONLY (fee_key CHECK); one email in at most one table; emails stored lower-case, matched case-insensitively, addable before
+-- the account exists. Cast: Jane b1 / Marcus b2 are reps, Sam c1 is Jane's client, Omar c5 is Marcus's, Pat c3 / Dee c4 other clients,
+-- Alex a1 is a super admin who also reps, Robin a2 and Ada a3 are admins, Pia d1 is a super admin who is not a rep, a9 is disabled.
 -- =====================================================================
-select tests.is('fee overrides: precondition: Sam is an active client of Jane, Omar of Marcus',
+create function tests.rpc(uid uuid, call text) returns text language sql as $$ select tests.v(uid, 'select ' || call || '::text') $$;
+-- like tests.v, but an error comes back as 'ERR:<sqlstate>:<message>'
+create function tests.msg(uid uuid, sql text) returns text language plpgsql as $$
+declare res text;
+begin
+  perform set_config('request.jwt.claims', json_build_object('sub', uid, 'role', 'authenticated', 'aal', 'aal1')::text, true);
+  perform set_config('role', 'authenticated', true);
+  begin execute sql into res; exception when others then res := 'ERR:' || sqlstate || ':' || sqlerrm; end;
+  perform set_config('role', 'postgres', true);
+  perform set_config('request.jwt.claims', '', true);
+  return coalesce(res, 'null');
+end $$;
+-- run a query as the current (server-side) session, at call time (so it is evaluated in order with the RPC calls around it)
+create function tests.sq(q text) returns text language plpgsql as $$ declare r text; begin execute q into r; return coalesce(r, 'null'); end $$;
+create function tests.ov(uid uuid) returns text language sql as $$
+  select tests.v(uid, $q$select coalesce(string_agg(state || ':' || transaction || ':' || paid_by || ':' || amount, ',' order by state, transaction, paid_by), '') from public.get_my_fee_overrides()$q$) $$;
+
+select tests.is('pricing tables: precondition: Sam is an active client of Jane, Omar of Marcus; Jane and Marcus are active reps',
   (select (exists (select 1 from public.assignments where active and client_user_id = tests.id('c1') and rep_id = tests.id('b1'))
-       and exists (select 1 from public.assignments where active and client_user_id = tests.id('c5') and rep_id = tests.id('b2')))::text), 'true');
-select tests.is('fee overrides: the table starts empty (standard pricing for everyone)', (select count(*)::text from public.rep_fee_overrides), '0');
-select tests.is('fee overrides: nobody has a direct write grant; only select; anon nothing',
-  (select (not has_table_privilege('authenticated', 'public.rep_fee_overrides', 'insert') and not has_table_privilege('authenticated', 'public.rep_fee_overrides', 'update')
-       and not has_table_privilege('authenticated', 'public.rep_fee_overrides', 'delete') and has_table_privilege('authenticated', 'public.rep_fee_overrides', 'select')
-       and not has_table_privilege('anon', 'public.rep_fee_overrides', 'select'))::text), 'true');
--- who may WRITE: admin + super admin yes; rep, client, disabled, signed-out no
-select tests.is('fee overrides: a super admin sets Jane''s MD purchase buyer settlement fee to 900',
-  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'buyer', 900)::text$$), '');
-select tests.is('fee overrides: a plain admin may set one too (Jane, MD purchase seller 500)',
-  tests.v(tests.id('d1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'md', 'Purchase', 'SELLER', 500)::text$$), '');
-select tests.is('fee overrides: stored normalised (state upper-case, others lower-case), amount to the cent',
-  (select string_agg(state || '/' || transaction || '/' || paid_by || '/' || amount::text, ',' order by paid_by) from public.rep_fee_overrides where rep_id = tests.id('b1')),
-  'MD/purchase/buyer/900.00,MD/purchase/seller/500.00');
-select tests.is('fee overrides: a rep cannot write for themselves or anyone else; nor a client, a disabled user, or a signed-out call',
-  tests.v(tests.id('b1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'buyer', 1)::text$$) || '/' ||
-  tests.v(tests.id('b2'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'buyer', 1)::text$$) || '/' ||
-  tests.v(tests.id('c1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'buyer', 1)::text$$) || '/' ||
-  tests.v(tests.id('a9'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'buyer', 1)::text$$) || '/' ||
-  tests.v(null, $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'buyer', 1)::text$$), 'ERR:42501/ERR:42501/ERR:42501/ERR:42501/ERR:42501');
-select tests.is('fee overrides: ...and nobody changed (still 900 / 500)',
-  (select string_agg(amount::text, ',' order by paid_by) from public.rep_fee_overrides where rep_id = tests.id('b1')), '900.00,500.00');
-select tests.is('fee overrides: no direct insert / update / delete through the API, as a rep, an admin or a super admin',
-  tests.x(tests.id('b1'), $$insert into public.rep_fee_overrides (rep_id, transaction, paid_by, amount) values ('$$ || tests.id('b1') || $$', 'refi', 'buyer', 1)$$) || '/' ||
-  tests.x(tests.id('a1'), $$insert into public.rep_fee_overrides (rep_id, transaction, paid_by, amount) values ('$$ || tests.id('b1') || $$', 'refi', 'buyer', 1)$$) || '/' ||
-  tests.x(tests.id('a1'), 'update public.rep_fee_overrides set amount = 0') || '/' ||
-  tests.x(tests.id('b1'), 'update public.rep_fee_overrides set amount = 0') || '/' ||
-  tests.x(tests.id('a1'), 'delete from public.rep_fee_overrides') || '/' ||
-  tests.x(tests.id('b1'), 'delete from public.rep_fee_overrides'), 'ERR:42501/ERR:42501/ERR:42501/ERR:42501/ERR:42501/ERR:42501');
--- validation: only the settlement fee, only sane values, only for reps
-select tests.is('fee overrides: the table can only hold the settlement fee (CHECK): a premium, recording or any other fee_key is refused, even for the owner role',
-  tests.p($$insert into public.rep_fee_overrides (rep_id, fee_key, transaction, paid_by, amount) values ('$$ || tests.id('b1') || $$', 'premium', 'purchase', 'buyer', 1)$$) || '/' ||
-  tests.p($$insert into public.rep_fee_overrides (rep_id, fee_key, transaction, paid_by, amount) values ('$$ || tests.id('b1') || $$', 'recording', 'purchase', 'buyer', 1)$$) || '/' ||
-  tests.p($$insert into public.rep_fee_overrides (rep_id, fee_key, transaction, paid_by, amount) values ('$$ || tests.id('b1') || $$', 'notary', 'purchase', 'buyer', 1)$$), 'ERR:23514/ERR:23514/ERR:23514');
-select tests.is('fee overrides: bad state / transaction / side / amount are refused by the RPC (22023) and by the CHECKs',
-  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'TX', 'purchase', 'buyer', 100)::text$$) || '/' ||
-  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'sale', 'buyer', 100)::text$$) || '/' ||
-  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'lender', 100)::text$$) || '/' ||
-  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'refi', 'seller', 100)::text$$) || '/' ||
-  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'buyer', -1)::text$$) || '/' ||
-  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'buyer', 100000)::text$$) || '/' ||
-  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'buyer', null)::text$$) || '/' ||
-  tests.p($$insert into public.rep_fee_overrides (rep_id, state, transaction, paid_by, amount) values ('$$ || tests.id('b1') || $$', 'TX', 'purchase', 'buyer', 1)$$) || '/' ||
-  tests.p($$insert into public.rep_fee_overrides (rep_id, transaction, paid_by, amount) values ('$$ || tests.id('b1') || $$', 'refi', 'seller', 1)$$) || '/' ||
-  tests.p($$insert into public.rep_fee_overrides (rep_id, transaction, paid_by, amount) values ('$$ || tests.id('b1') || $$', 'purchase', 'buyer', -5)$$),
-  'ERR:22023/ERR:22023/ERR:22023/ERR:22023/ERR:22023/ERR:22023/ERR:22023/ERR:23514/ERR:23514/ERR:23514');
-select tests.is('fee overrides: only for reps (or an admin who also reps): a client, a plain admin and an unknown id are refused',
-  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('c1') || $$', 'MD', 'purchase', 'buyer', 100)::text$$) || '/' ||
-  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('d1') || $$', 'MD', 'purchase', 'buyer', 100)::text$$) || '/' ||
-  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('00000000-0000-4000-8000-00000000ffff', 'MD', 'purchase', 'buyer', 100)::text$$), 'ERR:23514/ERR:23514/ERR:P0002');
-select tests.is('fee overrides: a super admin who also works as a rep (Alex) can have one',
-  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('a1') || $$', '*', 'refi', 'buyer', 300)::text$$), '');
-select tests.is('fee overrides: zero (a waived fee) and a half cent (912.505 rounds to 912.51) are accepted',
-  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b2') || $$', '*', 'refi', 'buyer', 0)::text$$) ||
-  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b2') || $$', '*', 'purchase', 'buyer', 912.505)::text$$), '');
-select tests.is('fee overrides: ...stored as 0.00 and 912.51',
-  (select string_agg(transaction || '=' || amount::text, ',' order by transaction) from public.rep_fee_overrides where rep_id = tests.id('b2')), 'purchase=912.51,refi=0.00');
-select tests.is('fee overrides: an upsert replaces the amount: still one row per slot',
-  tests.v(tests.id('a1'), $$select public.admin_set_rep_fee_override('$$ || tests.id('b2') || $$', '*', 'purchase', 'buyer', 899.5)::text$$), '');
-select tests.is('fee overrides: ...899.50 now, 2 rows for Marcus',
-  (select string_agg(transaction || '=' || amount::text, ',' order by transaction) from public.rep_fee_overrides where rep_id = tests.id('b2')) || '/' ||
-  (select count(*)::text from public.rep_fee_overrides where rep_id = tests.id('b2')), 'purchase=899.50,refi=0.00/2');
--- who may READ: admin all; a rep only their own; a client only their rep's; others nothing
-select tests.is('fee overrides: admins read every row (b1 x2, a1 x1, b2 x2 = 5)',
-  tests.v(tests.id('a1'), 'select count(*)::text from public.rep_fee_overrides') || '/' || tests.v(tests.id('d1'), 'select count(*)::text from public.rep_fee_overrides'), '5/5');
-select tests.is('fee overrides: Jane reads only her own two rows, Marcus only his two, admin Robin all five',
-  tests.v(tests.id('b1'), 'select count(*)::text from public.rep_fee_overrides') || '/' || tests.v(tests.id('b2'), 'select count(*)::text from public.rep_fee_overrides') || '/' ||
-  tests.v(tests.id('a2'), 'select count(*)::text from public.rep_fee_overrides'), '2/2/5');
-select tests.is('fee overrides: Sam (Jane''s client) reads exactly Jane''s rows; Omar (Marcus''s) exactly Marcus''s',
-  tests.v(tests.id('c1'), $$select count(*)::text || ':' || count(*) filter (where rep_id = '$$ || tests.id('b1') || $$')::text from public.rep_fee_overrides$$) || '/' ||
-  tests.v(tests.id('c5'), $$select count(*)::text || ':' || count(*) filter (where rep_id = '$$ || tests.id('b2') || $$')::text from public.rep_fee_overrides$$), '2:2/2:2');
-select tests.is('fee overrides: a client with no rep, a disabled client, a disabled admin read nothing, and a signed-out (anon) call is refused',
-  tests.v(tests.id('c3'), 'select count(*)::text from public.rep_fee_overrides') || '/' || tests.v(tests.id('c4'), 'select count(*)::text from public.rep_fee_overrides') || '/' ||
-  tests.v(tests.id('a9'), 'select count(*)::text from public.rep_fee_overrides') || '/' || tests.q(null, 'select * from public.rep_fee_overrides'), '0/0/0/ERR:42501');
-select tests.is('fee overrides: get_my_fee_overrides(): Jane gets her own, Sam gets Jane''s (same rows), Omar gets Marcus''s',
-  tests.v(tests.id('b1'), $$select string_agg(state || transaction || paid_by || amount, ',') from public.get_my_fee_overrides()$$) || '|' ||
-  tests.v(tests.id('c1'), $$select string_agg(state || transaction || paid_by || amount, ',') from public.get_my_fee_overrides()$$) || '|' ||
-  tests.v(tests.id('c5'), $$select string_agg(state || transaction || paid_by || amount, ',') from public.get_my_fee_overrides()$$),
-  'MDpurchasebuyer900.00,MDpurchaseseller500.00|MDpurchasebuyer900.00,MDpurchaseseller500.00|*purchasebuyer899.50,*refibuyer0.00');
-select tests.is('fee overrides: get_my_fee_overrides(): a plain admin (not a rep), a client with no rep and a disabled user get nothing; Alex (admin who reps) gets only her own row',
-  tests.v(tests.id('d1'), 'select count(*)::text from public.get_my_fee_overrides()') || '/' || tests.v(tests.id('c3'), 'select count(*)::text from public.get_my_fee_overrides()') || '/' ||
-  tests.v(tests.id('a9'), 'select count(*)::text from public.get_my_fee_overrides()') || '/' ||
-  tests.v(tests.id('a1'), 'select string_agg(state || transaction || paid_by || amount, $$,$$) from public.get_my_fee_overrides()'), '0/0/0/*refibuyer300.00');
-select tests.is('fee overrides: the people without an override see the standard fee (Pat has no rep; Dee is disabled)',
-  tests.v(tests.id('c4'), 'select count(*)::text from public.get_my_fee_overrides()'), '0');
+       and exists (select 1 from public.assignments where active and client_user_id = tests.id('c5') and rep_id = tests.id('b2'))
+       and (select count(*) from public.profiles where id in (tests.id('b1'), tests.id('b2')) and role = 'rep' and status = 'active') = 2)::text), 'true');
+select tests.is('pricing tables: everything starts empty (standard pricing for everyone)',
+  (select (select count(*) from public.pricing_tables)::text || '/' || (select count(*) from public.pricing_table_fees)::text || '/' || (select count(*) from public.pricing_table_members)::text), '0/0/0');
+select tests.is('pricing tables: nobody has a direct write grant on any of the three tables; select only; anon nothing',
+  (select bool_and(not has_table_privilege('authenticated', t, 'insert') and not has_table_privilege('authenticated', t, 'update') and not has_table_privilege('authenticated', t, 'delete')
+                   and has_table_privilege('authenticated', t, 'select') and not has_table_privilege('anon', t, 'select'))::text
+     from unnest(array['public.pricing_tables', 'public.pricing_table_fees', 'public.pricing_table_members']) t), 'true');
+
+-- ---- create (admin and super admin only) ----
+create temp table pt (k text primary key, id uuid);
+insert into pt select 'marvin', nullif(tests.rpc(tests.id('a2'), $$public.admin_create_pricing_table('  Marvin''s   Pricing ')$$), '')::uuid;
+select tests.is('pricing tables: a plain ADMIN (Robin) creates "Marvin''s Pricing"; spaces are tidied',
+  (select name from public.pricing_tables where id = (select id from pt where k = 'marvin')), 'Marvin''s Pricing');
+insert into pt select 'jane', nullif(tests.rpc(tests.id('a1'), $$public.admin_create_pricing_table('Jane''s Pricing')$$), '')::uuid;
+select tests.is('pricing tables: a SUPER ADMIN (Alex) creates "Jane''s Pricing"; audited with the creator',
+  (select count(*)::text from public.pricing_tables) || '/' || (select count(*)::text from public.audit_log where action = 'pricing_table_changed' and details ->> 'op' = 'create' and actor_id is not null), '2/2');
+select tests.is('pricing tables: a rep, a client, a disabled user and a signed-out call cannot create one',
+  tests.rpc(tests.id('b1'), $$public.admin_create_pricing_table('Sneaky')$$) || '/' || tests.rpc(tests.id('c1'), $$public.admin_create_pricing_table('Sneaky')$$) || '/' ||
+  tests.rpc(tests.id('a9'), $$public.admin_create_pricing_table('Sneaky')$$) || '/' || tests.rpc(null, $$public.admin_create_pricing_table('Sneaky')$$), 'ERR:42501/ERR:42501/ERR:42501/ERR:42501');
+select tests.is('pricing tables: the name is unique ignoring case and spaces (23505), must not be empty or over 80 characters (22023)',
+  tests.rpc(tests.id('a1'), $$public.admin_create_pricing_table(' MARVIN''S pricing')$$) || '/' || tests.rpc(tests.id('a1'), $$public.admin_create_pricing_table('   ')$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_create_pricing_table(null)$$) || '/' || tests.rpc(tests.id('a1'), $$public.admin_create_pricing_table(repeat('x', 81))$$) || '/' ||
+  tests.p($$insert into public.pricing_tables (name) values ('JANE''S PRICING')$$) || '/' || tests.p($$insert into public.pricing_tables (name) values (' padded ')$$), 'ERR:23505/ERR:22023/ERR:22023/ERR:22023/ERR:23505/ERR:23514');
+
+-- ---- fees (settlement only) ----
+select tests.is('pricing tables: an admin sets Marvin''s MD purchase buyer 900 and seller 500, and an all-states refinance 300; Jane''s all-states purchase buyer 925.505',
+  tests.rpc(tests.id('a2'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'marvin') || $$', 'md', 'Purchase', 'BUYER', 900)$$) ||
+  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'marvin') || $$', 'MD', 'purchase', 'seller', 500)$$) ||
+  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'marvin') || $$', '*', 'refi', 'buyer', 300)$$) ||
+  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'jane') || $$', '*', 'purchase', 'buyer', 925.505)$$), '');
+select tests.is('pricing tables: stored normalised (state upper-case), to the cent (925.51), one row per slot',
+  (select string_agg(state || '/' || transaction || '/' || paid_by || '/' || amount::text, ',' order by state collate "C", transaction, paid_by, amount) from public.pricing_table_fees), '*/purchase/buyer/925.51,*/refi/buyer/300.00,MD/purchase/buyer/900.00,MD/purchase/seller/500.00');
+select tests.is('pricing tables: setting the same slot again replaces it',
+  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'jane') || $$', '*', 'purchase', 'buyer', 925.5)$$), '');
+select tests.is('pricing tables: ...still 4 fee rows, Jane''s now 925.50',
+  (select count(*)::text from public.pricing_table_fees) || ':' || (select amount::text from public.pricing_table_fees where table_id = (select id from pt where k = 'jane')), '4:925.50');
+select tests.is('pricing tables: fees refused for bad state / transaction / side / amount / unknown table (22023 / P0002)',
+  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'jane') || $$', 'TX', 'purchase', 'buyer', 1)$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'jane') || $$', '*', 'sale', 'buyer', 1)$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'jane') || $$', '*', 'purchase', 'lender', 1)$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'jane') || $$', '*', 'refi', 'seller', 1)$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'jane') || $$', '*', 'purchase', 'buyer', -1)$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'jane') || $$', '*', 'purchase', 'buyer', 100000)$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'jane') || $$', '*', 'purchase', 'buyer', null)$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_set_pricing_fee('00000000-0000-4000-8000-00000000ffff', '*', 'purchase', 'buyer', 1)$$), 'ERR:22023/ERR:22023/ERR:22023/ERR:22023/ERR:22023/ERR:22023/ERR:22023/ERR:P0002');
+select tests.is('pricing tables: the table can only hold the SETTLEMENT fee (CHECK): premium / recording / notary keys refused even to the owner role; bad rows refused too',
+  tests.p($$insert into public.pricing_table_fees (table_id, fee_key, transaction, paid_by, amount) values ('$$ || (select id from pt where k = 'jane') || $$', 'premium', 'purchase', 'buyer', 1)$$) || '/' ||
+  tests.p($$insert into public.pricing_table_fees (table_id, fee_key, transaction, paid_by, amount) values ('$$ || (select id from pt where k = 'jane') || $$', 'recording', 'purchase', 'buyer', 1)$$) || '/' ||
+  tests.p($$insert into public.pricing_table_fees (table_id, fee_key, transaction, paid_by, amount) values ('$$ || (select id from pt where k = 'jane') || $$', 'notary', 'purchase', 'buyer', 1)$$) || '/' ||
+  tests.p($$insert into public.pricing_table_fees (table_id, state, transaction, paid_by, amount) values ('$$ || (select id from pt where k = 'jane') || $$', 'TX', 'purchase', 'buyer', 1)$$) || '/' ||
+  tests.p($$insert into public.pricing_table_fees (table_id, transaction, paid_by, amount) values ('$$ || (select id from pt where k = 'jane') || $$', 'refi', 'seller', 1)$$) || '/' ||
+  tests.p($$insert into public.pricing_table_fees (table_id, transaction, paid_by, amount) values ('$$ || (select id from pt where k = 'jane') || $$', 'purchase', 'buyer', -5)$$), 'ERR:23514/ERR:23514/ERR:23514/ERR:23514/ERR:23514/ERR:23514');
+select tests.is('pricing tables: a rep, a client, a disabled user and a signed-out call cannot set or clear a fee',
+  tests.rpc(tests.id('b1'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'jane') || $$', '*', 'purchase', 'buyer', 1)$$) || '/' ||
+  tests.rpc(tests.id('c1'), $$public.admin_set_pricing_fee('$$ || (select id from pt where k = 'jane') || $$', '*', 'purchase', 'buyer', 1)$$) || '/' ||
+  tests.rpc(tests.id('a9'), $$public.admin_clear_pricing_fee('$$ || (select id from pt where k = 'jane') || $$', '*', 'purchase', 'buyer')$$) || '/' ||
+  tests.rpc(null, $$public.admin_clear_pricing_fee('$$ || (select id from pt where k = 'jane') || $$', '*', 'purchase', 'buyer')$$), 'ERR:42501/ERR:42501/ERR:42501/ERR:42501');
+select tests.is('pricing tables: ...and nothing changed (4 fees, Jane''s still 925.50)',
+  (select count(*)::text from public.pricing_table_fees) || '/' || (select amount::text from public.pricing_table_fees where table_id = (select id from pt where k = 'jane')), '4/925.50');
+
+-- ---- members (by email; one email, one table) ----
+select tests.is('pricing tables: add Marcus to Marvin''s with an UPPER-CASE, space-padded email (also Jane to Jane''s)',
+  tests.rpc(tests.id('a2'), $$public.admin_add_pricing_member('$$ || (select id from pt where k = 'marvin') || $$', '  Sample.Rep.MARCUS@ClaTitle.com ')$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('$$ || (select id from pt where k = 'jane') || $$', 'sample.rep.jane@clatitle.com')$$), 'added/added');
+select tests.is('pricing tables: ...stored lower-case and trimmed',
+  (select string_agg(email, ',' order by email) from public.pricing_table_members), 'sample.rep.jane@clatitle.com,sample.rep.marcus@clatitle.com');
+select tests.is('pricing tables: an email can be added BEFORE the rep has an account (no profile yet): "new.rep.later@clatitle.com" joins Marvin''s',
+  tests.sq($q$select count(*)::text from public.profiles where email = 'new.rep.later@clatitle.com'$q$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('$$ || (select id from pt where k = 'marvin') || $$', 'NEW.rep.later@clatitle.com')$$) || '/' ||
+  tests.sq($q$select count(*)::text from public.pricing_table_members where table_id = (select id from pt where k = 'marvin')$q$), '0/added/2');
+select tests.is('pricing tables: adding the same email to the same table again is a quiet "already"; case does not matter',
+  tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('$$ || (select id from pt where k = 'marvin') || $$', 'SAMPLE.REP.MARCUS@CLATITLE.COM')$$) || '/' || tests.sq('select count(*)::text from public.pricing_table_members'), 'already/3');
+select tests.is('pricing tables: ONE EMAIL, ONE TABLE: adding Marcus to Jane''s is refused (23505) and the message names the other table; nothing moved',
+  tests.msg(tests.id('a1'), $$select public.admin_add_pricing_member('$$ || (select id from pt where k = 'jane') || $$', 'sample.rep.marcus@clatitle.com')::text$$) || '/' ||
+  tests.sq($q$select count(*)::text from public.pricing_table_members where table_id = (select id from pt where k = 'marvin') and email = 'sample.rep.marcus@clatitle.com'$q$),
+  'ERR:23505:sample.rep.marcus@clatitle.com is already in pricing table "Marvin''s Pricing"/1');
+select tests.is('pricing tables: same refusal for a different spelling (UPPER-CASE); the database also refuses a duplicate or non-lower-case email written directly (23505 / 23514)',
+  tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('$$ || (select id from pt where k = 'jane') || $$', 'Sample.Rep.Marcus@clatitle.com')$$) || '/' ||
+  tests.p($$insert into public.pricing_table_members (table_id, email) values ('$$ || (select id from pt where k = 'jane') || $$', 'sample.rep.marcus@clatitle.com')$$) || '/' ||
+  tests.p($$insert into public.pricing_table_members (table_id, email) values ('$$ || (select id from pt where k = 'jane') || $$', 'Upper.Case@clatitle.com')$$), 'ERR:23505/ERR:23505/ERR:23514');
+select tests.is('pricing tables: bad emails refused (22023): not an email, not @clatitle.com, empty, null',
+  tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('$$ || (select id from pt where k = 'jane') || $$', 'not-an-email')$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('$$ || (select id from pt where k = 'jane') || $$', 'someone@example.com')$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('$$ || (select id from pt where k = 'jane') || $$', '')$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('$$ || (select id from pt where k = 'jane') || $$', null)$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('00000000-0000-4000-8000-00000000ffff', 'x@clatitle.com')$$), 'ERR:22023/ERR:22023/ERR:22023/ERR:22023/ERR:P0002');
+insert into public.invitations (email, role, is_rep) values ('client.cla@clatitle.com', 'client', false);
+insert into auth.users (id, email) values (tests.id('e8'), 'client.cla@clatitle.com');
+select tests.is('pricing tables: the email of an existing CLIENT account is refused (add their rep instead)',
+  tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('$$ || (select id from pt where k = 'jane') || $$', 'client.cla@clatitle.com')$$), 'ERR:22023');
+select tests.is('pricing tables: a rep, a client, a disabled user and a signed-out call cannot add or remove a member',
+  tests.rpc(tests.id('b1'), $$public.admin_add_pricing_member('$$ || (select id from pt where k = 'jane') || $$', 'x@clatitle.com')$$) || '/' ||
+  tests.rpc(tests.id('b2'), $$public.admin_remove_pricing_member('$$ || (select id from pt where k = 'marvin') || $$', 'sample.rep.marcus@clatitle.com')$$) || '/' ||
+  tests.rpc(tests.id('c1'), $$public.admin_add_pricing_member('$$ || (select id from pt where k = 'jane') || $$', 'x@clatitle.com')$$) || '/' ||
+  tests.rpc(tests.id('a9'), $$public.admin_add_pricing_member('$$ || (select id from pt where k = 'jane') || $$', 'x@clatitle.com')$$) || '/' ||
+  tests.rpc(null, $$public.admin_remove_pricing_member('$$ || (select id from pt where k = 'marvin') || $$', 'x@clatitle.com')$$), 'ERR:42501/ERR:42501/ERR:42501/ERR:42501/ERR:42501');
+
+-- ---- who sees what ----
+select tests.is('pricing tables: admins read every row (2 tables, 4 fees, 3 members): admin Robin, super admin Alex and super admin Pia (not a rep)',
+  (select string_agg(tests.v(u, 'select (select count(*) from public.pricing_tables)::text || ''/'' || (select count(*) from public.pricing_table_fees)::text || ''/'' || (select count(*) from public.pricing_table_members)::text'), ' ')
+     from (values (tests.id('a2')), (tests.id('a1')), (tests.id('d1'))) v(u)), '2/4/3 2/4/3 2/4/3');
+select tests.is('pricing tables: Marcus (member of Marvin''s) reads only his table and its 3 fees, never the member list; Jane only hers and its 1 fee',
+  tests.v(tests.id('b2'), $q$select (select count(*) from public.pricing_tables)::text || '/' || (select name from public.pricing_tables) || '/' || (select count(*) from public.pricing_table_fees)::text || '/' || (select count(*) from public.pricing_table_members)::text$q$) || ' ' ||
+  tests.v(tests.id('b1'), $q$select (select count(*) from public.pricing_tables)::text || '/' || (select name from public.pricing_tables) || '/' || (select count(*) from public.pricing_table_fees)::text || '/' || (select count(*) from public.pricing_table_members)::text$q$),
+  '1/Marvin''s Pricing/3/0 1/Jane''s Pricing/1/0');
+select tests.is('pricing tables: Sam (Jane''s client) reads Jane''s 1 fee and no table list of others; Omar (Marcus''s client) reads Marvin''s 3 fees; neither sees any member list',
+  tests.v(tests.id('c1'), 'select (select count(*) from public.pricing_table_fees)::text || ''/'' || (select name from public.pricing_tables)') || ' ' ||
+  tests.v(tests.id('c5'), 'select (select count(*) from public.pricing_table_fees)::text || ''/'' || (select name from public.pricing_tables)') || ' ' ||
+  tests.v(tests.id('c1'), 'select count(*)::text from public.pricing_table_members') || tests.v(tests.id('c5'), 'select count(*)::text from public.pricing_table_members'), '1/Jane''s Pricing 3/Marvin''s Pricing 00');
+select tests.is('pricing tables: get_my_fee_overrides(): Marcus gets Marvin''s fees; so does his client Omar; Jane gets hers and so does Sam',
+  tests.ov(tests.id('b2')) || ' | ' || tests.ov(tests.id('c5')) || ' | ' || tests.ov(tests.id('b1')) || ' | ' || tests.ov(tests.id('c1')),
+  '*:refi:buyer:300.00,MD:purchase:buyer:900.00,MD:purchase:seller:500.00 | *:refi:buyer:300.00,MD:purchase:buyer:900.00,MD:purchase:seller:500.00 | *:purchase:buyer:925.50 | *:purchase:buyer:925.50');
+select tests.is('pricing tables: everybody else gets nothing = standard fees: Pat (no rep), Dee (disabled), disabled a9, Pia and Robin (admins, not reps), Alex (admin who reps, in no table)',
+  tests.ov(tests.id('c3')) || '|' || tests.ov(tests.id('c4')) || '|' || tests.ov(tests.id('a9')) || '|' || tests.ov(tests.id('d1')) || '|' || tests.ov(tests.id('a2')) || '|' || tests.ov(tests.id('a1')), '|||||');
+select tests.is('pricing tables: ...and a client / rep / signed-out session cannot read the three tables directly beyond that (anon: refused; a client sees no members)',
+  tests.q(null, 'select * from public.pricing_tables') || '/' || tests.q(null, 'select * from public.pricing_table_members') || '/' ||
+  tests.q(tests.id('c1'), 'select * from public.pricing_table_members') || '/' || tests.q(tests.id('c3'), 'select * from public.pricing_tables') || '/' || tests.q(tests.id('c3'), 'select * from public.pricing_table_fees'), 'ERR:42501/ERR:42501/0/0/0');
+select tests.is('pricing tables: no direct insert / update / delete through the API, as a rep, an admin or a super admin (any of the three tables)',
+  tests.x(tests.id('b1'), $$insert into public.pricing_tables (name) values ('x')$$) || '/' || tests.x(tests.id('a1'), $$insert into public.pricing_tables (name) values ('x')$$) || '/' ||
+  tests.x(tests.id('a1'), 'update public.pricing_table_fees set amount = 0') || '/' || tests.x(tests.id('b2'), 'update public.pricing_table_fees set amount = 0') || '/' ||
+  tests.x(tests.id('a2'), 'delete from public.pricing_table_members') || '/' || tests.x(tests.id('b2'), 'delete from public.pricing_tables') || '/' ||
+  tests.x(tests.id('a1'), $$insert into public.pricing_table_members (table_id, email) values ((select id from public.pricing_tables limit 1), 'x@clatitle.com')$$), 'ERR:42501/ERR:42501/ERR:42501/ERR:42501/ERR:42501/ERR:42501/ERR:42501');
+select tests.is('pricing tables: ...and nothing changed (2 / 4 / 3)',
+  (select (select count(*) from public.pricing_tables)::text || '/' || (select count(*) from public.pricing_table_fees)::text || '/' || (select count(*) from public.pricing_table_members)::text), '2/4/3');
+
+-- ---- account created AFTER the email was added ----
+insert into public.invitations (email, role, is_rep) values ('new.rep.later@clatitle.com', 'rep', true);
+insert into auth.users (id, email) values (tests.id('e9'), 'new.rep.later@clatitle.com');
+select tests.is('pricing tables: the rep signs up later with the pre-added email: pricing applies at once (Marvin''s fees), nothing else needed',
+  tests.ov(tests.id('e9')), '*:refi:buyer:300.00,MD:purchase:buyer:900.00,MD:purchase:seller:500.00');
+
+-- ---- move between tables ----
+select tests.is('pricing tables: with the move confirmed (p_move) Marcus goes from Marvin''s to Jane''s: Marcus and Omar now get Jane''s fee; Marvin''s keeps only the other member',
+  tests.rpc(tests.id('a1'), $$public.admin_add_pricing_member('$$ || (select id from pt where k = 'jane') || $$', 'sample.rep.marcus@clatitle.com', true)$$) || '/' ||
+  tests.ov(tests.id('b2')) || '/' || tests.ov(tests.id('c5')) || '/' ||
+  tests.sq($q$select string_agg(email, ',') from public.pricing_table_members where table_id = (select id from pt where k = 'marvin')$q$) || '/' ||
+  tests.sq($q$select count(*)::text from public.pricing_table_members where email = 'sample.rep.marcus@clatitle.com'$q$),
+  'moved/*:purchase:buyer:925.50/*:purchase:buyer:925.50/new.rep.later@clatitle.com/1');
+select tests.is('pricing tables: ...and back again (move) leaves one row for the email',
+  tests.rpc(tests.id('a2'), $$public.admin_add_pricing_member('$$ || (select id from pt where k = 'marvin') || $$', 'sample.rep.marcus@clatitle.com', true)$$) || '/' ||
+  tests.sq($q$select count(*)::text || ':' || min(t.name) from public.pricing_table_members m join public.pricing_tables t on t.id = m.table_id where m.email = 'sample.rep.marcus@clatitle.com'$q$), 'moved/1:Marvin''s Pricing');
+select tests.is('pricing tables: Sam reassigned from Jane to Marcus now gets Marvin''s fees; with no active assignment he gets nothing',
+  tests.p($$update public.assignments set active = false where client_user_id = '$$ || tests.id('c1') || $$' and active$$) || '/' || tests.ov(tests.id('c1')) || '/' ||
+  tests.p($$insert into public.assignments (client_email, rep_id) select email, '$$ || tests.id('b2') || $$' from public.profiles where id = '$$ || tests.id('c1') || $$'$$) || '/' || tests.ov(tests.id('c1')),
+  'ok//ok/*:refi:buyer:300.00,MD:purchase:buyer:900.00,MD:purchase:seller:500.00');
+
+-- ---- remove member / clear fee / rename / delete ----
+select tests.is('pricing tables: removing Marcus puts him (and Omar and Sam) back on standard fees; removing a missing email is a quiet no-op',
+  tests.rpc(tests.id('a1'), $$public.admin_remove_pricing_member('$$ || (select id from pt where k = 'marvin') || $$', ' SAMPLE.rep.marcus@clatitle.com')$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_remove_pricing_member('$$ || (select id from pt where k = 'marvin') || $$', 'nobody@clatitle.com')$$) || '/' ||
+  tests.ov(tests.id('b2')) || '/' || tests.ov(tests.id('c5')) || '/' || tests.ov(tests.id('c1')) || '/' || tests.sq('select count(*)::text from public.pricing_table_members'), '/////2');
+select tests.is('pricing tables: clearing one fee puts that slot back to standard (the other Marvin''s fees stay); clearing a missing slot is a no-op',
+  tests.rpc(tests.id('a2'), $$public.admin_clear_pricing_fee('$$ || (select id from pt where k = 'marvin') || $$', 'MD', 'purchase', 'seller')$$) || '/' ||
+  tests.rpc(tests.id('a2'), $$public.admin_clear_pricing_fee('$$ || (select id from pt where k = 'marvin') || $$', 'VA', 'purchase', 'seller')$$) || '/' ||
+  tests.ov(tests.id('e9')), '//*:refi:buyer:300.00,MD:purchase:buyer:900.00');
+select tests.is('pricing tables: rename: the new name is tidied, a clash with another table (any case) is refused (23505), the same name again is a no-op, unknown table P0002; members and fees stay',
+  tests.rpc(tests.id('a2'), $$public.admin_rename_pricing_table('$$ || (select id from pt where k = 'marvin') || $$', '  Marvin   Jones Pricing ')$$) || '/' ||
+  tests.rpc(tests.id('a2'), $$public.admin_rename_pricing_table('$$ || (select id from pt where k = 'marvin') || $$', 'jane''s PRICING')$$) || '/' ||
+  tests.rpc(tests.id('a2'), $$public.admin_rename_pricing_table('$$ || (select id from pt where k = 'marvin') || $$', 'Marvin Jones Pricing')$$) || '/' ||
+  tests.rpc(tests.id('a2'), $$public.admin_rename_pricing_table('00000000-0000-4000-8000-00000000ffff', 'x')$$) || '/' ||
+  tests.rpc(tests.id('b1'), $$public.admin_rename_pricing_table('$$ || (select id from pt where k = 'marvin') || $$', 'Mine now')$$) || '/' ||
+  tests.sq($q$select name from public.pricing_tables where id = (select id from pt where k = 'marvin')$q$) || '/' || tests.ov(tests.id('e9')),
+  '/ERR:23505//ERR:P0002/ERR:42501/Marvin Jones Pricing/*:refi:buyer:300.00,MD:purchase:buyer:900.00');
+select tests.is('pricing tables: a rep, a client and a signed-out call cannot delete a table; an admin can: its fees and members go with it and those people are back on standard fees',
+  tests.rpc(tests.id('b1'), $$public.admin_delete_pricing_table('$$ || (select id from pt where k = 'marvin') || $$')$$) || '/' ||
+  tests.rpc(tests.id('c1'), $$public.admin_delete_pricing_table('$$ || (select id from pt where k = 'marvin') || $$')$$) || '/' ||
+  tests.rpc(null, $$public.admin_delete_pricing_table('$$ || (select id from pt where k = 'marvin') || $$')$$) || '/' ||
+  tests.rpc(tests.id('a2'), $$public.admin_delete_pricing_table('$$ || (select id from pt where k = 'marvin') || $$')$$) || '/' ||
+  tests.ov(tests.id('e9')) || '/' ||
+  tests.sq('select (select count(*) from public.pricing_tables)::text || '':'' || (select count(*) from public.pricing_table_fees)::text || '':'' || (select count(*) from public.pricing_table_members)::text'),
+  'ERR:42501/ERR:42501/ERR:42501///1:1:1');
+select tests.is('pricing tables: deleting an unknown table: P0002; deleting Jane''s table frees her email for another table',
+  tests.rpc(tests.id('a1'), $$public.admin_delete_pricing_table('00000000-0000-4000-8000-00000000ffff')$$) || '/' ||
+  tests.rpc(tests.id('a1'), $$public.admin_delete_pricing_table('$$ || (select id from pt where k = 'jane') || $$')$$) || '/' ||
+  tests.sq('select count(*)::text from public.pricing_table_members') || '/' || tests.ov(tests.id('b1')), 'ERR:P0002//0/');
 -- audit
-select tests.is('fee overrides: every change is audited with before / after (set 900, set 500, set 300, 0, 912.51 -> 899.50: 6 rows, upsert logged once per change)',
-  (select count(*)::text from public.audit_log where action = 'rep_fee_changed'), '6');
-select tests.is('fee overrides: the audit row of an upsert carries before and after',
-  (select (details ->> 'before') || '>' || (details ->> 'after') from public.audit_log where action = 'rep_fee_changed' and target_id = tests.id('b2') and details ->> 'transaction' = 'purchase' order by at desc, id desc limit 1), '912.51>899.50');
--- clear
-select tests.is('fee overrides: a rep, a client and a signed-out call cannot clear; a plain admin can',
-  tests.v(tests.id('b1'), $$select public.admin_clear_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'seller')::text$$) || '/' ||
-  tests.v(tests.id('c1'), $$select public.admin_clear_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'seller')::text$$) || '/' ||
-  tests.v(null, $$select public.admin_clear_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'seller')::text$$) || '/' ||
-  tests.v(tests.id('d1'), $$select public.admin_clear_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'seller')::text$$), 'ERR:42501/ERR:42501/ERR:42501/');
-select tests.is('fee overrides: after clearing, Jane''s seller slot is the standard fee again (no row); the buyer one stays; clearing a missing row is a quiet no-op',
-  tests.v(tests.id('b1'), $$select string_agg(state || transaction || paid_by || amount, ',') from public.get_my_fee_overrides()$$) || '/' ||
-  tests.v(tests.id('a1'), $$select public.admin_clear_rep_fee_override('$$ || tests.id('b1') || $$', 'MD', 'purchase', 'seller')::text$$) || '/' ||
-  (select count(*)::text from public.audit_log where action = 'rep_fee_changed'), 'MDpurchasebuyer900.00//7');
--- the one rule: change of assignment / role moves or silences the fee
-select tests.is('fee overrides: when Sam is reassigned from Jane to Marcus, Sam now gets Marcus''s fee; unassigned = standard',
-  tests.p($$update public.assignments set active = false where client_user_id = '$$ || tests.id('c1') || $$' and active$$) || '/' ||
-  tests.v(tests.id('c1'), 'select count(*)::text from public.get_my_fee_overrides()') || '/' ||
-  tests.p($$insert into public.assignments (client_email, rep_id) select email, '$$ || tests.id('b2') || $$' from public.profiles where id = '$$ || tests.id('c1') || $$'$$) || '/' ||
-  tests.v(tests.id('c1'), 'select count(*)::text from public.get_my_fee_overrides()'), 'ok/0/ok/2');
-select tests.is('fee overrides: rows follow the rep out of the system: the rep_id foreign key is ON DELETE CASCADE',
-  (select confdeltype::text from pg_constraint where conrelid = 'public.rep_fee_overrides'::regclass and contype = 'f' and confrelid = 'public.profiles'::regclass
-     and conkey = (select array_agg(attnum) from pg_attribute where attrelid = 'public.rep_fee_overrides'::regclass and attname = 'rep_id')), 'c');
-select tests.is('fee overrides: privileges: anon cannot run any of the three functions; authenticated can; one overload each',
-  (not has_function_privilege('anon', 'public.admin_set_rep_fee_override(uuid, text, text, text, numeric)', 'execute')
-   and not has_function_privilege('anon', 'public.admin_clear_rep_fee_override(uuid, text, text, text)', 'execute')
-   and not has_function_privilege('anon', 'public.get_my_fee_overrides()', 'execute')
-   and has_function_privilege('authenticated', 'public.admin_set_rep_fee_override(uuid, text, text, text, numeric)', 'execute')
-   and has_function_privilege('authenticated', 'public.get_my_fee_overrides()', 'execute'))::text || '/' ||
-  (select count(*)::text from pg_proc where pronamespace = 'public'::regnamespace and proname in ('admin_set_rep_fee_override', 'admin_clear_rep_fee_override', 'get_my_fee_overrides')), 'true/3');
+select tests.is('pricing tables: every change is audited by operation, with names, emails and before / after',
+  (select string_agg(op || ':' || n, ',' order by op) from (select details ->> 'op' op, count(*)::text n from public.audit_log where action = 'pricing_table_changed' group by 1) x),
+  'create:2,delete:2,fee_clear:1,fee_set:5,member_add:3,member_move:2,member_remove:1,rename:1');
+select tests.is('pricing tables: the delete audit rows say how many fees and members went (Marvin''s: 2 fees... then Jane''s 1 fee, 1 member)',
+  (select string_agg((details ->> 'name') || ':' || (details ->> 'fees_removed') || ':' || (details ->> 'members_released'), ',' order by at, id) from public.audit_log where action = 'pricing_table_changed' and details ->> 'op' = 'delete'),
+  'Marvin Jones Pricing:2:1,Jane''s Pricing:1:1');
+select tests.is('pricing tables: a move is audited with the table it came from; a fee change with before and after',
+  (select (details ->> 'from_table') from public.audit_log where details ->> 'op' = 'member_move' order by at, id limit 1) || '/' ||
+  (select (details ->> 'before') || '>' || (details ->> 'after') from public.audit_log where details ->> 'op' = 'fee_set' and details ->> 'after' = '925.50'), 'Marvin''s Pricing/925.51>925.50');
+select tests.is('pricing tables: privileges: anon cannot run any of the pricing functions; authenticated can; one overload each',
+  (select bool_and(not has_function_privilege('anon', f, 'execute') and has_function_privilege('authenticated', f, 'execute'))::text
+     from unnest(array['public.admin_create_pricing_table(text)', 'public.admin_rename_pricing_table(uuid, text)', 'public.admin_delete_pricing_table(uuid)',
+       'public.admin_set_pricing_fee(uuid, text, text, text, numeric)', 'public.admin_clear_pricing_fee(uuid, text, text, text)',
+       'public.admin_add_pricing_member(uuid, text, boolean)', 'public.admin_remove_pricing_member(uuid, text)', 'public.get_my_fee_overrides()']) f) || '/' ||
+  (select count(*)::text from pg_proc where pronamespace = 'public'::regnamespace and proname in ('admin_create_pricing_table', 'admin_rename_pricing_table', 'admin_delete_pricing_table', 'admin_set_pricing_fee', 'admin_clear_pricing_fee', 'admin_add_pricing_member', 'admin_remove_pricing_member', 'get_my_fee_overrides')), 'true/8');
+select tests.is('pricing tables: the fee rows follow the table out (fee and member foreign keys are ON DELETE CASCADE)',
+  (select string_agg(confdeltype::text, ',' order by conrelid::regclass::text) from pg_constraint where contype = 'f' and confrelid = 'public.pricing_tables'::regclass), 'c,c');
 
 -- ---------------- privileges ----------------
 select tests.is('function privileges: anon cannot run the admin RPCs, authenticated can',

@@ -70,7 +70,7 @@
     }
 
     // ---- special settlement fee (migration 16) ----
-    // A rep gets their own special CLA settlement fee, a client (realtor) their rep's (the database decides which: get_my_fee_overrides()).
+    // A rep whose email is in a pricing table gets that table's CLA settlement fees, a client (realtor) their rep's table (the database decides: get_my_fee_overrides()).
     // Only that one fee line changes; premiums and recording fees are never touched. Anything wrong (migration not applied yet, network)
     // = standard fees, silently: never break the calculator over it.
     if (me && A.getMyFeeOverrides && window.CLA_QUOTE_API.setFeeOverrides) {
