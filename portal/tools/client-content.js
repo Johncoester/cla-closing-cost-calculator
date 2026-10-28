@@ -64,7 +64,7 @@ sec("getting-an-estimate", 3, "Getting an estimate, step by step", "Open the cal
     ["Reissue or basic option", "Reissue means a title policy on the property already exists, which can change the premium. Leave it on Basic if you are not sure."],
     ["Owner's policy paid by", "Local custom (what is usual in that county), Buyer or Seller."],
     ["Fee presentation", "Loan Estimate / CD (TRID) shows premiums the way the lender's forms do. Actual premium split shows what each person really pays."],
-    ["First-time homebuyer", "Applies a first-time buyer exemption or treatment where the county has one. Not used on a refinance."],
+    ["First-time homebuyer", "Applies a first-time buyer reduction or exemption where the county has one, and labels the tax line it changed. It does not change who pays: every tax keeps its normal starting payer, and you can still set each one to Seller, Split or Buyer. Not used on a refinance."],
     ["Owner-occupied principal residence", "On by default. Some exemptions depend on it. In Maryland, a long deed that is not a principal residence can record differently, and a note on the page says so."],
     ["Buyer pays seller's transfer / deed tax", "A contract term, for example Florida deed stamps. It moves the seller's tax to the buyer column."],
     ["Who pays each transfer / recordation tax", "Under those boxes, each transfer or recordation tax has three buttons: Seller, Split or Buyer. Split means each side pays half. Each tax starts with the usual local choice, and the line under its name says which. Pick what your contract says: the estimate, the printed copy and the copied text all follow, and the line is labelled, for example \"(split 50/50)\". Your choices start over when you change the county or city."],

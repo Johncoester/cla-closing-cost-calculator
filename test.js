@@ -18,8 +18,8 @@ const N=X.normalize({CLA_Fees:rows});ok(N.CLA_Fees.length===2&&N.CLA_Fees[0].Amo
 const mo=o=>X.taxAmount&&X.calc(R,inp(Object.assign({county:"Montgomery",price:800000,loan:640000,ends:[],fees:[]},o)));
 const recNoEx=line(mo({occ:false}),/County recordation/),recEx=line(mo({occ:true}),/County recordation/);
 ok(near(recNoEx,9938),`Montgomery $800k recordation = ${recNoEx} (expect 9938)`);ok(near(recEx,9048),`Montgomery $800k owner-occupied = ${recEx} (expect 9048)`);
-// MD FTHB: state transfer 0.25% paid by seller
-const f=X.calc(R,inp({price:400000,fthb:true}));const st=f.lines.find(l=>/State transfer/.test(l.item));ok(st&&st.b===0&&near(st.s,1000),"MD FTHB state transfer 0.25% all seller");
+// MD FTHB: state transfer 0.25% (the sheet's reduced rate); who pays is NOT changed by the first-time-buyer box
+const f=X.calc(R,inp({price:400000,fthb:true}));const st=f.lines.find(l=>/State transfer/.test(l.item));ok(st&&near(st.b,500)&&near(st.s,500)&&/first-time buyer/.test(st.item),"MD FTHB state transfer: 0.25% rate (reduced amount $1,000), paid 50/50 by default");
 // DC brackets + FTHB
 const dc=p=>X.calc(R,inp({state:"DC",county:"District of Columbia",price:p,fees:[]}));
 ok(near(line(dc(399000),/Deed recordation/),4389),"DC $399k recordation 1.1% whole");ok(near(line(dc(500000),/Deed recordation/),7250),"DC $500k recordation 1.45% whole");
@@ -200,7 +200,17 @@ ok(near(SN({concession:{mode:"flat",val:3000}}).totals.pro,3000)&&SN({other:Arra
  const tp=(o,pay)=>X.calc(R,inp(Object.assign({state:"MD",county:"Montgomery",price:450000,loan:360000},o,{taxPayers:pay})));
  // defaults are unchanged: MD (non first-time buyer) already comes from the sheet as a 50/50 split; first-time buyer goes to the seller; DC/VA/FL as before
  const d0=tp({}),dTT=one(d0,/County transfer tax/);ok(dTT&&near(dTT.b,2250)&&near(dTT.s,2250)&&/\(split 50\/50\)$/.test(dTT.item),"TS default MD transfer tax stays 50/50 and is labelled (split 50/50)");
- const f0=tp({fthb:true});ok(near(one(f0,/County transfer tax/).s,4500)&&one(f0,/County transfer tax/).b===0&&near(one(f0,/State transfer tax/).s,1125),"TS first-time buyer still defaults to the seller");
+ const f0=tp({fthb:true});ok(near(one(f0,/County transfer tax/).s,2250)&&near(one(f0,/County transfer tax/).b,2250)&&near(one(f0,/County recordation tax/).b,1557.5)&&near(one(f0,/State transfer tax/).b,562.5)&&near(one(f0,/State transfer tax/).s,562.5),"FTHB: first-time buyer no longer moves the taxes to the seller: all three MD taxes stay 50/50");
+ ok(f0.taxes.every(t=>t.payer==="split"&&t.def==="split")&&JSON.stringify(f0.taxes.map(t=>t.payer))===JSON.stringify(d0.taxes.map(t=>t.payer)),"FTHB: the default payer of every tax is identical with the box ticked or not");
+ ok(f0.taxes.every(t=>t.fthbPayer==="seller")&&d0.taxes.every(t=>!t.fthbPayer),"FTHB: the sheet's 'FTHB Paid By = Seller' is only reported (fthbPayer), never applied");
+ ok(near(f0.taxes.find(t=>t.name==="State transfer tax").amt,1125)&&near(d0.taxes.find(t=>t.name==="State transfer tax").amt,2250)&&near(f0.taxes.find(t=>t.name==="County transfer tax").amt,4500)&&f0.taxes.find(t=>t.name==="State transfer tax").fthb&&!f0.taxes.find(t=>t.name==="County transfer tax").fthb,"FTHB: the sheet's reduced state transfer rate (0.25%) is kept; amounts without a first-time rate are unchanged and carry no first-time label");
+ {const fs0=tp({fthb:true},{"County transfer tax":"seller","State transfer tax":"buyer"});ok(near(one(fs0,/County transfer tax/).s,4500)&&one(fs0,/County transfer tax/).b===0&&near(one(fs0,/State transfer tax/).b,1125)&&one(fs0,/State transfer tax/).s===0,"FTHB: with the box ticked each line can still be set to Seller, Split or Buyer")}
+ {const ce=(f)=>X.calc(R,inp({state:"MD",county:"Cecil",price:300000,loan:240000,fthb:f})),ca=(f)=>X.calc(R,inp({state:"MD",county:"Caroline",price:300000,loan:240000,fthb:f})),amt=(r,n)=>r.taxes.find(t=>t.name===n).amt;
+  ok(amt(ce(false),"County transfer tax")===1500&&amt(ce(true),"County transfer tax")===750&&ce(true).taxes.every(t=>t.payer==="split"),"FTHB Cecil: the sheet's 0.25% county transfer rate is kept ($1,500 -> $750), still 50/50");
+  ok(amt(ca(false),"County transfer tax")===1375&&amt(ca(true),"County transfer tax")===1000&&ca(true).taxes.every(t=>t.payer==="split"),"FTHB Caroline: the sheet's extra $75,000 exemption is kept ($1,375 -> $1,000), still 50/50")}
+ {const dcA=X.calc(R,inp({state:"DC",county:"District of Columbia",price:500000,loan:400000,fthb:true,fees:[]})),dcB=X.calc(R,inp({state:"DC",county:"District of Columbia",price:500000,loan:400000,fthb:false,fees:[]}));
+  ok(dcA.taxes.find(t=>t.name==="Deed recordation tax").amt===3625&&dcB.taxes.find(t=>t.name==="Deed recordation tax").amt===7250&&dcA.taxes.every((t,k)=>t.payer===dcB.taxes[k].payer)&&dcA.taxes.find(t=>t.name==="Deed recordation tax").payer==="buyer"&&dcA.taxes.find(t=>t.name==="Deed transfer tax").payer==="seller"&&!dcA.taxes.find(t=>t.name==="Deed transfer tax").fthb,"FTHB DC: reduced recordation rate kept ($7,250 -> $3,625), buyer still pays recordation and seller transfer, no label on the transfer tax");
+  for(const[st,co]of[["VA","Fairfax"],["FL","Miami-Dade"]]){const a=X.calc(R,inp({state:st,county:co,price:500000,loan:400000,fthb:true})),b=X.calc(R,inp({state:st,county:co,price:500000,loan:400000,fthb:false}));ok(JSON.stringify(a.lines)===JSON.stringify(b.lines)&&a.taxes.every(t=>!t.fthb),`FTHB ${st}: ticking first-time buyer changes nothing (amounts, payers, labels)`)}}
  ok(!d0.taxes.some(t=>t.payer==="buyer")&&d0.taxes.every(t=>t.adjustable),"TS result lists each tax line with its payer; MD deed taxes are adjustable");
  // each choice, on each tax, for each state
  for(const[st,co,price,loan]of[["MD","Montgomery",450000,360000],["MD","Baltimore City",300000,240000],["DC","District of Columbia",450000,360000],["VA","Fairfax",450000,360000],["FL","Orange",450000,360000]]){
@@ -239,7 +249,7 @@ ok(near(SN({concession:{mode:"flat",val:3000}}).totals.pro,3000)&&SN({other:Arra
 }
 // toggles
 ok(SN({bpst:true,state:"FL",county:"Orange",price:400000,ownerPays:false}).totals.gov===0,"SN: buyer-pays-seller's-deed-tax toggle removes FL deed stamps from the seller");
-ok(SN({fthb:true,price:400000}).gov.some(g=>/State transfer/.test(g.item)&&near(g.amt,1000))&&near(SN({price:400000}).gov.find(g=>/State transfer/.test(g.item)).amt,1000),"SN MD state transfer at $400k = $1,000 (seller share)");
+ok(SN({fthb:true,price:400000}).gov.some(g=>/State transfer/.test(g.item)&&near(g.amt,500))&&near(SN({price:400000}).gov.find(g=>/State transfer/.test(g.item)).amt,1000),"SN MD state transfer at $400k: seller share $1,000 (50/50 of $2,000); first-time buyer: $500 (50/50 of the reduced $1,000), not all on the seller");
 ok(!SN({state:"VA",county:"Fairfax",ownerPays:true}).warnings.some(w=>/premium|lender/.test(w))&&!snVA.warnings.some(w=>/premium|lender/.test(w))&&!snMD.warnings.some(w=>/premium/.test(w)),"SN VA + MD (premiums loaded): no premium warnings, even when the seller pays the owner's policy");
 ok(SN({fees:[]}).totals.title===0&&near(SN({fees:[{name:"Custom",payer:"Seller",amt:100,sec:"C"}]}).totals.title,100),"SN fee list is editable (custom seller fee, none)");
 // live loader: fallback + success with mocked fetch
@@ -360,6 +370,14 @@ ok(SN({fees:[]}).totals.title===0&&near(SN({fees:[{name:"Custom",payer:"Seller",
   clickPay("taxPay","County recordation tax","buyer");const snap=d.window.CLA_QUOTE_API.snapshot();
   ok(snap.inputs.taxPayers&&snap.inputs.taxPayers["County recordation tax"]==="buyer"&&snap.inputs.taxPayers["County transfer tax"]==="split"&&!snap.inputs.taxPayers["State transfer tax"],"DOM tax payer: saved-quote snapshot keeps the lines the person chose (and not the untouched ones)");
   ok(snap.results.lines.some(l=>/County recordation tax \(paid by buyer\)/.test(l.item)&&l.s===0&&l.b>0)&&snap.results.lines.some(l=>/County transfer tax \(split 50\/50\)/.test(l.item)&&l.b>0&&l.s>0)&&/County transfer tax \(split 50\/50\)/.test(snap.results.text),"DOM tax payer: snapshot lines and Copy quote text carry the labels and both columns");
+  // first-time homebuyer box: lowers the state transfer rate where the sheet says so, but never changes who pays
+  clickPay("taxPay","County recordation tax","split");const fb0=w.getElementById("tB").textContent,fs0=w.getElementById("tS").textContent,fa0=w.getElementById("tA").textContent;
+  w.getElementById("fthb").click();
+  ok(w.getElementById("fthb").checked&&["State transfer tax","County recordation tax","County transfer tax"].every(n=>pressed("taxPay",n)==="split")&&/default: split 50\/50/.test(w.getElementById("taxPay").textContent)&&!/default: seller/.test(w.getElementById("taxPay").textContent),"DOM FTHB: ticking first-time homebuyer leaves every MD tax on Split (the default payer is not changed)");
+  ok(/State transfer tax \(first-time buyer\) \(split 50\/50\)/.test(led())&&/County transfer tax \(split 50\/50\)/.test(led())&&!/County transfer tax \(first-time buyer\)/.test(led())&&w.getElementById("tA").textContent!==fa0,"DOM FTHB: the reduced state transfer tax is labelled first-time buyer; the all-parties total drops only by the sheet's rate cut");
+  ok(!!w.querySelector("#taxPay .tpf")&&/fee sheet lists the seller/.test(w.querySelector("#taxPay .tpf").textContent)&&/does not change who pays/.test(w.querySelector("#taxPay .tpf").textContent)&&!/\$/.test(w.querySelector("#taxPay .tpf").textContent),"DOM FTHB: a short note explains the sheet's seller note without changing the default (no amounts in the note)");
+  clickPay("taxPay","County transfer tax","seller");ok(pressed("taxPay","County transfer tax")==="seller"&&/County transfer tax \(paid by seller\)/.test(led()),"DOM FTHB: the person can still choose Seller for a line");clickPay("taxPay","County transfer tax","split");
+  w.getElementById("fthb").click();ok(!w.getElementById("fthb").checked&&!w.querySelector("#taxPay .tpf")&&w.getElementById("tB").textContent===fb0&&w.getElementById("tS").textContent===fs0&&w.getElementById("tA").textContent===fa0,"DOM FTHB: unticking restores the exact totals and removes the note");
   ok(Math.round((snap.results.totals.buyer+snap.results.totals.seller)*100)===Math.round(snap.results.totals.total*100),"DOM tax payer: snapshot totals add up");
   setv("county","Frederick");ok(!w.getElementById("county").value||pressed("taxPay","County recordation tax")==="split","DOM tax payer: choices reset when the county changes");
   setv("zip","20850");

@@ -216,6 +216,13 @@ The sender sees what happened to their note, inside the portal. **No e-mail or m
 - **Tests:** `10_access_rules.sql` (delete section), `95_upgrade_from_17.sql` (upgrade check 9), `test-portal.js` (mock + supabase adapter + admin screen + filters). Screens: `portal/tools/screenshots_delete_user.py`.
 - **Live:** migration 18 applied, the `delete-user` function deployed (`verify_jwt` on) and the site published on 2026-10-27 (commit `4fe0050`). Before the migration the Delete button errors harmlessly (the function is missing).
 
+## First-time homebuyer no longer moves the payer (local branch `fthb-split-default`; calculator only, no database change)
+- **Before:** ticking First-time homebuyer used the sheet's `FTHB Paid By` column (Seller on every Maryland row), so all three Maryland taxes went 100% to the seller, and every tax line (any state) was labelled "(first-time buyer)".
+- **Now:** the default payer is always the sheet's `Paid By` (Maryland: Split) whether the box is ticked or not. `FTHB Paid By` is only reported (`taxes[].fthbPayer`) and shown as a one-line note under the Who pays buttons ("the fee sheet lists the seller as the usual payer ... does not change who pays here"). The amount logic from the sheet is untouched: `FTHB Rate` (MD state transfer 0.25%; Cecil county transfer 0.25%), `FTHB Exempt ($)` (Caroline county transfer, extra $75,000), `FTHB Max Price` and DC's reduced recordation rate still apply.
+- **Label:** "(first-time buyer)" now appears only on a tax whose amount the first-time rate / exemption really changed. VA and FL are unaffected by the box; DC's transfer tax is not labelled.
+- **Seller net sheet:** the checkbox hint no longer says it can shift the tax to the seller.
+- **Tests:** `test.js` (FTHB block in the tax-payer section, the MD/DC/VA/FL cases and the page test). Numbers before/after: `/workspace/fthb-fix-test/`.
+
 ## Guided tour (migration 14)
 
 A short click-through for NEW people, in John's voice ("Here's where you'll..."), 6-7 steps per role. It starts by itself the first time someone opens their dashboard after finishing their profile, and anyone can replay it from **Take the tour** in the header (it sits next to the Feedback button for staff: Feedback, Take the tour, profile, Sign out).
@@ -242,12 +249,12 @@ The same engine also runs on the public calculator, for **anyone** (guest or sig
 - **Tabs:** the Seller Net Sheet step opens that tab and puts the person's own tab back afterwards (also if they skip or press Esc). The tour never clicks Purchase / Cash / Refinance, because switching those rebuilds the documents and endorsements and would discard edits; it only points at them. No fee or number is changed.
 - **The chip:** shown only to someone who has not dismissed it. The x, starting the tour from the chip or from the header link all store `cla_calc_tour_chip = "1"` in `localStorage`, so it never comes back. If browser storage is blocked the chip is not shown at all. It does not print.
 - **Phones:** the box is a bottom sheet (also for the centred welcome note); on desktop a tall target (the breakdown) gets the box beside it instead of on top of it.
-- **Cache-bust:** `?v=20261027m` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
+- **Cache-bust:** `?v=20261027n` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
 - **Tests:** the "calculator tour" block in `portal/test-portal.js` (link, step counts, targets, skipping, tab restore, chip persistence, phone sheet, versions). Screenshots: `portal/tools/screenshots_calculator_tour.py`.
 
-## Who pays each transfer / recordation tax (local branch `tax-split`; calculator only, no database change)
+## Who pays each transfer / recordation tax (live since 2026-10-28; calculator only, no database change)
 - Each deed-based tax line (basis = sale price: MD state/county transfer and county recordation, DC, VA grantor/grantee and regional, FL deed stamps) has a Seller / Split / Buyer control in the calculator inputs (quote tab and seller net sheet). Taxes on the loan (note stamps, mortgage or DOT recordation, intangible) are not adjustable; a refinance has no control.
-- **Defaults are unchanged:** every line starts with the payer in the `Transfer_Taxes` tab (MD non-first-time-buyer: Split; MD first-time buyer: Seller; DC recordation: Buyer, transfer: Seller; VA and FL as in the sheet). The old "Buyer pays seller's transfer / deed tax" box still works; a per-line choice beats it.
+- **Defaults are unchanged:** every line starts with the payer in the `Transfer_Taxes` tab (MD: Split, with or without the First-time homebuyer box; DC recordation: Buyer, transfer: Seller; VA and FL as in the sheet). The old "Buyer pays seller's transfer / deed tax" box still works; a per-line choice beats it.
 - **Split** = half each in whole cents (an odd cent goes to the seller), so buyer + seller always equals the tax. Lines are labelled "(split 50/50)", "(paid by buyer)" or "(paid by seller)".
 - **Saved quotes:** the lines the person clicked are stored in the snapshot's `inputs.taxPayers` (`{ "County transfer tax": "split" }`), next to the lines and the copied text, which carry the labels. No migration is needed (`inputs` is free-form JSON). Choices reset when the state or county changes.
 - Tests: "TS", "SN" and "DOM tax payer" checks in `test.js`; "tax payer choice (mock)" in `portal/test-portal.js`. Picture: `portal/help/client/calc-tax-payer.png`.
@@ -304,7 +311,7 @@ Must be written: (a) an **API layer** (API Gateway + Lambda), because browsers c
 
 ## Rep pricing tables: settlement fee only (migration 16, applied live)
 Named **pricing tables** (e.g. "Marvin's Pricing") hold lower **settlement fees**, as **fee sets** that cover any selection of states (MD+VA, FL, all states...) (`Settlement Fee to CLA Title & Escrow` only; premiums and recording fees can never change); admins and super admins add a rep's or an individual client's **email** to a table on the admin page's **Rep pricing** tab. One email, one table.
-Design, the one rule for whose fee a person gets (own email's table first, else the assigned rep's table, else standard), tests, and how to apply: see [`REP-PRICING.md`](REP-PRICING.md). Cache-bust `?v=20261027m`.
+Design, the one rule for whose fee a person gets (own email's table first, else the assigned rep's table, else standard), tests, and how to apply: see [`REP-PRICING.md`](REP-PRICING.md). Cache-bust `?v=20261027n`.
 
 ## In-portal Help: client guide and staff manual (local branch `help-manual`, not pushed)
 Two pages, both **generated** by `node portal/tools/build-help.js` (do not edit the HTML by hand):
@@ -313,4 +320,4 @@ Two pages, both **generated** by `node portal/tools/build-help.js` (do not edit 
 - **Header Help link** (`CLA.helpHref` in `portal-ui.js`; the calculator header link in `portal-hook.js` uses the same function): clients go to `help.html`, reps, admins and super admins to `staff-help.html`. Signed-in users only.
 - **Guards:** both pages use `CLA.boot(null)` (signed-out visitors go to `login.html?next=...`) and stay hidden until then. `staff-help.html` sends a client to `help.html`. **Be honest about what that is:** static pages can be fetched by anyone who knows the URL; the guard decides what a signed-in person sees on screen, it is not access control. Neither page has a key, a secret or customer data (the pictures use made-up sample people).
 - **Pictures:** `python3 portal/tools/screenshots_help.py` (serves this repo on a local port with the mock config forced, hides the demo banner), then `python3 portal/tools/optimize_help_images.py`, which sorts them into `help/client/` (used by the client guide) and `help/staff/` (everything else the staff manual uses) and removes anything unused.
-- Cache-bust letter: `20261027m` (see above).
+- Cache-bust letter: `20261027n` (see above).

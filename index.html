@@ -4,8 +4,8 @@
 <meta name="theme-color" content="#000000">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="zip-county.js?v=20261027m"></script>
-<script src="fee-snapshot.js?v=20261027m"></script>
+<script src="zip-county.js?v=20261027n"></script>
+<script src="fee-snapshot.js?v=20261027n"></script>
 <style>
 :root{--g:#8dc63f;--gd:#6fa52a;--gdd:#4d7a17;--ink:#111;--mut:#5b6272;--line:#e3e8da;--bg:#f4f7ef;--field:#d5dbca}
 *{box-sizing:border-box}
@@ -68,7 +68,7 @@ input[type=checkbox]{width:18px;height:18px;margin:0;accent-color:var(--gd);flex
 .chk .sum{font-size:12.5px}
 .taxpay{margin:2px 0 12px;padding:10px 12px;border:1px solid #e3e7da;border-radius:10px;background:#fafbf7}.taxpay .tph{font-size:12.5px;font-weight:600;color:#2c3128;margin-bottom:6px}
 .taxpay .tpr{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 10px;padding:6px 0;border-top:1px solid #eef0e7}.taxpay .tpr:first-of-type{border-top:0}
-.taxpay .tpn{flex:1 1 150px;font-size:13px;color:#2c3128}.taxpay .tpn .sum{display:block}
+.taxpay .tpf{margin-top:8px;padding-top:8px;border-top:1px solid #eef0e7;font-size:12.5px}.taxpay .tpn{flex:1 1 150px;font-size:13px;color:#2c3128}.taxpay .tpn .sum{display:block}
 .taxpay .seg{display:inline-flex;border:1px solid #c9d1bb;border-radius:8px;overflow:hidden}.taxpay .seg button{appearance:none;border:0;background:#fff;color:#2c3128;font:inherit;font-size:12.5px;padding:5px 10px;cursor:pointer;border-left:1px solid #c9d1bb}.taxpay .seg button:first-child{border-left:0}
 .taxpay .seg button[aria-pressed=true]{background:#8dc63f;color:#17210a;font-weight:700}.taxpay .seg button:focus-visible{outline:2px solid #3b6b00;outline-offset:-2px}
 #ends .chk{padding:8px 0 8px 30px;margin:0;border-bottom:1px solid #f0f2ea}#ends .chk>input{top:9px}
@@ -292,7 +292,7 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 </section>
 <section class="card s5"><h2>Title &amp; settlement</h2>
 <label class="chk"><input type="checkbox" id="s_own"><span>Seller pays the owner's title policy <span class="sum" id="s_ownNote"></span></span></label>
-<label class="chk"><input type="checkbox" id="s_fthb"><span>Buyer is a first-time homebuyer <span class="sum">(can shift transfer tax to the seller)</span></span></label>
+<label class="chk"><input type="checkbox" id="s_fthb"><span>Buyer is a first-time homebuyer <span class="sum">(may lower a transfer tax rate; who pays does not change)</span></span></label>
 <label class="chk"><input type="checkbox" id="s_bpst"><span>Buyer pays seller's transfer / deed tax <span class="sum">(contract term; e.g. FL deed stamps)</span></span></label>
 <div id="s_taxPay" class="taxpay" hidden></div>
 <details><summary>CLA seller fees</summary><div id="s_fees"></div></details>
@@ -362,8 +362,12 @@ function taxAmount(t,i){const base=basisOf(t.Basis,i);if(!(base>0))return null;c
  const exempt=(i.occ?num(t["Owner-Occ Exempt ($)"])||0:0)+(fthb?num(t["FTHB Exempt ($)"])||0:0);
  let taxable;if(String(t["Bracket Method"]).toLowerCase().startsWith("marg")){taxable=Math.max(0,Math.min(hi,base)-Math.max(from,exempt))}
  else{if(base<from-1e-9||base>hi+1e-9)return null;taxable=Math.max(0,base-exempt)}
- const amt=r2(units(taxable,t["Rate Unit"])*rate);let payer=String(fthb&&String(t["FTHB Paid By"]).trim()?t["FTHB Paid By"]:t["Paid By"]).trim().toLowerCase();
- return{amt,payer,fthb}}
+ const amt=r2(units(taxable,t["Rate Unit"])*rate);
+ // WHO pays never depends on the First-time homebuyer box: the default is always the sheet's "Paid By" (Maryland: Split 50/50). The sheet's "FTHB Paid By" (Seller in Maryland) is only reported as a note (fthbPayer), never applied.
+ const payer=String(t["Paid By"]).trim().toLowerCase(),fp=fthb?String(t["FTHB Paid By"]||"").trim().toLowerCase():"";
+ // fthb = the first-time-buyer RATE or EXEMPTION really changed this tax's amount (so the label "(first-time buyer)" only appears where the numbers differ)
+ const changes=fthb&&((num(t["FTHB Rate"])!=null&&num(t["FTHB Rate"])!==(num(t.Rate)||0))||(num(t["FTHB Exempt ($)"])||0)>0);
+ return{amt,payer,fthb:!!changes,fthbPayer:fp&&fp!==payer?fp:""}}
 
 // ---------- title premiums ----------
 function uwRows(rows,uw,st){const m=rows.filter(r=>eq(r.State,st)&&eq(r.Underwriter,uw));return m.length||st!=="FL"?m:rows.filter(r=>eq(r.State,st))} // FL promulgated: any underwriter's rows
@@ -420,7 +424,7 @@ function calc(R,i){const L=[],W=[],refi=i.type==="refi";
   add(SEC.E,`Recording fees – ${d}${n>1?" ×"+n:""}${big?" (10+ pages, not a principal residence)":""}`,...split(payer,amt*n))}
  // transfer and recordation taxes
  const taxes=pick(R.Transfer_Taxes,i.state,i.county,i.type,r=>r["Tax Name"]+"|"+r.Transaction);let anyTax=false;const agg={};
- for(const t of taxes){const x=taxAmount(t,i);if(!x)continue;anyTax=true;const k=t["Tax Name"],adj=/^sale/i.test(String(t.Basis||"").trim());const a=agg[k]=agg[k]||{amt:0,payer:x.payer,fthb:x.fthb,adj:true};a.amt+=x.amt;a.adj=a.adj&&adj}
+ for(const t of taxes){const x=taxAmount(t,i);if(!x)continue;anyTax=true;const k=t["Tax Name"],adj=/^sale/i.test(String(t.Basis||"").trim());const a=agg[k]=agg[k]||{amt:0,payer:x.payer,fthb:false,fthbPayer:"",adj:true};a.amt+=x.amt;a.fthb=a.fthb||x.fthb;a.fthbPayer=a.fthbPayer||x.fthbPayer;a.adj=a.adj&&adj}
  const TX=[];
  for(const[k,v]of Object.entries(agg)){const def=v.payer,want=v.adj&&!refi&&i.taxPayers?String(i.taxPayers[k]||"").toLowerCase():"",ov=TAX_PAYERS.includes(want)?want:"";
   let eff=def,tag="";
@@ -429,7 +433,7 @@ function calc(R,i){const L=[],W=[],refi=i.type==="refi";
   if(eff==="split"&&!refi)tag=" (split 50/50)";
   const label=k+(v.fthb?" (first-time buyer)":"")+tag;
   add(SEC.E,label,...split(eff,v.amt));
-  TX.push({name:k,label,amt:r2(v.amt),def,payer:eff,adjustable:v.adj&&!refi,fthb:v.fthb})}
+  TX.push({name:k,label,amt:r2(v.amt),def,payer:eff,adjustable:v.adj&&!refi,fthb:v.fthb,fthbPayer:v.fthbPayer})}
  if(!anyTax&&!refi&&i.price>0)W.push(`No transfer/recordation taxes found for ${i.county||"(county)"}, ${i.state}.`);
  const order=[SEC.B,SEC.C,SEC.E,SEC.H];L.sort((a,b)=>order.indexOf(a.sec)-order.indexOf(b.sec));
  const B=r2(L.reduce((a,x)=>a+x.b,0)),S=r2(L.reduce((a,x)=>a+x.s,0));return{lines:L,warnings:W,buyer:B,seller:S,total:r2(B+S),premiums:P,taxes:TX}}
@@ -533,7 +537,7 @@ function inputs(){return{type,state:$("state").value,county:$("county").value,uw
 // Who pays each transfer / recordation tax: Seller, Split 50/50 or Buyer. A choice the person clicks is kept by tax name (st.pay) and saved with the quote; untouched lines follow the default.
 const PAYNAME={seller:"seller",split:"split 50/50",buyer:"buyer"};
 function renderTaxPay(el,taxes,st,again,bl){const list=(taxes||[]).filter(t=>t.adjustable);el.hidden=!list.length;if(!list.length){el.innerHTML="";return}
- el.innerHTML='<div class="tph">Who pays each transfer / recordation tax</div>'+list.map(t=>`<div class="tpr"><span class="tpn">${esc(t.name)}<span class="sum">${fmt(t.amt)} · default: ${PAYNAME[t.def]||t.def}</span></span><span class="seg" role="group" aria-label="Who pays ${esc(t.name)}">${TAX_PAYERS.map(v=>`<button type="button" data-tax="${esc(t.name)}" data-v="${v}" aria-pressed="${t.payer===v}">${v==="seller"?"Seller":v==="buyer"?bl:"Split"}</button>`).join("")}</span></div>`).join("");
+ el.innerHTML='<div class="tph">Who pays each transfer / recordation tax</div>'+list.map(t=>`<div class="tpr"><span class="tpn">${esc(t.name)}<span class="sum">${fmt(t.amt)} · default: ${PAYNAME[t.def]||t.def}</span></span><span class="seg" role="group" aria-label="Who pays ${esc(t.name)}">${TAX_PAYERS.map(v=>`<button type="button" data-tax="${esc(t.name)}" data-v="${v}" aria-pressed="${t.payer===v}">${v==="seller"?"Seller":v==="buyer"?bl:"Split"}</button>`).join("")}</span></div>`).join("")+(()=>{const n=list.filter(t=>t.fthbPayer);return n.length?`<div class="tpf sum">First-time buyer: the fee sheet lists the ${esc(PAYNAME[n[0].fthbPayer]||n[0].fthbPayer)} as the usual payer of ${n.length>1?"these taxes":"this tax"}. Ticking the box does not change who pays here (still the default shown); choose ${esc(n[0].fthbPayer==="seller"?"Seller":n[0].fthbPayer==="buyer"?bl:"Split")} above if your contract says so.</div>`:""})();
  el.onclick=e=>{const b=e.target.closest("button[data-tax]");if(!b)return;const k=b.dataset.tax,t=list.find(x=>x.name===k);if(!t)return;
   st.pay[k]=b.dataset.v;again();const nb=[...el.querySelectorAll("button[data-tax]")].find(x=>x.dataset.tax===k&&x.dataset.v===b.dataset.v);if(nb)nb.focus()}}
 // the per-tax choices belong to one county: they reset when the state or county changes
@@ -648,7 +652,7 @@ load(SNAP,"Built-in snapshot","snapshot");$("status").textContent="Loading fees 
 // Guided tour: "Take the tour" (header) and a small first-visit chip. Works for everyone, signed in or not. The engine is portal/js/tour.js + portal/tour.css,
 // downloaded only when someone starts the tour. The chip shows once; dismissing it (x), starting the tour, or finishing it hides it for good (localStorage).
 (function(){
- var V="20261027m",KEY="cla_calc_tour_chip",link=document.getElementById("claCalcTourLink"),chip=document.getElementById("claTourChip"),loading=null;
+ var V="20261027n",KEY="cla_calc_tour_chip",link=document.getElementById("claCalcTourLink"),chip=document.getElementById("claTourChip"),loading=null;
  function seen(){try{return window.localStorage.getItem(KEY)==="1"}catch(e){return true}} // no storage: never show the chip (it could not remember "no thanks")
  function dismiss(){try{window.localStorage.setItem(KEY,"1")}catch(e){}if(chip)chip.hidden=true}
  function add(tag,attrs){return new Promise(function(res){var e=document.createElement(tag);for(var k in attrs)e[k]=attrs[k];e.onload=e.onerror=function(){res()};document.head.appendChild(e)})}
@@ -662,4 +666,4 @@ load(SNAP,"Built-in snapshot","snapshot");$("status").textContent="Loading fees 
   document.getElementById("claTourChipX").onclick=function(){dismiss();if(link)link.focus()}}
 })();
 </script>
-<script src="portal/js/portal-hook.js?v=20261027m" defer></script></body></html>
+<script src="portal/js/portal-hook.js?v=20261027n" defer></script></body></html>
