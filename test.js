@@ -406,6 +406,10 @@ ok(SN({fees:[]}).totals.title===0&&near(SN({fees:[{name:"Custom",payer:"Seller",
   w.querySelector("[data-t=refi]").click();ok(w.getElementById("assessWrap").hidden&&!d.window.CLA_QUOTE_API.snapshot().inputs.assessed,"DOM assessed value: hidden and ignored on a refinance");w.querySelector("[data-t=purchase]").click();
   setv("assessed","");ok(w.getElementById("tA").textContent===vaTot,"DOM assessed value: clearing it goes back to the price");
   setv("state","MD");setv("zip","20850");ok(w.getElementById("county").value==="Montgomery","DOM back to MD Montgomery");
+  // Florida: the first-time homebuyer box is hidden (no Florida program) and a ticked box is ignored; it comes back for MD
+  {const fb=w.getElementById("fthb");fb.checked=true;fb.dispatchEvent(ev("change"));setv("state","FL");ok(w.getElementById("fthbWrap").hidden&&d.window.CLA_QUOTE_API.snapshot().inputs.fthb===false,"DOM FL: first-time homebuyer box hidden and ignored");
+   setv("state","MD");setv("zip","20850");ok(!w.getElementById("fthbWrap").hidden&&d.window.CLA_QUOTE_API.snapshot().inputs.fthb===true,"DOM FL -> MD: the box shows again with its tick");fb.checked=false;fb.dispatchEvent(ev("change"));
+   setv("s_state","FL");ok(w.getElementById("s_fthbWrap").hidden,"DOM seller net FL: first-time homebuyer box hidden");setv("s_state","MD");ok(!w.getElementById("s_fthbWrap").hidden,"DOM seller net MD: box shown");}
   ok(Math.round((snap.results.totals.buyer+snap.results.totals.seller)*100)===Math.round(snap.results.totals.total*100),"DOM tax payer: snapshot totals add up");
   setv("county","Frederick");ok(!w.getElementById("county").value||pressed("taxPay","County recordation tax")==="split","DOM tax payer: choices reset when the county changes");
   setv("zip","20850");
