@@ -9,7 +9,7 @@
 const fs = require("fs"), path = require("path");
 const staff = require("./help-content.js"), client = require("./client-content.js");
 const ROOT = path.join(__dirname, ".."), CDIR = path.join(ROOT, "help", "client"), SDIR = path.join(ROOT, "help", "staff");
-const V = "20261029a", UPDATED = "Oct 27, 2026";
+const V = "20261029b", UPDATED = "Oct 27, 2026";
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const inline = (s) => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>");
 const AUD = { E: "Everyone", R: "Reps", A: "Admins" };

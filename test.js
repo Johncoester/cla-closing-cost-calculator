@@ -115,7 +115,8 @@ const q6=Q({state:"VA",county:"Fairfax",price:500000,loan:400000});
 expect("Q6",q6,[...CLA_BUYER(35),[/Recording fees – Deed$/,"b",50],[/Recording fees – Deed of Trust/,"b",63],[/State grantee/,"b",1250],[/Local grantee/,"b",417],[/State recordation tax \(deed of trust\)/,"b",1000],[/Local recordation tax \(deed of trust\)/,"b",333],[/Grantor tax/,"s",500],[/congestion|WMATA/,"s",1000],...CLA_SELLER]);
 // Q7 FL Orange purchase $400k/$320k
 const q7=Q({state:"FL",county:"Orange",price:400000,loan:320000});
-expect("Q7",q7,[[/ALTA 8\.1/,"b",25],[/Lender's Title/,"b",1675],[/Notary/,"b",200],[/Qualia/,"b",59],[/Settlement Fee/,"b",1100],[/Title Search/,"b",200],[/Recording fees – Deed$/,"b",27],[/Recording fees – Deed of Trust/,"b",257],[/Doc stamps on note/,"b",1120],[/Intangible/,"b",640],[/Doc stamps on deed/,"s",2800],[/Notary/,"s",200],[/Qualia/,"s",59],[/Settlement Fee/,"s",950]]);
+expect("Q7",q7,[[/ALTA 8\.1/,"b",25],[/Lender's Title/,"b",1675],[/Notary/,"b",200],[/Qualia/,"b",59],[/Settlement Fee/,"b",1100],[/Title Search/,"s",200],[/Recording fees – Deed$/,"b",27],[/Recording fees – Deed of Trust/,"b",257],[/Doc stamps on note/,"b",1120],[/Intangible/,"b",640],[/Doc stamps on deed/,"s",2800],[/Notary/,"s",200],[/Qualia/,"s",59],[/Settlement Fee/,"s",950]]);
+// Q7 change 10/29: Lodestar puts the $200 title search on the buyer; Orange now defaults to AS IS contract 9(c)(i) "Seller chose title", where the seller pays it (John's round-2 spec)
 absent("Q7",q7,/CPL/);absent("Q7",q7,/Title Review/);
 ok(near(bs(q7,/ALTA 9/,"b"),210),"Q7: FL Form 9 = 10% × (owner's 2,075 + simultaneous 25) = 210 per 69O-186.005(9) (Lodestar 289 uses its 2,490 + 400)");
 ok(near(q7.premiums.owner,2075)&&near(q7.premiums.lenderActual,25),"Q7: FL promulgated owner's 2,075 / simultaneous 25 (Lodestar 2,490 / 400 not copied)");
@@ -156,7 +157,7 @@ lode("SN VA Fairfax $500k",snVA,[25000,1500,1159,27659,472341]);
 lode("SN FL Orange $400k (owner's policy not seller-paid)",snFLo,[20000,2800,1209,24009,375991],0.01);
 // FL: our local custom for Orange is seller-paid owner's policy ($2,075 promulgated), which Lodestar's unchecked box omits
 ok(X.ownerPayDefault(R,"FL","Orange")==="Seller"&&X.ownerPayDefault(R,"MD","Frederick")==="Buyer"&&X.ownerPayDefault(R,"VA","Fairfax")==="Buyer","owner's policy local custom: FL Orange seller; MD Frederick, VA Fairfax buyer");
-ok(near(snFL.totals.title-snFLo.totals.title,2075)&&near(snFL.totalCosts,26084)&&near(snFL.net,373916)&&snFL.title.some(t=>/Owner's Title/.test(t.item)),"SN FL Orange default (local custom) adds seller-paid owner's policy $2,075 → costs 26,084, net 373,916");
+ok(near(snFL.totals.title-snFLo.totals.title,2275)&&near(snFL.totalCosts,26284)&&near(snFL.net,373716)&&snFL.title.some(t=>/Owner's Title/.test(t.item))&&snFL.title.some(t=>/Title Search and Abstract \(seller chose title\)/.test(t.item)&&t.amt===200),"SN FL Orange default (local custom = Seller chose title) adds the seller-paid owner's policy $2,075 and title search $200 → costs 26,284, net 373,716");
 ok(near(snFLo.title.find(t=>/Settlement/.test(t.item)).amt,950)&&snFLo.gov.length===1&&/Doc stamps on deed/.test(snFLo.gov[0].item),"SN FL gov't = deed stamps only; title = notary 200 + Qualia 59 + settlement 950");
 ok(near(snMD.gov.reduce((a,x)=>a+x.amt,0),4750)&&snMD.gov.length===2,"SN MD Frederick gov't lines = state transfer 1,250 + county recordation 3,500");
 // seller costs equal the quote's seller column for the same inputs (same X.calc)
@@ -265,6 +266,26 @@ ok(near(SN({concession:{mode:"flat",val:3000}}).totals.pro,3000)&&SN({other:Arra
  const dc=X.calc(R,inp({state:"DC",county:"District of Columbia",assessed:900000})),dc0=X.calc(R,inp({state:"DC",county:"District of Columbia"}));ok(JSON.stringify(dc.lines)===JSON.stringify(dc0.lines),"DC ignores an assessed value (DC taxes the consideration, 42-1103(a)(1)(A))");
  const dcf=X.calc(R,inp({state:"DC",county:"District of Columbia",price:450000,loan:360000,fthb:true,fees:[]}));ok(l(dcf,/Deed recordation/).b===3262.5&&l(dcf,/Deed recordation/).s===0&&l(dcf,/Deed transfer/).s===6525&&l(dcf,/Deed transfer/).b===0,"DC FTHB $450k: buyer recordation 0.725% = $3,262.50 (all to the buyer, 42-1103(e)); seller transfer $6,525 unchanged");
  const sv=SN({state:"VA",county:"Fairfax",price:450000,assessed:500000}),sv0=SN({state:"VA",county:"Fairfax",price:450000});ok(sv.gov.some(g=>/Grantor tax \(on assessed value\)/.test(g.item)&&g.amt===500)&&sv0.gov.some(g=>/^Grantor tax/.test(g.item)&&g.amt===450),"SN VA: the seller's grantor tax uses the assessed value when higher ($450 -> $500)");
+}
+// ---- Florida title options (Florida Realtors / Florida Bar AS IS contract 9(c)): owner's policy and title search follow the option ----
+{const fl=(co,o)=>X.calc(R,inp(Object.assign({state:"FL",county:co,price:400000,loan:320000,fees:dflt("FL","purchase"),ends:[],pres:"actual"},o))),own=r=>r.lines.find(l=>/Owner's Title Policy/.test(l.item)),ts=r=>r.lines.find(l=>/Title Search and Abstract/.test(l.item));
+ const bd=fl("Broward",{}),bs_=fl("Broward",{ownPay:"Seller"}),bb=fl("Broward",{ownPay:"Buyer"}),bm=fl("Broward",{ownPay:"MDB"});
+ ok(JSON.stringify(bd.lines)===JSON.stringify(bm.lines),"FL Broward local custom = Miami-Dade/Broward custom");
+ ok(own(bm).b===2075&&own(bm).s===0&&ts(bm).s===200&&ts(bm).b===0&&/Miami-Dade\/Broward custom: seller pays up to \$200\.00/.test(ts(bm).item),"FL Broward 9(c)(iii): buyer pays the owner's policy $2,075; seller pays the $200 title search");
+ ok(own(bs_).s===2075&&own(bs_).b===0&&ts(bs_).s===200&&/seller chose title/.test(ts(bs_).item),"FL Broward Seller chose title 9(c)(i): seller pays the owner's policy and the title search");
+ ok(own(bb).b===2075&&ts(bb).b===200&&ts(bb).s===0&&ts(bb).item==="Title – Title Search and Abstract","FL Broward Buyer chose title 9(c)(ii): buyer pays both");
+ const tot=r=>r.lines.reduce((a,l)=>a+l.b+l.s,0);ok(Math.abs(tot(bs_)-tot(bb))<0.005&&Math.abs(tot(bm)-tot(bb))<0.005,"FL title options only move costs between buyer and seller (total unchanged)");
+ const big=fl("Broward",{ownPay:"MDB",fees:dflt("FL","purchase").map(f=>/Title Search/.test(f.name)?Object.assign({},f,{amt:350}):f)});ok(ts(big).s===200&&ts(big).b===150,"FL 9(c)(iii): the seller's title search share is capped at $200 (an edited $350 search: seller $200, buyer $150)");
+ const md=fl("Miami-Dade",{}),or=fl("Orange",{}),co=fl("Collier",{}),sa=fl("Sarasota",{});
+ ok(own(md).b===2075&&ts(md).s===200,"FL Miami-Dade local custom = 9(c)(iii)");
+ ok(own(or).s===2075&&ts(or).s===200,"FL Orange local custom = Seller chose title");
+ ok(own(co).b===2075&&ts(co).b===200&&own(sa).b===2075&&ts(sa).b===200,"FL Collier / Sarasota local custom keeps the sheet's buyer-pays default = Buyer chose title (buyer pays the search too)");
+ const mdOld=X.calc(R,inp({ownPay:"Seller"})),mdNew=X.calc(R,inp({ownPay:"Seller"}));ok(JSON.stringify(mdOld.lines)===JSON.stringify(mdNew.lines)&&own(mdOld).s>0,"non-FL Seller / Buyer values unchanged");
+ const rf=X.calc(R,inp({type:"refi",state:"FL",county:"Broward",loan:320000,payoff:250000,ownPay:"Seller",fees:dflt("FL","refi")}));ok(rf.lines.filter(l=>/Title Search/.test(l.item)).every(l=>l.s===0&&!/chose|custom/.test(l.item)),"FL refi: title options ignored");
+ const snB=SN({state:"FL",county:"Broward",price:400000}),snBs=SN({state:"FL",county:"Broward",price:400000,ownerPays:true}),snO=SN({state:"FL",county:"Orange",price:400000,ownerPays:false});
+ ok(snB.title.some(t=>/Title Search.*Miami-Dade\/Broward/.test(t.item)&&t.amt===200)&&!snB.title.some(t=>/Owner's Title/.test(t.item)),"SN FL Broward default: seller pays the $200 title search, not the owner's policy");
+ ok(snBs.title.some(t=>/Owner's Title/.test(t.item))&&snBs.title.some(t=>/Title Search.*seller chose title/.test(t.item)),"SN FL Broward, seller pays owner's policy ticked = Seller chose title");
+ ok(!snO.title.some(t=>/Title Search/.test(t.item)),"SN FL Orange, box unticked = Buyer chose title: no title search for the seller");
 }
 // toggles
 ok(SN({bpst:true,state:"FL",county:"Orange",price:400000,ownerPays:false}).totals.gov===0,"SN: buyer-pays-seller's-deed-tax toggle removes FL deed stamps from the seller");
@@ -410,6 +431,12 @@ ok(SN({fees:[]}).totals.title===0&&near(SN({fees:[{name:"Custom",payer:"Seller",
   {const fb=w.getElementById("fthb");fb.checked=true;fb.dispatchEvent(ev("change"));setv("state","FL");ok(w.getElementById("fthbWrap").hidden&&d.window.CLA_QUOTE_API.snapshot().inputs.fthb===false,"DOM FL: first-time homebuyer box hidden and ignored");
    setv("state","MD");setv("zip","20850");ok(!w.getElementById("fthbWrap").hidden&&d.window.CLA_QUOTE_API.snapshot().inputs.fthb===true,"DOM FL -> MD: the box shows again with its tick");fb.checked=false;fb.dispatchEvent(ev("change"));
    setv("s_state","FL");ok(w.getElementById("s_fthbWrap").hidden,"DOM seller net FL: first-time homebuyer box hidden");setv("s_state","MD");ok(!w.getElementById("s_fthbWrap").hidden,"DOM seller net MD: box shown");}
+  // Florida: Owner's policy paid by becomes Who chose title with the three AS IS contract 9(c) options; back to Buyer / Seller elsewhere
+  {const op=w.getElementById("ownPay");setv("ownPay","Seller");setv("state","FL");setv("county","Broward");
+   ok([...op.options].map(o=>o.textContent).join("|")==="Local custom|Seller chose title|Buyer chose title|Miami-Dade/Broward custom"&&op.value==="Seller"&&w.getElementById("ownPayLbl").textContent==="Who chose title (Florida)","DOM FL: three title options, an old Seller value is kept as Seller chose title");
+   setv("ownPay","");ok(/Local custom in Broward: Miami-Dade\/Broward custom/.test(w.getElementById("ownPayHint").textContent)&&!w.getElementById("ownPayHint").hidden,"DOM FL Broward: local custom explained");
+   setv("ownPay","MDB");ok(d.window.CLA_QUOTE_API.snapshot().inputs.ownPay==="MDB"&&/Title Search and Abstract \(Miami-Dade\/Broward custom/.test(led()),"DOM FL: the option is saved in the quote inputs and moves the title search");ok(/Title: Miami-Dade\/Broward custom/.test(w.getElementById("summary").textContent)&&/Title: Miami-Dade\/Broward custom/.test(d.window.CLA_QUOTE_API.snapshot().results.text),"DOM FL: the summary and copied text name the title option");
+   setv("state","MD");setv("zip","20850");ok([...op.options].map(o=>o.textContent).join("|")==="Local custom|Buyer|Seller"&&op.value===""&&w.getElementById("ownPayHint").hidden&&w.getElementById("ownPayLbl").textContent==="Owner's policy paid by","DOM back to MD: Local custom / Buyer / Seller, MDB reset to local custom");}
   ok(Math.round((snap.results.totals.buyer+snap.results.totals.seller)*100)===Math.round(snap.results.totals.total*100),"DOM tax payer: snapshot totals add up");
   setv("county","Frederick");ok(!w.getElementById("county").value||pressed("taxPay","County recordation tax")==="split","DOM tax payer: choices reset when the county changes");
   setv("zip","20850");

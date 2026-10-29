@@ -223,6 +223,13 @@ The sender sees what happened to their note, inside the portal. **No e-mail or m
 - **Seller net sheet:** the checkbox hint no longer says it can shift the tax to the seller.
 - **Tests:** `test.js` (FTHB block in the tax-payer section, the MD/DC/VA/FL cases and the page test). Numbers before/after: `/workspace/fthb-fix-test/`.
 
+## Florida title options (local branch `fl-title-1029`; calculator only, no database or sheet change)
+- **What:** in Florida, "Owner's policy paid by" becomes **Who chose title** with the Florida Realtors / Florida Bar AS IS contract 9(c) options: Seller chose title (i), Buyer chose title (ii), Miami-Dade/Broward custom (iii). Values: `Seller`, `Buyer`, `MDB`, blank = local custom; old saved quotes keep their meaning.
+- **What moves:** the owner's policy (seller only under (i)) and the sheet row "Title Search and Abstract" ($200): seller under (i), buyer under (ii), seller up to $200 under (iii) (excess to the buyer). Lender's policy, endorsements and settlement fees are unchanged. No lien search / tax search row exists on the sheet; none added.
+- **Local custom:** Miami-Dade, Broward -> (iii); Collier, Sarasota (sheet Owner Policy Paid By = Buyer) -> (ii); all other counties -> (i). A note under the list explains the choice; the summary and copied text say "Title: ...".
+- **Seller net sheet:** the "Seller pays the owner's title policy" box stays; ticked = (i), unticked = (iii) in Miami-Dade / Broward, otherwise (ii). The title search row is added to the seller's costs when the seller pays it.
+- **Tests:** `test.js` (Florida title options block before the toggles section, DOM checks after the Florida FTHB checks; Q7 and SN FL Orange expectations moved: title search now seller-paid in Orange). Cache-bust 20261029b.
+
 ## Caroline Kim feedback 10/29 (local branch `caroline-1029`; calculator only, no database or sheet change)
 - **VA assessed value:** optional Assessed value field (VA purchase / cash and VA seller net sheet only). Deed-based taxes (state + local grantee recordation, grantor, regional congestion relief, WMATA) use max(price, assessed) per Va. Code 58.1-801(A), 58.1-802(A), 58.1-802.3, 58.1-802.4; those lines say "(on assessed value)". Deed-of-trust taxes stay on the loan. DC is not included (DC 42-1103(a)(1)(A) taxes the consideration). Stored in `inputs.assessed` of a saved quote, shown in the summary, copied text, PDF and the saved quote header.
 - **VA rounding:** per $100 or fraction (recordation, congestion / WMATA) and per $500 or fraction (grantor) were already in place; the odd cents came from the sheet's 0.0833 local rate, now applied as exactly one-third of the state rate (58.1-3800). Fairfax $450,000 / $360,000: state $1,125, local $375, DOT state $900, local $300.
@@ -256,7 +263,7 @@ The same engine also runs on the public calculator, for **anyone** (guest or sig
 - **Tabs:** the Seller Net Sheet step opens that tab and puts the person's own tab back afterwards (also if they skip or press Esc). The tour never clicks Purchase / Cash / Refinance, because switching those rebuilds the documents and endorsements and would discard edits; it only points at them. No fee or number is changed.
 - **The chip:** shown only to someone who has not dismissed it. The x, starting the tour from the chip or from the header link all store `cla_calc_tour_chip = "1"` in `localStorage`, so it never comes back. If browser storage is blocked the chip is not shown at all. It does not print.
 - **Phones:** the box is a bottom sheet (also for the centred welcome note); on desktop a tall target (the breakdown) gets the box beside it instead of on top of it.
-- **Cache-bust:** `?v=20261029a` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
+- **Cache-bust:** `?v=20261029b` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
 - **Tests:** the "calculator tour" block in `portal/test-portal.js` (link, step counts, targets, skipping, tab restore, chip persistence, phone sheet, versions). Screenshots: `portal/tools/screenshots_calculator_tour.py`.
 
 ## Who pays each transfer / recordation tax (live since 2026-10-28; calculator only, no database change)
@@ -318,7 +325,7 @@ Must be written: (a) an **API layer** (API Gateway + Lambda), because browsers c
 
 ## Rep pricing tables: settlement fee only (migration 16, applied live)
 Named **pricing tables** (e.g. "Marvin's Pricing") hold lower **settlement fees**, as **fee sets** that cover any selection of states (MD+VA, FL, all states...) (`Settlement Fee to CLA Title & Escrow` only; premiums and recording fees can never change); admins and super admins add a rep's or an individual client's **email** to a table on the admin page's **Rep pricing** tab. One email, one table.
-Design, the one rule for whose fee a person gets (own email's table first, else the assigned rep's table, else standard), tests, and how to apply: see [`REP-PRICING.md`](REP-PRICING.md). Cache-bust `?v=20261029a`.
+Design, the one rule for whose fee a person gets (own email's table first, else the assigned rep's table, else standard), tests, and how to apply: see [`REP-PRICING.md`](REP-PRICING.md). Cache-bust `?v=20261029b`.
 
 ## In-portal Help: client guide and staff manual (local branch `help-manual`, not pushed)
 Two pages, both **generated** by `node portal/tools/build-help.js` (do not edit the HTML by hand):
@@ -327,4 +334,4 @@ Two pages, both **generated** by `node portal/tools/build-help.js` (do not edit 
 - **Header Help link** (`CLA.helpHref` in `portal-ui.js`; the calculator header link in `portal-hook.js` uses the same function): clients go to `help.html`, reps, admins and super admins to `staff-help.html`. Signed-in users only.
 - **Guards:** both pages use `CLA.boot(null)` (signed-out visitors go to `login.html?next=...`) and stay hidden until then. `staff-help.html` sends a client to `help.html`. **Be honest about what that is:** static pages can be fetched by anyone who knows the URL; the guard decides what a signed-in person sees on screen, it is not access control. Neither page has a key, a secret or customer data (the pictures use made-up sample people).
 - **Pictures:** `python3 portal/tools/screenshots_help.py` (serves this repo on a local port with the mock config forced, hides the demo banner), then `python3 portal/tools/optimize_help_images.py`, which sorts them into `help/client/` (used by the client guide) and `help/staff/` (everything else the staff manual uses) and removes anything unused.
-- Cache-bust letter: `20261029a` (see above).
+- Cache-bust letter: `20261029b` (see above).
