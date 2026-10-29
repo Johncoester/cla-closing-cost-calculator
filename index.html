@@ -4,8 +4,8 @@
 <meta name="theme-color" content="#000000">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="zip-county.js?v=20261027n"></script>
-<script src="fee-snapshot.js?v=20261027n"></script>
+<script src="zip-county.js?v=20261029a"></script>
+<script src="fee-snapshot.js?v=20261029a"></script>
 <style>
 :root{--g:#8dc63f;--gd:#6fa52a;--gdd:#4d7a17;--ink:#111;--mut:#5b6272;--line:#e3e8da;--bg:#f4f7ef;--field:#d5dbca}
 *{box-sizing:border-box}
@@ -226,6 +226,7 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 <div class="row" data-tour="k-amounts"><div id="priceWrap"><label for="price">Sale price</label><div class="money"><input type="number" id="price" value="450000" inputmode="decimal"></div></div>
 <div id="payoffWrap" hidden><label for="payoff">Payoff (existing loan)</label><div class="money"><input type="number" id="payoff" value="300000" inputmode="decimal"></div></div>
 <div id="loanWrap"><label for="loan">Loan amount</label><div class="money"><input type="number" id="loan" value="360000" inputmode="decimal"></div></div></div>
+<div class="row one" id="assessWrap" hidden><div><label for="assessed">Assessed value <span class="sum">(optional)</span></label><div class="money"><input type="number" id="assessed" placeholder="Same as price" inputmode="decimal" aria-describedby="assessHint"></div><div class="fh" id="assessHint">Virginia deed taxes use the sale price or the assessed value, whichever is higher.</div></div></div>
 <div class="row one" data-tour="k-policy"><div id="ownWrap"><label for="pol">Owner's policy</label><select id="pol"><option value="enhanced">Enhanced / Homeowner's</option><option value="standard">Standard</option></select></div>
 <div><label for="rate">Rate</label><select id="rate"><option value="basic">Basic</option><option value="reissue">Reissue (prior policy)</option></select></div></div>
 <div class="row one"><div id="ownPayWrap"><label for="ownPay">Owner's policy paid by</label><select id="ownPay"><option value="">Local custom</option><option>Buyer</option><option>Seller</option></select></div>
@@ -267,6 +268,7 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 <div class="sum hint" id="s_cntyNote"></div>
 <div class="row"><div><label for="s_price">Selling price</label><div class="money"><input type="number" id="s_price" value="450000" inputmode="decimal"></div></div>
 <div><label for="s_close">Closing date</label><input type="date" id="s_close"></div></div>
+<div class="row one" id="s_assessWrap" hidden><div><label for="s_assessed">Assessed value <span class="sum">(optional)</span></label><div class="money"><input type="number" id="s_assessed" placeholder="Same as price" inputmode="decimal" aria-describedby="s_assessHint"></div><div class="fh" id="s_assessHint">Virginia deed taxes use the selling price or the assessed value, whichever is higher.</div></div></div>
 </section>
 <section class="card s2"><h2>Commissions</h2>
 <div class="fgrp"><label for="s_bbv">Buyer's broker</label><div class="cm"><select id="s_bbm" aria-label="Buyer's broker commission type"><option value="pct">%</option><option value="flat">$ flat</option></select><div id="s_bbw"><input type="number" id="s_bbv" value="2.5" step="any" inputmode="decimal"></div></div><div class="fh" id="s_bbh"></div></div>
@@ -354,11 +356,19 @@ function units(amt,unit){unit=String(unit||"").toLowerCase().replace(/[\s$,]/g,"
 const r2=x=>Math.round(x*100)/100;
 
 // ---------- transfer / recordation taxes ----------
+// Virginia deed taxes are on the consideration OR the most recent assessed value, whichever is greater (Va. Code 58.1-801(A), 58.1-802(A), 58.1-802.3, 58.1-802.4;
+// the local tax is one-third of the state tax, 58.1-3800). DC taxes the consideration (DC Code 42-1103(a)(1)(A): value only when there is no or nominal consideration), so DC does not use it.
+const assessedOn=i=>i.state==="VA"&&i.type!=="refi"&&(+i.assessed||0)>(+i.price||0);
 function basisOf(b,i){b=String(b||"").toLowerCase();if(b.startsWith("new"))return i.type==="refi"?Math.max(0,i.loan-i.payoff):0;
- if(b.startsWith("loan"))return i.type==="cash"?0:i.loan;return i.type==="refi"?0:i.price}
+ if(b.startsWith("loan"))return i.type==="cash"?0:i.loan;return i.type==="refi"?0:assessedOn(i)?+i.assessed:i.price}
+// Maryland State transfer tax for a first-time Maryland home buyer who will live there: 0.25% (the sheet's FTHB Rate) and "paid entirely by the seller"
+// (Tax-Property 13-203(b)(3); Real Property 14-104(c)(2)). In effect the buyer's half is exempt and the seller pays its usual half; the payer cannot be changed.
+const fthbFixed=(t,i)=>i.state==="MD"&&/^state transfer tax$/i.test(String(t["Tax Name"]).trim());
 function taxAmount(t,i){const base=basisOf(t.Basis,i);if(!(base>0))return null;const from=num(t["Bracket From ($)"])||0,to=num(t["Bracket To ($)"]);const hi=to==null?Infinity:to;
- const maxP=num(t["FTHB Max Price ($)"]);const fthb=!!i.fthb&&i.type!=="refi"&&(maxP==null||i.price<=maxP);
- const rate=fthb&&num(t["FTHB Rate"])!=null?num(t["FTHB Rate"]):num(t.Rate)||0;
+ const maxP=num(t["FTHB Max Price ($)"]);const fthb=!!i.fthb&&i.occ!==false&&i.type!=="refi"&&(maxP==null||i.price<=maxP);   // first-time buyer programs need a principal residence
+ let rate=fthb&&num(t["FTHB Rate"])!=null?num(t["FTHB Rate"]):num(t.Rate)||0;
+ // Virginia local recordation taxes are exactly one-third of the state tax (58.1-3800): the sheet's 0.0833 (or 0.06) is read as 1/3 of 0.25 (or 0.18), so no odd cents
+ if(i.state==="VA"&&/^local\b.*recordation/i.test(String(t["Tax Name"])))rate=Math.round(rate*300)/300;
  const exempt=(i.occ?num(t["Owner-Occ Exempt ($)"])||0:0)+(fthb?num(t["FTHB Exempt ($)"])||0:0);
  let taxable;if(String(t["Bracket Method"]).toLowerCase().startsWith("marg")){taxable=Math.max(0,Math.min(hi,base)-Math.max(from,exempt))}
  else{if(base<from-1e-9||base>hi+1e-9)return null;taxable=Math.max(0,base-exempt)}
@@ -367,7 +377,8 @@ function taxAmount(t,i){const base=basisOf(t.Basis,i);if(!(base>0))return null;c
  const payer=String(t["Paid By"]).trim().toLowerCase(),fp=fthb?String(t["FTHB Paid By"]||"").trim().toLowerCase():"";
  // fthb = the first-time-buyer RATE or EXEMPTION really changed this tax's amount (so the label "(first-time buyer)" only appears where the numbers differ)
  const changes=fthb&&((num(t["FTHB Rate"])!=null&&num(t["FTHB Rate"])!==(num(t.Rate)||0))||(num(t["FTHB Exempt ($)"])||0)>0);
- return{amt,payer,fthb:!!changes,fthbPayer:fp&&fp!==payer?fp:""}}
+ const fixed=fthb&&fthbFixed(t,i);
+ return{amt,payer:fixed?"seller":payer,fthb:!!changes,fixed,fthbPayer:!fixed&&fp&&fp!==payer?fp:""}}
 
 // ---------- title premiums ----------
 function uwRows(rows,uw,st){const m=rows.filter(r=>eq(r.State,st)&&eq(r.Underwriter,uw));return m.length||st!=="FL"?m:rows.filter(r=>eq(r.State,st))} // FL promulgated: any underwriter's rows
@@ -424,16 +435,18 @@ function calc(R,i){const L=[],W=[],refi=i.type==="refi";
   add(SEC.E,`Recording fees – ${d}${n>1?" ×"+n:""}${big?" (10+ pages, not a principal residence)":""}`,...split(payer,amt*n))}
  // transfer and recordation taxes
  const taxes=pick(R.Transfer_Taxes,i.state,i.county,i.type,r=>r["Tax Name"]+"|"+r.Transaction);let anyTax=false;const agg={};
- for(const t of taxes){const x=taxAmount(t,i);if(!x)continue;anyTax=true;const k=t["Tax Name"],adj=/^sale/i.test(String(t.Basis||"").trim());const a=agg[k]=agg[k]||{amt:0,payer:x.payer,fthb:false,fthbPayer:"",adj:true};a.amt+=x.amt;a.fthb=a.fthb||x.fthb;a.fthbPayer=a.fthbPayer||x.fthbPayer;a.adj=a.adj&&adj}
+ for(const t of taxes){const x=taxAmount(t,i);if(!x)continue;anyTax=true;const k=t["Tax Name"],adj=/^sale/i.test(String(t.Basis||"").trim());const a=agg[k]=agg[k]||{amt:0,payer:x.payer,fthb:false,fixed:false,fthbPayer:"",adj:true,onAssessed:false};a.amt+=x.amt;a.fthb=a.fthb||x.fthb;a.fixed=a.fixed||x.fixed;a.fthbPayer=a.fthbPayer||x.fthbPayer;a.adj=a.adj&&adj;a.onAssessed=a.onAssessed||(adj&&assessedOn(i))}
  const TX=[];
- for(const[k,v]of Object.entries(agg)){const def=v.payer,want=v.adj&&!refi&&i.taxPayers?String(i.taxPayers[k]||"").toLowerCase():"",ov=TAX_PAYERS.includes(want)?want:"";
+ for(const[k,v]of Object.entries(agg)){const adjustable=v.adj&&!refi&&!v.fixed,def=v.payer,want=adjustable&&i.taxPayers?String(i.taxPayers[k]||"").toLowerCase():"",ov=TAX_PAYERS.includes(want)?want:"";
   let eff=def,tag="";
-  if(ov){eff=ov;if(ov!==def)tag=ov==="split"?"":ov==="buyer"?" (paid by buyer)":" (paid by seller)"}
+  if(v.fixed){eff="seller";tag=" (first-time buyer: buyer exempt, seller pays)"}
+  else if(ov){eff=ov;if(ov!==def)tag=ov==="split"?"":ov==="buyer"?" (paid by buyer)":" (paid by seller)"}
   else if(i.buyerPaysSellerTax&&def==="seller"){eff="buyer";tag=" (buyer paying seller's tax)"}
   if(eff==="split"&&!refi)tag=" (split 50/50)";
-  const label=k+(v.fthb?" (first-time buyer)":"")+tag;
+  const label=k+(v.fthb&&!v.fixed?" (first-time buyer)":"")+(v.onAssessed?" (on assessed value)":"")+tag;
   add(SEC.E,label,...split(eff,v.amt));
-  TX.push({name:k,label,amt:r2(v.amt),def,payer:eff,adjustable:v.adj&&!refi,fthb:v.fthb,fthbPayer:v.fthbPayer})}
+  TX.push({name:k,label,amt:r2(v.amt),def,payer:eff,adjustable,fixed:v.fixed,fthb:v.fthb,fthbPayer:v.fthbPayer,onAssessed:v.onAssessed})}
+ if(i.fthb&&i.occ===false&&!refi)W.push("First-time homebuyer programs need an owner-occupied principal residence: the first-time buyer treatment is not applied.");
  if(!anyTax&&!refi&&i.price>0)W.push(`No transfer/recordation taxes found for ${i.county||"(county)"}, ${i.state}.`);
  const order=[SEC.B,SEC.C,SEC.E,SEC.H];L.sort((a,b)=>order.indexOf(a.sec)-order.indexOf(b.sec));
  const B=r2(L.reduce((a,x)=>a+x.b,0)),S=r2(L.reduce((a,x)=>a+x.s,0));return{lines:L,warnings:W,buyer:B,seller:S,total:r2(B+S),premiums:P,taxes:TX}}
@@ -479,7 +492,7 @@ function sellerNet(R,i){const price=+i.price||0,W=[],sum=a=>r2(a.reduce((t,x)=>t
  const bc=commission(price,i.buyerComm),sc=commission(price,i.sellerComm),pc=c=>c&&c.mode!=="flat"?` (${+c.val||0}%)`:" (flat)";
  const releases=(+i.payoff1>0?1:0)+(+i.payoff2>0?1:0),ownPay=i.ownerPays==null?ownerPayDefault(R,i.state,i.county):i.ownerPays?"Seller":"Buyer";
  // a cash-style purchase (no buyer loan) so only seller lines remain; actual premium split, so the seller pays the full owner's premium
- const q=calc(R,{type:"cash",state:i.state,county:i.county,uw:i.uw,price,loan:0,payoff:0,pol:i.pol||"enhanced",rate:i.rate||"basic",fthb:!!i.fthb,occ:true,ownPay,pres:"actual",ends:[],
+ const q=calc(R,{type:"cash",state:i.state,county:i.county,uw:i.uw,price,assessed:+i.assessed||0,loan:0,payoff:0,pol:i.pol||"enhanced",rate:i.rate||"basic",fthb:!!i.fthb,occ:true,ownPay,pres:"actual",ends:[],
   docs:{"Deed":[1,3],"Deed of Trust":[0,30],"Release":[releases,3],"Power of Attorney":[0,3]},fees:i.fees||sellerFeeInputs(R,i.state),buyerPaysSellerTax:!!i.bpst,taxPayers:i.taxPayers});
  W.push(...q.warnings.filter(w=>!/lender/i.test(w)&&!(/owner's premium/.test(w)&&ownPay!=="Seller")));
  const gov=[],title=[];for(const l of q.lines)if(l.s>0)(/^Title – /.test(l.item)?title:gov).push({item:l.item.replace(/^Title – /,""),amt:l.s});
@@ -529,23 +542,24 @@ function rebuild(){buildEnds();buildFees()}
 function setType(t){type=t;document.querySelectorAll("#tabs button").forEach(b=>{b.classList.toggle("on",b.dataset.t===t);b.setAttribute("aria-pressed",b.dataset.t===t)});
  $("priceWrap").hidden=t==="refi";$("payoffWrap").hidden=t!=="refi";$("loanWrap").hidden=t==="cash";$("ownWrap").hidden=$("ownPayWrap").hidden=t==="refi";$("fthbWrap").hidden=$("bpstWrap").hidden=t==="refi";
  buildDocs();rebuild();$("buyerLbl").textContent=$("colB").textContent=t==="refi"?"Borrower":"Buyer";run()}
-function inputs(){return{type,state:$("state").value,county:$("county").value,uw:$("uw").value,price:+$("price").value,loan:+$("loan").value,payoff:+$("payoff").value,pol:$("pol").value,rate:$("rate").value,fthb:$("fthb").checked,occ:$("occ").checked,ownPay:$("ownPay").value,pres:$("pres").value,
+function inputs(){return{type,state:$("state").value,county:$("county").value,uw:$("uw").value,price:+$("price").value,assessed:$("state").value==="VA"&&type!=="refi"?+$("assessed").value||0:0,loan:+$("loan").value,payoff:+$("payoff").value,pol:$("pol").value,rate:$("rate").value,fthb:$("fthb").checked,occ:$("occ").checked,ownPay:$("ownPay").value,pres:$("pres").value,
  ends:[...document.querySelectorAll("#ends input:checked")].map(e=>e.dataset.code),
  fees:[...document.querySelectorAll("#fees .fee")].filter(d=>d.children[0].checked).map(d=>Object.assign({name:d.children[0].dataset.name,payer:d.children[0].dataset.payer,tx:d.children[0].dataset.tx,sec:d.children[0].dataset.sec,amt:+d.children[2].value||0},d.children[0].dataset.special?{special:true,std:+d.children[0].dataset.std}:{})),
  buyerPaysSellerTax:$("bpst").checked,taxPayers:taxChoices(taxQ,$("state").value+"|"+$("county").value),
  docs:Object.fromEntries([...document.querySelectorAll("#docs tr[data-doc]")].map(r=>[r.dataset.doc,[+r.querySelectorAll("input")[0].value||0,+r.querySelectorAll("input")[1].value||1]]))}}
 // Who pays each transfer / recordation tax: Seller, Split 50/50 or Buyer. A choice the person clicks is kept by tax name (st.pay) and saved with the quote; untouched lines follow the default.
 const PAYNAME={seller:"seller",split:"split 50/50",buyer:"buyer"};
-function renderTaxPay(el,taxes,st,again,bl){const list=(taxes||[]).filter(t=>t.adjustable);el.hidden=!list.length;if(!list.length){el.innerHTML="";return}
- el.innerHTML='<div class="tph">Who pays each transfer / recordation tax</div>'+list.map(t=>`<div class="tpr"><span class="tpn">${esc(t.name)}<span class="sum">${fmt(t.amt)} · default: ${PAYNAME[t.def]||t.def}</span></span><span class="seg" role="group" aria-label="Who pays ${esc(t.name)}">${TAX_PAYERS.map(v=>`<button type="button" data-tax="${esc(t.name)}" data-v="${v}" aria-pressed="${t.payer===v}">${v==="seller"?"Seller":v==="buyer"?bl:"Split"}</button>`).join("")}</span></div>`).join("")+(()=>{const n=list.filter(t=>t.fthbPayer);return n.length?`<div class="tpf sum">First-time buyer: the fee sheet lists the ${esc(PAYNAME[n[0].fthbPayer]||n[0].fthbPayer)} as the usual payer of ${n.length>1?"these taxes":"this tax"}. Ticking the box does not change who pays here (still the default shown); choose ${esc(n[0].fthbPayer==="seller"?"Seller":n[0].fthbPayer==="buyer"?bl:"Split")} above if your contract says so.</div>`:""})();
+function renderTaxPay(el,taxes,st,again,bl){const list=(taxes||[]).filter(t=>t.adjustable),fixed=(taxes||[]).filter(t=>t.fixed);el.hidden=!list.length&&!fixed.length;if(el.hidden){el.innerHTML="";return}
+ el.innerHTML='<div class="tph">Who pays each transfer / recordation tax</div>'+list.map(t=>`<div class="tpr"><span class="tpn">${esc(t.name)}<span class="sum">${fmt(t.amt)} · default: ${PAYNAME[t.def]||t.def}</span></span><span class="seg" role="group" aria-label="Who pays ${esc(t.name)}">${TAX_PAYERS.map(v=>`<button type="button" data-tax="${esc(t.name)}" data-v="${v}" aria-pressed="${t.payer===v}">${v==="seller"?"Seller":v==="buyer"?bl:"Split"}</button>`).join("")}</span></div>`).join("")+(()=>{const n=list.filter(t=>t.fthbPayer);return n.length?`<div class="tpf sum">First-time buyer: the fee sheet lists the ${esc(PAYNAME[n[0].fthbPayer]||n[0].fthbPayer)} as the usual payer of ${n.length>1?"these taxes":"this tax"}. Ticking the box does not change who pays here (still the default shown); choose ${esc(n[0].fthbPayer==="seller"?"Seller":n[0].fthbPayer==="buyer"?bl:"Split")} above if your contract says so.</div>`:""})()+fixed.map(t=>`<div class="tpr tpx"><span class="tpn">${esc(t.name)}<span class="sum">${fmt(t.amt)} · first-time buyer: the buyer's half is exempt and the seller pays this tax by Maryland law (Tax-Property 13-203(b)(3)), so it cannot be changed</span></span></div>`).join("");
  el.onclick=e=>{const b=e.target.closest("button[data-tax]");if(!b)return;const k=b.dataset.tax,t=list.find(x=>x.name===k);if(!t)return;
   st.pay[k]=b.dataset.v;again();const nb=[...el.querySelectorAll("button[data-tax]")].find(x=>x.dataset.tax===k&&x.dataset.v===b.dataset.v);if(nb)nb.focus()}}
 // the per-tax choices belong to one county: they reset when the state or county changes
 function taxChoices(st,key){if(st.key!==key){st.key=key;st.pay={}}return Object.keys(st.pay).length?{...st.pay}:undefined}
 const taxQ={key:"",pay:{}},taxS={key:"",pay:{}};
 const TN={purchase:"Purchase (financed)",cash:"Cash purchase",refi:"Refinance"};
-function run(){const i=inputs();$("occNote").textContent=i.state==="MD"&&!i.occ?"Maryland: if this is not a principal residence, a deed or deed of trust of 10 or more pages records for $115 instead of $60 (RP 3-601).":"";$("cntyNote").textContent=!i.county?"Enter a ZIP or choose a county to include county taxes.":usesDefaults(R,i.state,i.county)?"Using state default rates for this county":"";const res=calc(R,i);last={i,res};renderTaxPay($("taxPay"),res.taxes,taxQ,run,type==="refi"?"Borrower":"Buyer");
- $("summary").innerHTML=`${TN[type]} · ${i.county||"(no county)"}, ${i.state} · ${i.uw} ${src==="snapshot"?'<span class="flag">BUILT-IN SNAPSHOT</span>':""}`;
+const assessedNote=i=>assessedOn(i)?` · Assessed value ${fmt(i.assessed)} (Virginia deed taxes use it: higher than the price)`:"";
+function run(){const i=inputs();$("assessWrap").hidden=!(i.state==="VA"&&type!=="refi");$("occNote").textContent=i.state==="MD"&&!i.occ?"Maryland: if this is not a principal residence, a deed or deed of trust of 10 or more pages records for $115 instead of $60 (RP 3-601).":"";$("cntyNote").textContent=!i.county?"Enter a ZIP or choose a county to include county taxes.":usesDefaults(R,i.state,i.county)?"Using state default rates for this county":"";const res=calc(R,i);last={i,res};renderTaxPay($("taxPay"),res.taxes,taxQ,run,type==="refi"?"Borrower":"Buyer");
+ $("summary").innerHTML=`${TN[type]} · ${i.county||"(no county)"}, ${i.state} · ${i.uw}${esc(assessedNote(i))} ${src==="snapshot"?'<span class="flag">BUILT-IN SNAPSHOT</span>':""}`;
  $("tB").textContent=fmt(res.buyer);$("tS").textContent=fmt(res.seller);$("tA").textContent=fmt(res.total);const bl=type==="refi"?"Borrower":"Buyer",groups=[];let g=null;
  for(const l of res.lines){if(!g||l.sec!==g.sec){g={sec:l.sec,rows:"",b:0,s:0};groups.push(g)}g.b+=l.b||0;g.s+=l.s||0;
   g.rows+=`<tr><td>${l.item}</td><td class="num${l.b?"":" z"}">${l.b?fmt(l.b):"—"}</td><td class="num${l.s?"":" z"}">${l.s?fmt(l.s):"—"}</td></tr>`}
@@ -554,7 +568,7 @@ function run(){const i=inputs();$("occNote").textContent=i.state==="MD"&&!i.occ?
  $("grand").innerHTML=`<tr class="tot"><td>Total</td><td class="num">${fmt(res.buyer)}</td><td class="num">${fmt(res.seller)}</td></tr>`;
  $("warns").innerHTML=res.warnings.length?`<div class="warn"><div><b>Warnings</b><ul>${res.warnings.map(w=>`<li>${w}</li>`).join("")}</ul></div></div>`:""}
 function quote(){const{i,res}=last,b=type==="refi"?"Borrower":"Buyer";let t=`C.L.A. Title & Escrow — Closing Cost Estimate\n${$("addr").value||"(no address)"} ${$("city").value} ${i.state} ${$("zip").value}\n${TN[type]} · ${i.county}, ${i.state} · ${i.uw}\n`;
- t+=type==="refi"?`Loan ${fmt(i.loan)} · Payoff ${fmt(i.payoff)}\n`:`Price ${fmt(i.price)}${type==="purchase"?" · Loan "+fmt(i.loan):""}\n`;let sec="";
+ t+=type==="refi"?`Loan ${fmt(i.loan)} · Payoff ${fmt(i.payoff)}\n`:`Price ${fmt(i.price)}${type==="purchase"?" · Loan "+fmt(i.loan):""}${assessedNote(i)}\n`;let sec="";
  for(const l of res.lines){if(l.sec!==sec){sec=l.sec;t+=`\n${sec.toUpperCase()}\n`}t+=`  ${l.item}: ${l.b?b+" "+fmt(l.b):""}${l.b&&l.s?" / ":""}${l.s?"Seller "+fmt(l.s):""}\n`}
  t+=`\n${b} total: ${fmt(res.buyer)}\nSeller total: ${fmt(res.seller)}\nAll parties: ${fmt(res.total)}\n\nEstimate only; not a Loan Estimate or Closing Disclosure.`;return t}
 $("copy").onclick=()=>{const t=quote();(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>$("copied").textContent="Copied!",()=>{prompt("Copy quote:",t)})};
@@ -584,7 +598,7 @@ function sOtherBtn(){$("s_addo").hidden=SC.children.length>=5}
 function buildSFees(){$("s_fees").innerHTML=sellerFeeRows(R,$("s_state").value).map(f=>{const std=num(f.Amount)||0,sp=repFeeOverride(repOv,$("s_state").value,"purchase",f["Fee Name"],f["Paid By"]);return`<div class="fee"><input type="checkbox" disabled aria-label="Always included" ${f["Default On"]!=="N"?"checked":""} data-name="${String(f["Fee Name"]).replace(/"/g,"&quot;")}" data-payer="${f["Paid By"]}" data-tx="${f.Transaction}" data-sec="${f["LE Section"]||"C"}"${sp==null?"":` data-special="1" data-std="${std}"`}><span>${f["Fee Name"]}${spBadge(sp,std)}</span><input type="number" class="locked" readonly tabindex="-1" aria-readonly="true" value="${sp==null?std:sp}" aria-label="Amount"><span class="tag s">${f["Paid By"]}</span></div>`}).join("")||'<span class="sum">No seller fees in the sheet for this state.</span>'}
 function syncOwn(){const st=$("s_state").value,co=$("s_county").value,c=ownerPayDefault(R,st,co);if(!ownTouched)$("s_own").checked=c==="Seller";
  $("s_ownNote").textContent=co?`(local custom in ${co}: ${c.toLowerCase()} pays${ownTouched&&$("s_own").checked!==(c==="Seller")?" — overridden":""})`:""}
-function sinputs(){const n=id=>+$(id).value||0;return{state:$("s_state").value,county:$("s_county").value,uw:$("uw").value,price:n("s_price"),closing:$("s_close").value,
+function sinputs(){const n=id=>+$(id).value||0;return{state:$("s_state").value,county:$("s_county").value,uw:$("uw").value,price:n("s_price"),assessed:$("s_state").value==="VA"?n("s_assessed"):0,closing:$("s_close").value,
  buyerComm:{mode:$("s_bbm").value,val:n("s_bbv")},sellerComm:{mode:$("s_slm").value,val:n("s_slv")},payoff1:n("s_po1"),payoff2:n("s_po2"),annualTax:n("s_tax"),paidThrough:$("s_ptd").value,
  hoaDues:n("s_hoa"),hoaTransfer:n("s_hoat"),special:n("s_spec"),concession:{mode:$("s_cm").value,val:n("s_cv")},warranty:n("s_war"),termination:n("s_term"),
  other:[...SC.querySelectorAll(".orow")].map(r=>({label:r.querySelector("input[type=text]").value,amt:+r.querySelector("input[type=number]").value||0})),
@@ -593,7 +607,7 @@ function sinputs(){const n=id=>+$(id).value||0;return{state:$("s_state").value,c
 const sgn=x=>x<0?`<span class="cr">−${fmt(-x)}</span>`:fmt(x);
 function sCard(n,title,rows,total,tl){return`<section class="card sec"><div class="sh"><span class="l">${n}</span><h3>${title}</h3></div><table class="ledger one"><thead><tr><th>Item</th><th class="num">Amount</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.item)}</td><td class="num">${sgn(r.amt)}</td></tr>`).join("")||'<tr><td class="z">None</td><td class="num z">—</td></tr>'}<tr class="tot"><td>${tl}</td><td class="num">${sgn(total)}</td></tr></tbody></table></section>`}
 const fullAddr=i=>[[$("s_addr").value.trim(),$("s_city").value.trim()].filter(Boolean).join(", "),[i.state,$("s_zip").value.trim()].filter(Boolean).join(" ")].filter(Boolean).join(", ");
-function runS(){syncOwn();const i=sinputs(),r=sellerNet(R,i),T=r.totals,cd=pDate(i.closing);sLast={i,r};renderTaxPay($("s_taxPay"),r.calc.taxes,taxS,runS,"Buyer");
+function runS(){syncOwn();$("s_assessWrap").hidden=$("s_state").value!=="VA";const i=sinputs(),r=sellerNet(R,i),T=r.totals,cd=pDate(i.closing);sLast={i,r};renderTaxPay($("s_taxPay"),r.calc.taxes,taxS,runS,"Buyer");
  $("s_cntyNote").textContent=!i.county?"Enter a ZIP or choose a county to include county taxes.":usesDefaults(R,i.state,i.county)?"Using state default rates for this county":"";
  for(const[k,c,h]of[["bb",i.buyerComm,"s_bbh"],["sl",i.sellerComm,"s_slh"]]){$("s_"+k+"w").className=c.mode==="flat"?"money":"";$(h).textContent=`= ${fmt(commission(i.price,c))}${c.mode==="flat"&&i.price>0?` (${(commission(i.price,c)/i.price*100).toFixed(2)}% of price)`:""}`}
  $("s_cw").className=i.concession.mode==="flat"?"money":"";$("s_ch").textContent=i.concession.val?`= ${fmt(commission(i.price,i.concession))}`:"";
@@ -608,7 +622,7 @@ function runS(){syncOwn();const i=sinputs(),r=sellerNet(R,i),T=r.totals,cd=pDate
  $("sLedger").innerHTML=cards.filter(c=>c[4]).map(c=>sCard(++n,c[0],c[1],c[2],c[3])).join("");
  $("sGrand").innerHTML=`<tr><td>Selling price</td><td class="num">${fmt(r.price)}</td></tr><tr><td>Less: total seller costs</td><td class="num">${r.totalCosts<0?sgn(-r.totalCosts).replace("−",""):"−"+fmt(r.totalCosts)}</td></tr>${r.payoffTotal?`<tr><td>Less: mortgage payoffs</td><td class="num">−${fmt(r.payoffTotal)}</td></tr>`:""}<tr class="tot"><td>Net seller proceeds</td><td class="num">${fmt(r.net)}</td></tr>`;
  $("sWarns").innerHTML=r.warnings.length?`<div class="warn"><div><b>Heads up</b><ul>${r.warnings.map(w=>`<li>${esc(w)}</li>`).join("")}</ul></div></div>`:""}
-function sQuote(){const{i,r}=sLast,cd=pDate(i.closing);let t=`C.L.A. Title & Escrow — Seller's Net Sheet (estimate)\n${fullAddr(i)||"(no address)"}\n${i.county?i.county+", ":""}${i.state}${cd?" · Closing "+longDate(cd):""}\nSelling price: ${fmt(r.price)}\n`;
+function sQuote(){const{i,r}=sLast,cd=pDate(i.closing);let t=`C.L.A. Title & Escrow — Seller's Net Sheet (estimate)\n${fullAddr(i)||"(no address)"}\n${i.county?i.county+", ":""}${i.state}${cd?" · Closing "+longDate(cd):""}\nSelling price: ${fmt(r.price)}${assessedOn(Object.assign({type:"cash"},i))?`\nAssessed value: ${fmt(i.assessed)} (Virginia deed taxes use the higher value)`:""}\n`;
  for(const[name,rows,tot]of[["Commissions",r.commissions,r.totals.commissions],["Government tax & recording fees",r.gov,r.totals.gov],["Title & settlement fees",r.title,r.totals.title],["Prorations & credits",r.prorations,r.totals.pro],["Other costs",r.other,r.totals.other]]){if(!rows.length)continue;t+=`\n${name.toUpperCase()}\n`;for(const x of rows)t+=`  ${x.item}: ${x.amt<0?"-"+fmt(-x.amt):fmt(x.amt)}\n`;t+=`  Subtotal: ${tot<0?"-"+fmt(-tot):fmt(tot)}\n`}
  t+=`\nTotal seller costs: ${fmt(r.totalCosts)}\n`;if(r.payoffs.length){t+=`\nMORTGAGE PAYOFFS\n`;for(const x of r.payoffs)t+=`  ${x.item}: ${fmt(x.amt)}\n`;t+=`  Total payoffs: ${fmt(r.payoffTotal)}\n`}
  return t+`\nNET SELLER PROCEEDS: ${fmt(r.net)}\n\nEstimate only. Not a settlement statement. Actual proceeds depend on final payoff, prorations and charges at closing.`}
@@ -624,7 +638,7 @@ $("s_state").onchange=()=>{ownTouched=false;counties("s_");buildSFees();runS()};
 $("s_county").addEventListener("change",()=>{ownTouched=false});$("s_own").addEventListener("change",()=>{ownTouched=true});
 $("mainS").addEventListener("input",e=>{if(!["s_zip"].includes(e.target.id))runS()});$("mainS").addEventListener("change",e=>{if(!["s_zip","s_state"].includes(e.target.id))runS()});
 // switching tabs carries the shared property fields across
-function copyProps(fp,tp){for(const k of["addr","city","zip","price"])$(tp+k).value=$(fp+k).value;$(tp+"zipMsg").textContent=$(fp+"zipMsg").textContent;
+function copyProps(fp,tp){for(const k of["addr","city","zip","price","assessed"])$(tp+k).value=$(fp+k).value;$(tp+"zipMsg").textContent=$(fp+"zipMsg").textContent;
  const stChanged=$(tp+"state").value!==$(fp+"state").value;$(tp+"state").value=$(fp+"state").value;counties(tp);setCounty($(fp+"county").value,tp);zipHit[tp]=zipHit[fp];if(stChanged)tp?buildSFees():rebuild()}
 function setMode(m){if(m===mode)return;copyProps(mode==="seller"?"s_":"",m==="seller"?"s_":"");mode=m;const s=m==="seller";
  $("mainQ").hidden=s;$("mainS").hidden=!s;$("discQ").hidden=s;$("discS").hidden=!s;
@@ -652,7 +666,7 @@ load(SNAP,"Built-in snapshot","snapshot");$("status").textContent="Loading fees 
 // Guided tour: "Take the tour" (header) and a small first-visit chip. Works for everyone, signed in or not. The engine is portal/js/tour.js + portal/tour.css,
 // downloaded only when someone starts the tour. The chip shows once; dismissing it (x), starting the tour, or finishing it hides it for good (localStorage).
 (function(){
- var V="20261027n",KEY="cla_calc_tour_chip",link=document.getElementById("claCalcTourLink"),chip=document.getElementById("claTourChip"),loading=null;
+ var V="20261029a",KEY="cla_calc_tour_chip",link=document.getElementById("claCalcTourLink"),chip=document.getElementById("claTourChip"),loading=null;
  function seen(){try{return window.localStorage.getItem(KEY)==="1"}catch(e){return true}} // no storage: never show the chip (it could not remember "no thanks")
  function dismiss(){try{window.localStorage.setItem(KEY,"1")}catch(e){}if(chip)chip.hidden=true}
  function add(tag,attrs){return new Promise(function(res){var e=document.createElement(tag);for(var k in attrs)e[k]=attrs[k];e.onload=e.onerror=function(){res()};document.head.appendChild(e)})}
@@ -666,4 +680,4 @@ load(SNAP,"Built-in snapshot","snapshot");$("status").textContent="Loading fees 
   document.getElementById("claTourChipX").onclick=function(){dismiss();if(link)link.focus()}}
 })();
 </script>
-<script src="portal/js/portal-hook.js?v=20261027n" defer></script></body></html>
+<script src="portal/js/portal-hook.js?v=20261029a" defer></script></body></html>

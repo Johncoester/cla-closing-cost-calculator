@@ -38,7 +38,7 @@
   const clientSide = owner && owner.role === "client" ? await party(owner, "client") : "";
   const repSide = await party(rep, "rep");
   $("cobrand").innerHTML = (clientSide || "") + (clientSide && repSide ? '<div class="divider"></div>' : "") + (repSide || '<div class="party"><div class="logo" style="width:56px;height:56px;font-size:18px">CLA</div><div><b>C.L.A. Title &amp; Escrow</b><span>Closing cost estimate</span></div></div>') +
-    '<div class="meta">Prepared ' + CLA.date(q.createdAt) + "<br>" + esc(q.propertyAddress || "") + (q.feeVersion ? "<br>Fees: " + esc(q.feeVersion) : "") + "</div>";
+    '<div class="meta">Prepared ' + CLA.date(q.createdAt) + "<br>" + esc(q.propertyAddress || "") + (q.feeVersion ? "<br>Fees: " + esc(q.feeVersion) : "") + (q.state === "VA" && q.inputs && +q.inputs.assessed > +(q.price || 0) ? "<br>Assessed value " + CLA.money(+q.inputs.assessed) + " (Virginia deed taxes use the higher value)" : "") + "</div>";
   const r = q.results || {}, h = r.headline || {};
   $("hLabel").textContent = h.label || (q.quoteType === "buyer" ? "Estimated total" : "Net proceeds"); $("hValue").textContent = CLA.money(h.value);
   $("hSub").textContent = [q.label, q.county ? q.county + ", " + q.state : null].filter(Boolean).join(" · ");
