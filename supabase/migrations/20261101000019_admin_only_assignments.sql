@@ -1,0 +1,18 @@
+-- =====================================================================
+-- Migration 19: only admins and super admins assign or move clients between reps (John, 11/01).
+--
+-- Before: the RLS policy assignments_insert_rep let any rep INSERT a row into public.assignments
+-- for themselves, straight through the table API, for any client email that had no active rep
+-- (for example an existing, unassigned client account). Nothing in the portal used it: a rep's
+-- invite goes through create_invitation() (security definer), which does not need this policy.
+--
+-- After: direct INSERT / UPDATE / DELETE on public.assignments is admin / super admin only
+-- (assignments_insert_admin, assignments_update_admin, assignments_delete_admin, unchanged), and the
+-- RPCs that change assignments stay as they are:
+--   * admin_reassign_client()             admin / super admin only
+--   * admin_set_role(), admin_set_is_rep(), admin_delete_user()  admin only (hand-over on demote / delete)
+--   * create_invitation()                 a rep inviting a NEW person still gets them as their client
+--                                         (no account yet; refused if another rep already has them)
+-- Re-runnable.
+-- =====================================================================
+drop policy if exists assignments_insert_rep on public.assignments;

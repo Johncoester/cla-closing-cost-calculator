@@ -226,8 +226,10 @@ The sender sees what happened to their note, inside the portal. **No e-mail or m
 ## Users tab: assign a client to any salesperson (local branch `rep-assign-1101`; admin page only, no database change)
 - **Before:** the Users tab Rep column only showed the client's rep or an "Unassigned" badge. The only way to assign was the Assignments tab (type the email), so a client invited with "No rep yet" (for example Brian Coester) stayed unassigned.
 - **Now:** every client row has a type-to-search Rep box (a combobox: type part of a name, or the email of a rep with no name yet; arrow keys, Enter or click to pick, Escape cancels, "No matching rep" when nothing fits) over every salesperson: active reps plus admins / super admins with Also works as a rep, A-Z (the same rule as `private.is_rep()` and the assignments trigger; plain admins and disabled reps are left out). Picking one calls `admin_reassign_client` straight away; moving an assigned client asks first and keeps history. The Assignments tab and the invite form lists are sorted the same way.
-- **Database:** unchanged. `admin_reassign_client` (admins and super admins) already allowed any rep-capable profile; the trigger links an existing client account.
-- **Tests:** `test-portal.js` (Users tab Rep dropdown), `10_access_rules.sql` (assigning an unassigned client with an account). Cache-bust 20261101a.
+- **Edit button (11/01, branch `rep-edit-1101`):** a client who has a rep shows the rep's name as text plus an **Edit** button; the search box (with Cancel; Escape also restores the name) appears only after Edit. Unassigned clients keep the search box shown directly with the Unassigned badge. Cache-bust 20261101b.
+- **Admins only (migration 19, `20261101000019_admin_only_assignments.sql`, branch `rep-edit-1101`):** drops the RLS policy `assignments_insert_rep`, which let a rep insert an assignment for themselves straight through the table API for any client without a rep (nothing in the portal used it). Insert / update / delete on `public.assignments` are now admin / super admin only; `admin_reassign_client` was already admin only. A rep inviting a new person through `create_invitation` still gets them as their client. The Users tab Rep controls also render only for an admin viewer. **Needs a live migration at go-live** (one idempotent `drop policy`).
+- **Database (first version):** unchanged. `admin_reassign_client` (admins and super admins) already allowed any rep-capable profile; the trigger links an existing client account.
+- **Tests:** `test-portal.js` (Users tab Rep dropdown), `10_access_rules.sql` (assigning an unassigned client with an account). Cache-bust 20261101b.
 
 ## Florida title options (local branch `fl-title-1029`; calculator only, no database or sheet change)
 - **What:** in Florida, "Owner's policy paid by" becomes **Who chose title** with the Florida Realtors / Florida Bar AS IS contract 9(c) options: Seller chose title (i), Buyer chose title (ii), Miami-Dade/Broward custom (iii). Values: `Seller`, `Buyer`, `MDB`, blank = local custom; old saved quotes keep their meaning.
@@ -269,7 +271,7 @@ The same engine also runs on the public calculator, for **anyone** (guest or sig
 - **Tabs:** the Seller Net Sheet step opens that tab and puts the person's own tab back afterwards (also if they skip or press Esc). The tour never clicks Purchase / Cash / Refinance, because switching those rebuilds the documents and endorsements and would discard edits; it only points at them. No fee or number is changed.
 - **The chip:** shown only to someone who has not dismissed it. The x, starting the tour from the chip or from the header link all store `cla_calc_tour_chip = "1"` in `localStorage`, so it never comes back. If browser storage is blocked the chip is not shown at all. It does not print.
 - **Phones:** the box is a bottom sheet (also for the centred welcome note); on desktop a tall target (the breakdown) gets the box beside it instead of on top of it.
-- **Cache-bust:** `?v=20261101a` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
+- **Cache-bust:** `?v=20261101b` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
 - **Tests:** the "calculator tour" block in `portal/test-portal.js` (link, step counts, targets, skipping, tab restore, chip persistence, phone sheet, versions). Screenshots: `portal/tools/screenshots_calculator_tour.py`.
 
 ## Who pays each transfer / recordation tax (live since 2026-10-28; calculator only, no database change)
@@ -331,7 +333,7 @@ Must be written: (a) an **API layer** (API Gateway + Lambda), because browsers c
 
 ## Rep pricing tables: settlement fee only (migration 16, applied live)
 Named **pricing tables** (e.g. "Marvin's Pricing") hold lower **settlement fees**, as **fee sets** that cover any selection of states (MD+VA, FL, all states...) (`Settlement Fee to CLA Title & Escrow` only; premiums and recording fees can never change); admins and super admins add a rep's or an individual client's **email** to a table on the admin page's **Rep pricing** tab. One email, one table.
-Design, the one rule for whose fee a person gets (own email's table first, else the assigned rep's table, else standard), tests, and how to apply: see [`REP-PRICING.md`](REP-PRICING.md). Cache-bust `?v=20261101a`.
+Design, the one rule for whose fee a person gets (own email's table first, else the assigned rep's table, else standard), tests, and how to apply: see [`REP-PRICING.md`](REP-PRICING.md). Cache-bust `?v=20261101b`.
 
 ## In-portal Help: client guide and staff manual (local branch `help-manual`, not pushed)
 Two pages, both **generated** by `node portal/tools/build-help.js` (do not edit the HTML by hand):
@@ -340,4 +342,4 @@ Two pages, both **generated** by `node portal/tools/build-help.js` (do not edit 
 - **Header Help link** (`CLA.helpHref` in `portal-ui.js`; the calculator header link in `portal-hook.js` uses the same function): clients go to `help.html`, reps, admins and super admins to `staff-help.html`. Signed-in users only.
 - **Guards:** both pages use `CLA.boot(null)` (signed-out visitors go to `login.html?next=...`) and stay hidden until then. `staff-help.html` sends a client to `help.html`. **Be honest about what that is:** static pages can be fetched by anyone who knows the URL; the guard decides what a signed-in person sees on screen, it is not access control. Neither page has a key, a secret or customer data (the pictures use made-up sample people).
 - **Pictures:** `python3 portal/tools/screenshots_help.py` (serves this repo on a local port with the mock config forced, hides the demo banner), then `python3 portal/tools/optimize_help_images.py`, which sorts them into `help/client/` (used by the client guide) and `help/staff/` (everything else the staff manual uses) and removes anything unused.
-- Cache-bust letter: `20261101a` (see above).
+- Cache-bust letter: `20261101b` (see above).

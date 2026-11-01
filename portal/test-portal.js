@@ -318,7 +318,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     change(R.row(id("b2")).querySelector("select[data-role]"), "client"); await tick(); d.dispatchEvent(new d.defaultView.KeyboardEvent("keydown", { key: "Escape" })); await tick(); assert.ok(!d.querySelector(".dlg")); ok("picker: Escape cancels too");
     change(R.row(id("b2")).querySelector("select[data-role]"), "client"); await tick(); d.querySelector("#dlgRep").value = id("b1"); d.querySelector("#dlgOk").click(); await tick(100);
     assert.ok(!d.querySelector(".dlg")); const rowM2 = R.row(id("b2")); assert.strictEqual(rowM2.querySelector("select[data-role]").value, "client"); ok("picker: confirming makes Marcus a client");
-    const om = [...d.querySelectorAll("#users tr")].find((tr) => tr.textContent.includes("Omar Broker")); assert.strictEqual(om.querySelector("input[data-repq]").value, "Jane Rep"); ok("picker: his realtors now show Jane as their rep in the Users table");
+    const om = [...d.querySelectorAll("#users tr")].find((tr) => tr.textContent.includes("Omar Broker")); assert.ok(om.querySelector(".repname").textContent === "Jane Rep" && om.querySelector("button[data-repedit]") && !om.querySelector("input[data-repq]")); ok("picker: his realtors now show Jane as their rep in the Users table");
     // a rep with no active clients: no picker, the plain confirmation
     d.defaultView.confirm = () => true; change(R.row(id("b2")).querySelector("select[data-role]"), "rep"); await tick(100); assert.ok(!d.querySelector(".dlg")); assert.strictEqual(R.row(id("b2")).querySelector("select[data-role]").value, "rep"); ok("picker: changing someone with no active clients (Marcus, now client -> rep) shows no picker, only the usual confirmation");
     change(R.row(id("b2")).querySelector("select[data-role]"), "client"); await tick(100); assert.ok(!d.querySelector(".dlg")); assert.strictEqual(R.row(id("b2")).querySelector("select[data-role]").value, "client"); ok("...and rep -> client with no clients also needs no picker");
@@ -498,7 +498,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
       const opts = () => [...lst().querySelectorAll("li")].map((li) => li.firstChild.textContent.trim().replace(/ \(admin \+ rep\)$/, ""));
       const key = (k) => box().dispatchEvent(new uw.KeyboardEvent("keydown", { key: k, bubbles: true })), type = (v) => { box().value = v; box().dispatchEvent(new uw.Event("input", { bubbles: true })); };
       assert.ok(box() && box().value === "" && box().placeholder === "Type a rep\u2019s name\u2026" && box().getAttribute("role") === "combobox" && box().getAttribute("aria-expanded") === "false" && lst().hidden && UA.row(brian.id).querySelector(".badge.warn") && !UA.row(brian.id).querySelector("select[data-rep]"));
-      assert.strictEqual(ud.querySelectorAll("#users tr input[data-repq]").length, st0.users.filter((u) => u.role === "client").length);
+      assert.strictEqual(ud.querySelectorAll("#users tr .repbox").length, st0.users.filter((u) => u.role === "client").length); assert.ok([...ud.querySelectorAll("#users tr .repbox")].every((b) => b.dataset.cur ? b.querySelector("button[data-repedit]") && !b.querySelector("input") : b.querySelector("input[data-repq]") && b.parentNode.querySelector(".badge.warn")));
       box().focus(); box().dispatchEvent(new uw.FocusEvent("focusin", { bubbles: true })); assert.ok(!lst().hidden && box().getAttribute("aria-expanded") === "true"); assert.deepStrictEqual(opts(), sales);
       assert.ok(sales.length >= 3 && plainAdmins.every((n) => !opts().includes(n)) && offReps.every((n) => !opts().includes(n)) && [...lst().querySelectorAll("li")].some((li) => / \(admin \+ rep\)/.test(li.textContent)));
       ok("admin.html Users tab: each client row has a type-to-search Rep box (placeholder 'Type a rep's name…', Unassigned badge); focusing it lists every salesperson A-Z (active reps + admins who also work as a rep), never plain admins or disabled reps");
@@ -509,16 +509,35 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
       ok("admin.html Users tab: typing part of a name (or a rep's email) narrows the list; nothing matching says 'No matching rep'; Escape closes it and clears what was typed");
       type(nm(target)); const actId = box().getAttribute("aria-activedescendant"); assert.ok(actId && ud.getElementById(actId).dataset.pick === target.id); key("Enter"); await tick(150);
       let st1 = JSON.parse(uw.localStorage.getItem("cla_portal_mock_v1")), act = st1.assignments.filter((a) => a.active && a.clientEmail === "brian.coester@example.com");
-      assert.ok(act.length === 1 && act[0].repId === target.id && act[0].clientUserId === brian.id); assert.ok(box().value === nm(target) && !UA.row(brian.id).querySelector(".badge.warn"));
+      assert.ok(act.length === 1 && act[0].repId === target.id && act[0].clientUserId === brian.id); assert.ok(!UA.row(brian.id).querySelector(".badge.warn"));
       assert.ok(st1.audit.some((l) => l.action === "assignment_changed" && l.details && l.details.client_email === "brian.coester@example.com"));
-      ok("admin.html Users tab: Enter picks the highlighted rep and assigns the client right away (assignment + audit row); the box then shows the rep's name");
+      ok("admin.html Users tab: Enter picks the highlighted rep and assigns the unassigned client right away (assignment + audit row)");
+      // an assigned client: the rep's name as text + an Edit button; no search box until Edit is clicked
+      const nameEl = () => UA.row(brian.id).querySelector(".repname"), edit = () => UA.row(brian.id).querySelector("button[data-repedit]"), cancel = () => UA.row(brian.id).querySelector("button[data-repcancel]");
+      assert.ok(nameEl() && nameEl().textContent === nm(target) && edit() && edit().textContent === "Edit" && /Change the rep for Brian Coester/.test(edit().getAttribute("aria-label")) && !box());
+      assert.ok([...ud.querySelectorAll("#users tr")].every((tr) => !tr.querySelector(".repname") || (!tr.querySelector("input[data-repq]") && tr.querySelector("button[data-repedit]"))));
+      ok("admin.html Users tab: a client with a rep shows the rep's name as plain text with an Edit button, and no search box");
+      edit().click(); await tick(30); assert.ok(box() && ud.activeElement === box() && box().value === "" && !lst().hidden && cancel() && !nameEl()); assert.deepStrictEqual(opts(), sales);
+      key("Escape"); await tick(30); assert.ok(!box() && nameEl().textContent === nm(target) && ud.activeElement === edit());
+      edit().click(); await tick(30); type("zzqx"); cancel().click(); await tick(30); assert.ok(!box() && nameEl().textContent === nm(target));
+      st1 = JSON.parse(uw.localStorage.getItem("cla_portal_mock_v1")); assert.strictEqual(st1.assignments.filter((a) => a.clientEmail === "brian.coester@example.com").length, 1);
+      ok("admin.html Users tab: Edit opens the search box (focused, full list, Cancel button); Escape or Cancel puts the name back and changes nothing");
       const other = salesU.find((u) => u.role === "rep" && u.id !== target.id); let asked = ""; uw.confirm = (m) => { asked = m; return false; };
-      box().focus(); box().dispatchEvent(new uw.FocusEvent("focusin", { bubbles: true })); type(nm(other)); key("ArrowDown"); key("ArrowUp"); lst().querySelector('li[data-pick="' + other.id + '"]').dispatchEvent(new uw.MouseEvent("mousedown", { bubbles: true })); await tick(150);
-      st1 = JSON.parse(uw.localStorage.getItem("cla_portal_mock_v1")); assert.ok(/^Move Brian Coester from .+ to .+\? History is kept\.$/.test(asked) && st1.assignments.find((a) => a.active && a.clientEmail === "brian.coester@example.com").repId === target.id && box().value === nm(target));
-      uw.confirm = () => true; box().focus(); box().dispatchEvent(new uw.FocusEvent("focusin", { bubbles: true })); type(nm(other)); lst().querySelector('li[data-pick="' + other.id + '"]').dispatchEvent(new uw.MouseEvent("mousedown", { bubbles: true })); await tick(150);
+      edit().click(); await tick(30); type(nm(other)); key("ArrowDown"); key("ArrowUp"); lst().querySelector('li[data-pick="' + other.id + '"]').dispatchEvent(new uw.MouseEvent("mousedown", { bubbles: true })); await tick(150);
+      st1 = JSON.parse(uw.localStorage.getItem("cla_portal_mock_v1")); assert.ok(/^Move Brian Coester from .+ to .+\? History is kept\.$/.test(asked) && st1.assignments.find((a) => a.active && a.clientEmail === "brian.coester@example.com").repId === target.id && nameEl().textContent === nm(target) && !box());
+      uw.confirm = () => true; edit().click(); await tick(30); type(nm(other)); key("Enter"); await tick(150);
       st1 = JSON.parse(uw.localStorage.getItem("cla_portal_mock_v1")); const hist = st1.assignments.filter((a) => a.clientEmail === "brian.coester@example.com");
-      assert.ok(hist.length === 2 && hist.filter((a) => a.active).length === 1 && hist.find((a) => a.active).repId === other.id && box().value === nm(other));
-      assert.strictEqual(UA.errs.length, 0, UA.errs.join()); UA.dom.window.close(); ok("admin.html Users tab: clicking a rep for an assigned client asks first (Cancel changes nothing); OK moves them and keeps the old assignment as history"); }
+      assert.ok(hist.length === 2 && hist.filter((a) => a.active).length === 1 && hist.find((a) => a.active).repId === other.id && nameEl().textContent === nm(other) && edit());
+      assert.strictEqual(UA.errs.length, 0, UA.errs.join()); UA.dom.window.close(); ok("admin.html Users tab: picking a new rep after Edit asks first (Cancel changes nothing); OK moves the client, keeps history and shows the new name with Edit again"); }
+    // only admins and super admins assign or move clients: a rep (or a client) never gets the admin page or its Rep controls, and the adapter refuses them
+    { const redirects = [], onRej = (e) => { if (e && e.message === "redirect") redirects.push(1); else throw e; }; process.on("unhandledRejection", onRej);
+      for (const em of ["sample.rep.jane@clatitle.com", "sam.agent@example.com"]) { const RX = await renderPage("admin.html", em, "#nothing-here");
+        assert.ok(!RX.d.querySelector("#users tr") && !RX.d.querySelector(".repbox, input[data-repq], button[data-repedit]")); RX.dom.window.close(); }
+      await tick(30); process.off("unhandledRejection", onRej); assert.strictEqual(redirects.length, 2);
+      const RJ = await renderPage("rep.html", "sample.rep.jane@clatitle.com", "#claFeedbackLink"); await tick(80); assert.ok(!RJ.d.querySelector(".repbox, input[data-repq], button[data-repedit], [data-pick]")); RJ.dom.window.close();
+      const w9 = boot(), A9 = w9.CLA.createMockAdapter({}); await A9.signIn("sample.rep.jane@clatitle.com", "x");
+      await assert.rejects(() => A9.adminReassign("pat.homes@example.com", id("b1")), /Admins only/); await A9.signIn("sam.agent@example.com", "x"); await assert.rejects(() => A9.adminReassign("pat.homes@example.com", id("b1")), /Admins only/);
+      ok("rep assignment: only admins / super admins: a rep or a client opening admin.html gets no Users table and no Rep controls, the rep dashboard has none, and the adapter refuses adminReassign for them"); }
     const RA = await renderPage("admin.html", "sample.robin.admin@clatitle.com", "#users tr", async (A0) => { await A0.submitFeedback({ category: "bug", message: evil, page: "/portal/admin.html" }); });
     assert.ok(RA.d.getElementById("claFeedbackLink")); const tabs = [...RA.d.querySelectorAll("#tabs button")]; assert.strictEqual(tabs[4].textContent, "Feedback"); tabs[4].click(); await tick(80);
     assert.ok(!RA.d.getElementById("pFeedback").hidden); assert.ok(RA.d.querySelectorAll("#fbRows tr").length >= 4); assert.strictEqual(RA.d.querySelectorAll("#fbRows [data-fb]").length, 0); assert.match(RA.d.getElementById("fNote").textContent, /Read only/); ok("feedback panel: an Admin lists everything but has no approve/dismiss buttons");
@@ -1269,7 +1288,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
 
     // cache-bust: every ?v= in index.html and TOUR_V agree
     const vs = [...idx.matchAll(/\?v=(\d{8}[a-z])/g)].map((m) => m[1]), pu = fs.readFileSync(path.join(__dirname, "js", "portal-ui.js"), "utf8");
-    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261101a" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261101a");
+    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261101b" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261101b");
     // the new elements are inert in print and add no external requests
     assert.ok(/@media print\{\s*@page\{margin:14mm\}\s*\.claChip\{display:none!important\}/.test(idx) && !/https?:\/\//.test(tj2)); ok("calculator tour: the chip is not printed; tour.js has no external libraries or CDN");
   }

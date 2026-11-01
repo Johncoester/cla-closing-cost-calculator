@@ -243,14 +243,18 @@ select tests.is('rep Jane sees her 2 assignment rows', tests.q(tests.id('b1'), '
 select tests.is('admin sees all 7 assignments', tests.q(tests.id('a1'), 'select * from public.assignments'), '7');
 select tests.is('client cannot assign themselves',
   tests.x(tests.id('c3'), 'insert into public.assignments (client_email, rep_id) values (''pat.homes@example.com'', ''' || tests.id('b1') || ''')'), 'ERR:42501');
-select tests.is('rep adds own unassigned client by email (Pat)',
-  tests.x(tests.id('b1'), 'insert into public.assignments (client_email, rep_id) values (''pat.homes@example.com'', ''' || tests.id('b1') || ''')'), 'ok:1');
+select tests.is('rep cannot assign an unassigned client to themselves by writing the table (migration 19: admins only)',
+  tests.x(tests.id('b1'), 'insert into public.assignments (client_email, rep_id) values (''pat.homes@example.com'', ''' || tests.id('b1') || ''')'), 'ERR:42501');
+select tests.is('...nor can another rep (Marcus)',
+  tests.x(tests.id('b2'), 'insert into public.assignments (client_email, rep_id) values (''pat.homes@example.com'', ''' || tests.id('b2') || ''')'), 'ERR:42501');
+select tests.is('admin assigns unassigned client Pat to Jane (table insert)',
+  tests.x(tests.id('a1'), 'insert into public.assignments (client_email, rep_id) values (''pat.homes@example.com'', ''' || tests.id('b1') || ''')'), 'ok:1');
 select tests.is('pre-existing account auto-linked on assignment',
   (select (client_user_id = tests.id('c3'))::text from public.assignments where client_email = 'pat.homes@example.com' and active), 'true');
 select tests.is('rep Jane now sees Pat''s quote',
   tests.q(tests.id('b1'), 'select * from public.quotes where owner_id = ''' || tests.id('c3') || ''''), '1');
-select tests.is('rep cannot grab another rep''s client (one active rep per client)',
-  tests.x(tests.id('b1'), 'insert into public.assignments (client_email, rep_id) values (''omar.broker@example.com'', ''' || tests.id('b1') || ''')'), 'ERR:23505');
+select tests.is('rep cannot grab another rep''s client (reps cannot write assignments at all, migration 19)',
+  tests.x(tests.id('b1'), 'insert into public.assignments (client_email, rep_id) values (''omar.broker@example.com'', ''' || tests.id('b1') || ''')'), 'ERR:42501');
 select tests.is('rep cannot assign a client to a different rep',
   tests.x(tests.id('b1'), 'insert into public.assignments (client_email, rep_id) values (''new.person@example.com'', ''' || tests.id('b2') || ''')'), 'ERR:42501');
 select tests.is('rep cannot update assignments',
@@ -682,8 +686,8 @@ select tests.is('rep-only view: Alex reads Rae''s pending invitation (cell), not
 select tests.is('rep-only view: Alex cannot read the audit log', tests.q(tests.id('a1'), 'select * from public.audit_log'), '0');
 select tests.is('rep-only view: Alex cannot use the admin reassign RPC',
   tests.x(tests.id('a1'), 'select public.admin_reassign_client(''pat.homes@example.com'', ''' || tests.id('a1') || ''')'), 'ERR:42501');
-select tests.is('rep-only view: Alex adds her own client by email', tests.x(tests.id('a1'),
-  'insert into public.assignments (client_email, rep_id) values (''self.added@example.com'', ''' || tests.id('a1') || ''')'), 'ok:1');
+select tests.is('rep-only view: Alex cannot add her own client by email either (rep powers only; assigning is an admin action, migration 19)', tests.x(tests.id('a1'),
+  'insert into public.assignments (client_email, rep_id) values (''self.added@example.com'', ''' || tests.id('a1') || ''')'), 'ERR:42501');
 select tests.is('rep-only view: Alex cannot assign a client to Jane',
   tests.x(tests.id('a1'), 'insert into public.assignments (client_email, rep_id) values (''for.jane@example.com'', ''' || tests.id('b1') || ''')'), 'ERR:42501');
 -- a plain admin (not a rep) at aal1 under MFA has NO rep powers at all
@@ -1955,6 +1959,13 @@ select tests.is('...then to a super admin who also works as a rep (history kept:
 select tests.is('...but never to an admin who does not work as a rep, nor to another client',
   tests.x(tests.id('a1'), 'select public.admin_reassign_client(''brian.unassigned@example.com'', ' || quote_literal((select id::text from public.profiles where role in ('admin', 'super_admin') and not is_rep limit 1)) || ')') || '/' ||
   tests.x(tests.id('a1'), 'select public.admin_reassign_client(''brian.unassigned@example.com'', ' || tests.u('c1') || ')'), 'ERR:23514/ERR:23514');
+select tests.is('a rep cannot move, end or delete an assignment by writing the table (update / delete are admin only)',
+  tests.x(tests.id('b1'), 'update public.assignments set rep_id = ' || tests.u('b1') || ' where client_email = ''brian.unassigned@example.com''') || '/' ||
+  tests.x(tests.id('b1'), 'update public.assignments set active = false where client_email = ''brian.unassigned@example.com''') || '/' ||
+  tests.x(tests.id('b1'), 'delete from public.assignments where client_email = ''brian.unassigned@example.com'''), 'ok:0/ok:0/ok:0');
+select tests.is('a rep cannot claim a client by inserting a row either', tests.x(tests.id('b2'), 'insert into public.assignments (client_email, rep_id) values (''new.claim@example.com'', ' || tests.u('b2') || ')'), 'ERR:42501');
+select tests.is('a client cannot use the admin assignment call', tests.x(tests.id('c1'), 'select public.admin_reassign_client(''brian.unassigned@example.com'', ' || tests.u('b1') || ')'), 'ERR:42501');
+select tests.is('the only write policies on assignments are the admin ones', (select string_agg(policyname || ':' || cmd, ',' order by policyname) from pg_policies where schemaname = 'public' and tablename = 'assignments' and cmd <> 'SELECT'), 'assignments_delete_admin:DELETE,assignments_insert_admin:INSERT,assignments_update_admin:UPDATE');
 select tests.is('a rep cannot use the admin assignment call', tests.x(tests.id('b1'), 'select public.admin_reassign_client(''brian.unassigned@example.com'', ' || tests.u('b1') || ')'), 'ERR:42501');
 select tests.is('...and the client is still the super admin''s', (select rep_id::text from public.assignments where client_email = 'brian.unassigned@example.com' and active), tests.id('a1')::text);
 

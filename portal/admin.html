@@ -5,11 +5,14 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="portal.css">
 <script src="config.js"></script>
-<script src="../fee-snapshot.js?v=20261101a"></script>
+<script src="../fee-snapshot.js?v=20261101b"></script>
 <script src="js/mock-data.js"></script><script src="js/mock-adapter.js"></script><script src="js/supabase-adapter.js"></script><script src="js/auth-adapter.js"></script><script src="js/portal-ui.js"></script>
 <style>
 .repbox{position:relative;display:inline-block;vertical-align:middle;width:230px}
 .repbox input[type=text]{min-height:34px;padding:4px 10px;font-size:13px;width:100%}
+.repbox.editing input[type=text]{width:calc(100% - 78px)}
+.repbox .repname{font-weight:600;margin-right:8px;vertical-align:middle}
+.repbox .btn.sm.repedit,.repbox .btn.sm.repcancel{vertical-align:middle}.repbox .btn.sm.repcancel{margin-left:6px}
 .replist{list-style:none;margin:4px 0 0;padding:4px;border:1.5px solid var(--field);border-radius:10px;background:#fff;max-height:240px;overflow-y:auto;box-shadow:0 6px 18px rgba(0,0,0,.08)}
 .replist li{text-align:left;padding:6px 8px;border-radius:7px;cursor:pointer;font-size:13px;line-height:1.3}
 .replist li .sum{display:block;font-size:11.5px}
@@ -146,12 +149,21 @@
   // Users tab, Rep column of a client row: pick any salesperson; saving calls admin_reassign_client (history kept on the Assignments tab)
   // A type-to-search box (combobox): type part of a rep's name (or the email of a rep with no name yet); the matches list under it.
   // Arrow keys move, Enter or a click picks, Escape cancels. Picking saves through admin_reassign_client (history kept on the Assignments tab).
+  // A client WITH a rep shows the rep's name and an Edit button, so a stray click cannot move them; Edit opens the search box (Cancel / Escape puts the name back).
+  // An UNASSIGNED client shows the search box straight away (nothing to protect) with the Unassigned badge.
+  // Only admins and super admins assign or move clients (the database enforces it too: admin_reassign_client and the
+  // assignments write policies are admin-only, migration 19). This page only opens for them; the check is a second guard.
+  const canAssign = CLA.isAdmin(me);
   function repPick(u, rep) {
-    const cur = rep ? rep.id : "", lid = "rl-" + u.id;
-    return '<div class="repbox" data-repbox="' + esc(u.id) + '"' + (cur ? ' data-cur="' + esc(cur) + '"' : "") + '><input type="text" data-repq="' + esc(u.id) + '" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="' + esc(lid) + '" autocomplete="off" spellcheck="false"' +
-      ' aria-label="Rep for ' + esc(CLA.fullName(u)) + '" placeholder="Type a rep\u2019s name\u2026" value="' + (rep ? esc(repLabel(rep)) : "") + '"><ul class="replist" role="listbox" id="' + esc(lid) + '" hidden></ul></div>' +
+    const cur = rep ? rep.id : "";
+    if (!canAssign) return rep ? '<span class="repname">' + esc(repLabel(rep)) + "</span>" : '<span class="badge warn">Unassigned</span>';
+    return '<div class="repbox" data-repbox="' + esc(u.id) + '"' + (cur ? ' data-cur="' + esc(cur) + '"' : "") + ">" + (cur ? repView(u, rep) : repInput(u, null)) + "</div>" +
       (cur ? "" : '<span class="badge warn">Unassigned</span>');
   }
+  const repView = (u, rep) => '<span class="repname">' + esc(repLabel(rep)) + '</span><button class="btn o sm repedit" type="button" data-repedit="' + esc(u.id) + '" aria-label="Change the rep for ' + esc(CLA.fullName(u)) + '">Edit</button>';
+  const repInput = (u, rep) => '<input type="text" data-repq="' + esc(u.id) + '" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="rl-' + esc(u.id) + '" autocomplete="off" spellcheck="false"' +
+    ' aria-label="' + (rep ? "New rep for " : "Rep for ") + esc(CLA.fullName(u)) + '" placeholder="Type a rep\u2019s name\u2026" value="">' +
+    (rep ? '<button class="btn o sm repcancel" type="button" data-repcancel="' + esc(u.id) + '">Cancel</button>' : "") + '<ul class="replist" role="listbox" id="rl-' + esc(u.id) + '" hidden></ul>';
   const repMatches = (q) => { q = q.trim().toLowerCase(); const reps = salesReps(); return q ? reps.filter((r) => (repLabel(r) + " " + r.email).toLowerCase().includes(q)) : reps; };
   function repOpen(inp, keepActive) {
     const box = inp.closest(".repbox"), ul = box.querySelector(".replist"), cur = box.dataset.cur || "";
@@ -165,11 +177,18 @@
     items.forEach((li) => li.classList.remove("ract")); if (!items.length) { inp.removeAttribute("aria-activedescendant"); return; }
     k = (k + items.length) % items.length; inp.dataset.act = k; items[k].classList.add("ract"); inp.setAttribute("aria-activedescendant", items[k].id); items[k].scrollIntoView && items[k].scrollIntoView({ block: "nearest" });
   }
-  function repClose(inp) {   // closes the list and puts back the current rep's name (or empty when unassigned)
-    const box = inp.closest(".repbox"), ul = box.querySelector(".replist"), cur = uById(box.dataset.cur || "");
-    ul.hidden = true; ul.innerHTML = ""; inp.setAttribute("aria-expanded", "false"); inp.removeAttribute("aria-activedescendant"); inp.dataset.typed = ""; inp.value = cur ? repLabel(cur) : "";
+  function repClose(inp, refocus) {   // closes the list; unassigned: clears what was typed; assigned: back to the name + Edit button
+    const box = inp.closest(".repbox"); if (!box) return; const ul = box.querySelector(".replist"), cur = uById(box.dataset.cur || "");
+    ul.hidden = true; ul.innerHTML = ""; inp.setAttribute("aria-expanded", "false"); inp.removeAttribute("aria-activedescendant"); inp.dataset.typed = ""; inp.value = "";
+    if (cur) { box.classList.remove("editing"); box.innerHTML = repView(uById(box.dataset.repbox) || { id: box.dataset.repbox }, cur); if (refocus) box.querySelector("[data-repedit]").focus(); }
   }
-  async function repChoose(clientId, repId) {
+  $("users").addEventListener("click", (e) => { if (!canAssign) return;
+    const ed = e.target.closest("[data-repedit]");
+    if (ed) { const box = ed.closest(".repbox"), u = uById(ed.dataset.repedit), cur = uById(box.dataset.cur || ""); if (!u || !cur) return;
+      box.classList.add("editing"); box.innerHTML = repInput(u, cur); box.querySelector("[data-repq]").focus(); return; }
+    const cn = e.target.closest("[data-repcancel]"); if (cn) { const inp = cn.closest(".repbox").querySelector("[data-repq]"); if (inp) repClose(inp, true); }
+  });
+  async function repChoose(clientId, repId) { if (!canAssign) return;
     const u = uById(clientId), to = uById(repId), a = u && asg.find((x) => x.active && x.clientUserId === u.id), from = a && uById(a.repId);
     if (!u || !to || (from && from.id === to.id)) { await loadUsers(false); return; }
     if (from && !confirm("Move " + CLA.fullName(u) + " from " + CLA.fullName(from) + " to " + CLA.fullName(to) + "? History is kept.")) { await loadUsers(false); return; }
@@ -183,11 +202,11 @@
     const ul = inp.closest(".repbox").querySelector(".replist");
     if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); if (ul.hidden) repOpen(inp); else repActive(inp, +(inp.dataset.act || 0) + (e.key === "ArrowDown" ? 1 : -1)); }
     else if (e.key === "Enter") { e.preventDefault(); const li = ul.hidden ? null : ul.querySelectorAll("li[data-pick]")[+(inp.dataset.act || 0)]; if (li) { const id = li.dataset.pick; repClose(inp); repChoose(inp.dataset.repq, id); } }
-    else if (e.key === "Escape") { e.preventDefault(); repClose(inp); }
+    else if (e.key === "Escape") { e.preventDefault(); repClose(inp, true); }
   });
   $("users").addEventListener("mousedown", (e) => { const li = e.target.closest(".replist li[data-pick]"); if (!li) return; e.preventDefault();   // before the box loses focus
     const inp = li.closest(".repbox").querySelector("[data-repq]"), id = li.dataset.pick; repClose(inp); repChoose(inp.dataset.repq, id); });
-  $("users").addEventListener("focusout", (e) => { const inp = e.target.closest("[data-repq]"); if (inp) setTimeout(() => { if (inp.isConnected && document.activeElement !== inp) repClose(inp); }, 0); });
+  $("users").addEventListener("focusout", (e) => { const inp = e.target.closest("[data-repq]"); if (inp) setTimeout(() => { const box = inp.closest(".repbox"); if (inp.isConnected && box && !box.contains(document.activeElement)) repClose(inp); }, 0); });
   async function loadUsers(refetch) {
     if (refetch !== false) { users = await A.adminListUsers(); asg = await A.adminListAssignments(); }
     const sup = cnt((u) => u.role === "super_admin"), adm = cnt((u) => u.role === "admin"), alsoRep = cnt((u) => adminRole(u.role) && u.isRep);
