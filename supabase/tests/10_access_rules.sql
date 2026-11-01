@@ -1940,6 +1940,24 @@ select tests.is('function privileges: anon cannot run the admin RPCs, authentica
        and not has_function_privilege('anon', 'private.is_super_admin()', 'execute'))::text), 'true');
 select tests.is('every public table still has RLS enabled', (select count(*)::text from pg_tables where schemaname = 'public' and not rowsecurity), '0');
 
+-- ---------------- Users tab Rep dropdown (11/01): an unassigned client with an account can be given ANY salesperson ----------------
+do $$ begin
+  insert into public.invitations (email, role) values ('brian.unassigned@example.com', 'client');
+  insert into auth.users (id, email) values (tests.id('eb'), 'brian.unassigned@example.com');
+end $$;
+select tests.is('a client invited without a rep has no assignment', (select count(*)::text from public.assignments where client_email = 'brian.unassigned@example.com'), '0');
+select tests.is('admin assigns the unassigned client to a rep: linked to the account',
+  tests.xv(tests.id('a1'), 'select public.admin_reassign_client(''brian.unassigned@example.com'', ' || tests.u('b1') || ')', $q$select rep_id::text || '/' || (client_user_id = tests.id('eb'))::text from public.assignments where client_email = 'brian.unassigned@example.com' and active$q$),
+  'ok:1/' || tests.id('b1') || '/true');
+select tests.is('...then to a super admin who also works as a rep (history kept: 2 rows, 1 active)',
+  tests.xv(tests.id('a1'), 'select public.admin_reassign_client(''brian.unassigned@example.com'', ' || tests.u('a1') || ')', $q$select count(*)::text || '/' || (count(*) filter (where active))::text || '/' || max(rep_id::text) filter (where active) from public.assignments where client_email = 'brian.unassigned@example.com'$q$),
+  'ok:1/2/1/' || tests.id('a1'));
+select tests.is('...but never to an admin who does not work as a rep, nor to another client',
+  tests.x(tests.id('a1'), 'select public.admin_reassign_client(''brian.unassigned@example.com'', ' || quote_literal((select id::text from public.profiles where role in ('admin', 'super_admin') and not is_rep limit 1)) || ')') || '/' ||
+  tests.x(tests.id('a1'), 'select public.admin_reassign_client(''brian.unassigned@example.com'', ' || tests.u('c1') || ')'), 'ERR:23514/ERR:23514');
+select tests.is('a rep cannot use the admin assignment call', tests.x(tests.id('b1'), 'select public.admin_reassign_client(''brian.unassigned@example.com'', ' || tests.u('b1') || ')'), 'ERR:42501');
+select tests.is('...and the client is still the super admin''s', (select rep_id::text from public.assignments where client_email = 'brian.unassigned@example.com' and active), tests.id('a1')::text);
+
 -- ---------------- summary ----------------
 do $$ declare f int; t int; begin
   select count(*) filter (where not ok), count(*) into f, t from tests.results;

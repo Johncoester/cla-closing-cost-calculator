@@ -278,7 +278,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
         for (const k in store) win.localStorage.setItem(k, store[k]); } });
     const d = dom.window.document;
     for (let i = 0; i < (expectBlocked ? 15 : 100) && d.querySelectorAll("#users tr").length < 13; i++) await new Promise((r) => setTimeout(r, 20));
-    return { dom, d, errs, row: (uid) => [...d.querySelectorAll("#users tr")].find((tr) => tr.innerHTML.includes('data-av="{&quot;id&quot;:&quot;' + uid + '&quot;') || tr.innerHTML.includes(uid)) };
+    return { dom, d, errs, row: (uid) => { const trs = [...d.querySelectorAll("#users tr")]; return trs.find((tr) => tr.innerHTML.includes('data-av="{&quot;id&quot;:&quot;' + uid + '&quot;')) || trs.find((tr) => tr.innerHTML.includes(uid) && !tr.querySelector('option[value="' + uid + '"]')) || trs.find((tr) => tr.innerHTML.includes(uid)); } };
   };
   {
     const R = await renderAdmin("sample.robin.admin@clatitle.com"), d = R.d;
@@ -488,6 +488,28 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
       const RM = await renderPage("rep.html", "sample.rep.marcus@clatitle.com", "#claFeedbackLink"); await tick(120); assert.strictEqual(RM.d.getElementById("claFbDot").textContent, "1"); RM.d.getElementById("claFeedbackLink").click(); await tick(150);
       assert.ok(/Where do I change my cell/.test(RM.d.getElementById("claFbMine").textContent) && !/Show my email|county/.test(RM.d.getElementById("claFbMine").textContent) && /Cell column/.test(RM.d.getElementById("claFbMine").textContent)); ok("feedback bubble: each sender sees only their own suggestions (Marcus sees his shipped note, not Jane's)"); RM.dom.window.close();
     }
+    // Users tab: every client row has a Rep dropdown listing every salesperson (active reps + admins who also work as a rep, A-Z); picking one assigns the client
+    { const UA = await renderPage("admin.html", "sample.admin@clatitle.com", "#users tr", null, (st) => { const c = st.users.find((x) => x.role === "client" && !st.assignments.some((a) => a.active && a.clientEmail === x.email)); c.firstName = "Brian"; c.lastName = "Coester"; c.email = "brian.coester@example.com"; }), ud = UA.d, uw = UA.dom.window; UA.row = (uid) => [...ud.querySelectorAll("#users tr")].find((tr) => tr.innerHTML.includes('data-av="{&quot;id&quot;:&quot;' + uid + '&quot;'));
+      const st0 = JSON.parse(uw.localStorage.getItem("cla_portal_mock_v1")), nm = (u) => [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email;
+      const sales = st0.users.filter((u) => u.status === "active" && (u.role === "rep" || (["admin", "super_admin"].includes(u.role) && u.isRep))).map(nm).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+      const plainAdmins = st0.users.filter((u) => ["admin", "super_admin"].includes(u.role) && !u.isRep).map(nm), offReps = st0.users.filter((u) => u.role === "rep" && u.status !== "active").map(nm);
+      const brian = st0.users.find((u) => u.email === "brian.coester@example.com"), sel = () => UA.row(brian.id).querySelector("select[data-rep]");
+      const shown = [...sel().options].filter((o) => o.value).map((o) => o.textContent.replace(/ \(admin \+ rep\)$/, ""));
+      assert.deepStrictEqual(shown, sales); assert.ok(sales.length >= 3 && plainAdmins.every((n) => !shown.includes(n)) && offReps.every((n) => !shown.includes(n)));
+      assert.ok(sel().value === "" && /Unassigned/.test(sel().options[0].textContent) && UA.row(brian.id).querySelector(".badge.warn") && [...sel().options].some((o) => / \(admin \+ rep\)$/.test(o.textContent)));
+      assert.strictEqual(ud.querySelectorAll("#users tr select[data-rep]").length, st0.users.filter((u) => u.role === "client").length); assert.ok(![...ud.querySelectorAll("#users tr")].some((tr) => tr.querySelector("select[data-role]") && tr.querySelector("select[data-role]").value !== "client" && tr.querySelector("select[data-rep]")));
+      ok("admin.html Users tab: each client row has a Rep dropdown with every salesperson (active reps + admins who also work as a rep, A-Z); plain admins and disabled reps are not listed; an unassigned client says Unassigned");
+      const target = st0.users.find((u) => u.role === "rep" && u.status === "active"); sel().value = target.id; sel().dispatchEvent(new uw.Event("change", { bubbles: true })); await tick(150);
+      let st1 = JSON.parse(uw.localStorage.getItem("cla_portal_mock_v1")), act = st1.assignments.filter((a) => a.active && a.clientEmail === "brian.coester@example.com");
+      assert.ok(act.length === 1 && act[0].repId === target.id && act[0].clientUserId === brian.id); assert.strictEqual(sel().value, target.id); assert.ok(!UA.row(brian.id).querySelector(".badge.warn") && ![...sel().options].some((o) => o.value === ""));
+      assert.ok(st1.audit.some((l) => l.action === "assignment_changed" && l.details && l.details.client_email === "brian.coester@example.com"));
+      ok("admin.html Users tab: picking a rep for an unassigned client assigns them right away (assignment + audit row), and the row shows the rep");
+      const other = st0.users.find((u) => u.role === "rep" && u.status === "active" && u.id !== target.id); let asked = ""; uw.confirm = (m) => { asked = m; return false; };
+      sel().value = other.id; sel().dispatchEvent(new uw.Event("change", { bubbles: true })); await tick(150); st1 = JSON.parse(uw.localStorage.getItem("cla_portal_mock_v1"));
+      assert.ok(/^Move Brian Coester from .+ to .+\? History is kept\.$/.test(asked) && st1.assignments.find((a) => a.active && a.clientEmail === "brian.coester@example.com").repId === target.id && sel().value === target.id);
+      uw.confirm = () => true; sel().value = other.id; sel().dispatchEvent(new uw.Event("change", { bubbles: true })); await tick(150); st1 = JSON.parse(uw.localStorage.getItem("cla_portal_mock_v1"));
+      const hist = st1.assignments.filter((a) => a.clientEmail === "brian.coester@example.com"); assert.ok(hist.length === 2 && hist.filter((a) => a.active).length === 1 && hist.find((a) => a.active).repId === other.id && sel().value === other.id);
+      assert.strictEqual(UA.errs.length, 0, UA.errs.join()); UA.dom.window.close(); ok("admin.html Users tab: moving an assigned client asks first (Cancel changes nothing); OK moves them and keeps the old assignment as history"); }
     const RA = await renderPage("admin.html", "sample.robin.admin@clatitle.com", "#users tr", async (A0) => { await A0.submitFeedback({ category: "bug", message: evil, page: "/portal/admin.html" }); });
     assert.ok(RA.d.getElementById("claFeedbackLink")); const tabs = [...RA.d.querySelectorAll("#tabs button")]; assert.strictEqual(tabs[4].textContent, "Feedback"); tabs[4].click(); await tick(80);
     assert.ok(!RA.d.getElementById("pFeedback").hidden); assert.ok(RA.d.querySelectorAll("#fbRows tr").length >= 4); assert.strictEqual(RA.d.querySelectorAll("#fbRows [data-fb]").length, 0); assert.match(RA.d.getElementById("fNote").textContent, /Read only/); ok("feedback panel: an Admin lists everything but has no approve/dismiss buttons");
@@ -1238,7 +1260,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
 
     // cache-bust: every ?v= in index.html and TOUR_V agree
     const vs = [...idx.matchAll(/\?v=(\d{8}[a-z])/g)].map((m) => m[1]), pu = fs.readFileSync(path.join(__dirname, "js", "portal-ui.js"), "utf8");
-    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261029b" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261029b");
+    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261101a" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261101a");
     // the new elements are inert in print and add no external requests
     assert.ok(/@media print\{\s*@page\{margin:14mm\}\s*\.claChip\{display:none!important\}/.test(idx) && !/https?:\/\//.test(tj2)); ok("calculator tour: the chip is not printed; tour.js has no external libraries or CDN");
   }

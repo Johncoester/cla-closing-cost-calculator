@@ -5,7 +5,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="portal.css">
 <script src="config.js"></script>
-<script src="../fee-snapshot.js?v=20261029b"></script>
+<script src="../fee-snapshot.js?v=20261101a"></script>
 <script src="js/mock-data.js"></script><script src="js/mock-adapter.js"></script><script src="js/supabase-adapter.js"></script><script src="js/auth-adapter.js"></script><script src="js/portal-ui.js"></script>
 </head><body>
 <main class="pg">
@@ -129,6 +129,19 @@
     if (f.st === "disabled" ? u.status === "active" : f.st === "active" ? u.status !== "active" : f.st === "never" ? !(u.status === "active" && u.lastSignInAt === null) : false) return false;
     return !f.q || [CLA.fullName(u), u.email, u.companyName || ""].join(" ").toLowerCase().includes(f.q);
   };
+  // Everyone who can be given clients: every active rep, plus admins / super admins switched on as "Also works as a rep"
+  // (the database's rule, private.is_rep / the assignments trigger). Plain admins are not salespeople and are left out. A-Z.
+  const salesReps = () => users.filter((u) => CLA.isRep(u) && u.status === "active").sort((a, b) => CLA.fullName(a).toLowerCase().localeCompare(CLA.fullName(b).toLowerCase()));
+  const repLabel = (r) => CLA.fullName(r) + (adminRole(r.role) ? " (admin + rep)" : "");
+  // Users tab, Rep column of a client row: pick any salesperson; saving calls admin_reassign_client (history kept on the Assignments tab)
+  function repPick(u, rep) {
+    const reps = salesReps(), cur = rep ? rep.id : "";
+    const list = rep && !reps.some((r) => r.id === rep.id) ? reps.concat([rep]) : reps;   // a disabled current rep still shows as selected
+    return '<select data-rep="' + esc(u.id) + '" aria-label="Rep for ' + esc(CLA.fullName(u)) + '" style="min-height:34px;padding:4px 30px 4px 10px;font-size:13px;width:auto;max-width:220px">' +
+      (cur ? "" : '<option value="" selected>Unassigned: pick a rep</option>') +
+      list.map((r) => '<option value="' + esc(r.id) + '"' + (r.id === cur ? " selected" : "") + ">" + esc(repLabel(r)) + (r.status !== "active" ? " (disabled)" : "") + "</option>").join("") + "</select>" +
+      (cur ? "" : ' <span class="badge warn">Unassigned</span>');
+  }
   async function loadUsers(refetch) {
     if (refetch !== false) { users = await A.adminListUsers(); asg = await A.adminListAssignments(); }
     const sup = cnt((u) => u.role === "super_admin"), adm = cnt((u) => u.role === "admin"), alsoRep = cnt((u) => adminRole(u.role) && u.isRep);
@@ -155,11 +168,11 @@
       const btn = '<button class="btn ' + (u.status === "active" ? "danger" : "o") + ' sm" data-st="' + esc(u.id) + '" data-to="' + (u.status === "active" ? "disabled" : "active") + '" type="button"' + (block ? ' disabled aria-disabled="true"' : "") + ">" + (u.status === "active" ? "Disable" : "Re-enable") + "</button>";
       const del = u.status !== "active" ? '<button class="btn danger sm" data-del="' + esc(u.id) + '" type="button"' + (block ? ' disabled aria-disabled="true"' : "") + ' title="Permanently delete this disabled user">Delete…</button>' : "";   // only for a DISABLED person
       const action = mine ? "" : '<span class="acts">' + (block ? '<span class="tip"' + tip(block) + ">" + btn + del + "</span>" : btn + del) + "</span>";   // the tooltip sits on a wrapper: a disabled button gets no hover / focus events
-      return "<tr><td><div class='who'>" + CLA.avImg(u, "sm") + "<div><b>" + esc(CLA.fullName(u)) + "</b><span>" + esc(u.email) + (u.companyName && u.role === "client" ? " · " + esc(u.companyName) : "") + "</span></div></div></td><td>" + (CLA.telLink(u.cellPhone) || '<span class="sum">—</span>') + "</td><td>" + roleSel + alsoBox + "</td><td>" + (u.role === "client" ? (rep ? esc(CLA.fullName(rep)) : '<span class="badge warn">Unassigned</span>') : "—") + "</td><td>" + st + '</td><td class="num">' + action + "</td></tr>";
+      return "<tr><td><div class='who'>" + CLA.avImg(u, "sm") + "<div><b>" + esc(CLA.fullName(u)) + "</b><span>" + esc(u.email) + (u.companyName && u.role === "client" ? " · " + esc(u.companyName) : "") + "</span></div></div></td><td>" + (CLA.telLink(u.cellPhone) || '<span class="sum">—</span>') + "</td><td>" + roleSel + alsoBox + "</td><td>" + (u.role === "client" ? repPick(u, rep) : "—") + "</td><td>" + st + '</td><td class="num">' + action + "</td></tr>";
     }).join("");
     CLA.fillAvatars(A, $("users"));
-    const reps = users.filter((u) => CLA.isRep(u) && u.status === "active");   // real reps AND admins / super admins who also work as a rep
-    const opts = reps.map((r) => '<option value="' + esc(r.id) + '">' + esc(CLA.fullName(r)) + (adminRole(r.role) ? " (admin + rep)" : "") + "</option>").join("");
+    const reps = salesReps();
+    const opts = reps.map((r) => '<option value="' + esc(r.id) + '">' + esc(repLabel(r)) + "</option>").join("");
     $("aRep").innerHTML = opts; $("iRep").innerHTML = '<option value="">No rep yet</option>' + opts;
   }
   // ---- "Move N realtors to ..." (migration 12): a person who works as a rep and has ACTIVE clients cannot stop being a rep
@@ -187,6 +200,13 @@
     });
   }
   $("users").onchange = async (e) => {
+    const rp = e.target.closest("[data-rep]");
+    if (rp) {
+      const u = uById(rp.dataset.rep), to = uById(rp.value), a = u && asg.find((x) => x.active && x.clientUserId === u.id), from = a && uById(a.repId);
+      if (!u || !to) { await loadUsers(false); return; }
+      if (from && !confirm("Move " + CLA.fullName(u) + " from " + CLA.fullName(from) + " to " + CLA.fullName(to) + "? History is kept.")) { await loadUsers(false); return; }
+      try { await A.adminReassign(u.email, to.id); CLA.toast(CLA.fullName(u) + " now belongs to " + CLA.fullName(to)); } catch (ex) { CLA.toast(ex.message); }
+      await loadUsers(); return; }
     const c = e.target.closest("[data-also]");
     if (c) {
       const u = uById(c.dataset.also); let succ = null;
