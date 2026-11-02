@@ -4,10 +4,66 @@
 <meta name="theme-color" content="#000000"><meta name="robots" content="noindex">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="portal.css">
+<style>
+/* saved quote: totals rows (screen + print) and the print / Save PDF redesign 11/02/26 (same look as the calculator's printout) */
+.pband{display:none}
+#lines tr.tot td{font-weight:800;background:#f1f8e4;border-top:1px solid #d9e9bd}
+#lines .grand{background:#10140d}#lines .grand th{color:#cfe8a6;background:transparent}#lines .grand td{color:#fff;border-top-color:#2a3122}#lines .grand tr.tot td{background:transparent;color:#fff;font-size:16px}
+.pfoot{display:none}
+@media print{
+ @page{size:letter;margin:9mm 12mm 13mm;
+  @bottom-left{content:"C.L.A. Title & Escrow  ·  888-924-9008  ·  www.clatitle.com";font:600 7.5pt Inter,Arial,sans-serif;color:#5d6656}
+  @bottom-right{content:"Page " counter(page) " of " counter(pages);font:600 7.5pt Inter,Arial,sans-serif;color:#5d6656}}
+ *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+ html,body{background:#fff!important}
+ body{font-size:9.5pt;color:#111;line-height:1.35;display:block;min-height:0}
+ header.top,.demo,.noprint,.toast,#claFb,.claFb{display:none!important}
+ main.pg{max-width:none;padding:0;margin:0}
+ .stack{gap:0!important}
+ .pband{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:0 0 6px;margin:0 0 8px;border-bottom:3.5pt solid #8dc63f;box-shadow:0 1.5pt 0 #10140d;break-inside:avoid;break-after:avoid}
+ .pband img{height:.46in;width:auto;display:block}
+ .pband .pttl{text-align:right}.pband b{display:block;font-size:15pt;font-weight:800;letter-spacing:-.01em;color:#10140d;line-height:1.15}.pband span{display:block;font-size:8.5pt;color:#4a5242;margin-top:2px}
+ .cobrand{border:1px solid #cfd8c2!important;border-left:4pt solid #8dc63f!important;border-top:1px solid #cfd8c2!important;border-radius:5px!important;box-shadow:none!important;padding:5px 10px!important;margin:0 0 7px!important;gap:4px 12px!important;flex-wrap:wrap!important;align-items:center!important;break-inside:avoid}
+ .cobrand .av{width:.62in!important;height:.62in!important;border-radius:6px!important;border:0!important;box-shadow:0 0 0 1.5px #8dc63f!important}
+ .cobrand .party b{font-size:11pt}.cobrand .party span{font-size:8pt;color:#222;line-height:1.25}.cobrand .party .lines{columns:2;column-gap:14px}
+ .cobrand .meta{font-size:8pt;color:#33451f;text-align:right;margin-left:auto}
+ .cobrand .divider{background:#cfd8c2}
+ .cobrand .party{flex:1 1 0!important;min-width:0}.cobrand .party.client{flex:1.7 1 0!important}.cobrand .party>div{min-width:0;flex:1 1 auto}.cobrand .meta{flex:0 0 100%!important;width:100%!important;max-width:none;text-align:left!important;margin:2px 0 0!important;padding-top:3px;border-top:1px solid #e3e9d8;columns:3;column-gap:14px}.cobrand .party span{overflow-wrap:break-word!important}.cobrand .divider{display:block!important;width:1px;align-self:stretch;flex:none}
+ .hero{display:block;background:#eef7dd!important;color:#10140d;border:1px solid #b9d68a!important;border-left:7pt solid #8dc63f!important;border-radius:6px!important;padding:7px 12px!important;margin:0 0 9px;box-shadow:none!important;break-inside:avoid}
+ .hero::before,.hero::after{display:none}
+ .hero small{font-size:8pt;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#33451f}
+ .hero .big{font-size:25pt;font-weight:800;letter-spacing:-.02em;color:#10140d!important;margin:1px 0;line-height:1.05;text-shadow:none}
+ .hero .sum{font-size:8.5pt;color:#33451f!important;margin:0}
+ #lines .card,#lines .card.flush{box-shadow:none!important;border:0!important;border-radius:0!important;margin:0 0 7px;padding:0;overflow:visible;break-inside:auto;background:#fff}
+ #lines .sh{display:flex;background:#10140d!important;color:#fff;padding:3px 8px;border:0;border-radius:4px 4px 0 0;break-after:avoid;break-inside:avoid}
+ #lines .sh h2{margin:0;color:#fff;font-size:9.5pt;font-weight:700}
+ #lines .tablewrap{overflow:visible}
+ #lines table{table-layout:fixed;border:1px solid #dfe6d4;border-top:0}
+ #lines thead{display:table-header-group}
+ #lines th{padding:2.4px 8px;font-size:7pt;font-weight:700;color:#4a5242;background:#e7eedc!important;letter-spacing:.07em;border:0}
+ #lines td{padding:1.9px 8px;font-size:8.5pt;border-top:0;color:#111}
+ #lines th.num,#lines td.num{width:1.05in}
+ #lines tbody tr:nth-child(even):not(.tot) td{background:#f5f8f0!important}
+ #lines tr.tot td{background:#dcebc4!important;border-top:1.2pt solid #10140d;font-weight:800;color:#10140d}
+ #lines tr{break-inside:avoid}#lines .card.keep{break-inside:avoid;page-break-inside:avoid}#lines tr.tot{break-before:avoid}
+ #lines .secnote{margin:0;padding:2px 8px 0;font-size:7pt;color:#4a5242}
+ #lines .grand,#lines .grand table,#lines .grand tbody{break-inside:avoid;page-break-inside:avoid}#lines .grand{break-before:avoid;page-break-before:avoid}
+ #lines .grand{background:#fff!important;margin-top:4px}
+ #lines .grand table{border:0}#lines .grand th.num,#lines .grand td.num{width:1.45in}
+ #lines .grand th{background:#10140d!important;color:#cfe8a6;padding:4px 8px}
+ #lines .grand td{background:#fff!important;color:#111;border-top:1px solid #dfe6d4}
+ #lines .grand tr.tot td{background:#10140d!important;color:#fff;font-size:11pt;padding:5px 8px;border-top:0}
+ #warns{font-size:8pt;margin:4px 0 0}
+ footer.disc{display:block;max-width:none;margin:6px 0 0;padding:4px 0 0;border-top:1px solid #cfd8c2;font-size:7pt;color:#333;break-inside:avoid}
+ footer.disc p{max-width:none}
+ .pfoot{display:block!important;margin-top:1px!important;font-weight:600;color:#10140d!important}
+}
+</style>
 <script src="config.js"></script>
 <script src="js/mock-data.js"></script><script src="js/mock-adapter.js"></script><script src="js/supabase-adapter.js"></script><script src="js/auth-adapter.js"></script><script src="js/portal-ui.js"></script>
 </head><body>
 <main class="pg mid" id="main">
+<div class="pband" aria-hidden="true"><img src="../img/cla-logo-color.png" alt=""><div class="pttl"><b id="pTitle"></b><span id="pDate"></span></div></div>
 <div class="noprint" style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px"><a href="javascript:history.back()">← Back</a><span style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn o" id="newQuote" href="../index.html">New quote</a><button class="btn" type="button" id="print">Print / Save PDF</button></span></div>
 <div id="err" class="msg err" role="alert"></div>
 <div id="body" class="stack" hidden>
@@ -18,7 +74,7 @@
  <p class="sum noprint" id="expiry"></p>
 </div>
 </main>
-<footer class="disc"><p>Estimate only, not a Loan Estimate, Closing Disclosure, or commitment to insure; actual charges may vary. Contact C.L.A. Title &amp; Escrow for a binding quote.</p></footer>
+<footer class="disc"><p>Estimate only, not a Loan Estimate, Closing Disclosure, or commitment to insure; actual charges may vary. Contact C.L.A. Title &amp; Escrow for a binding quote.</p><p class="pfoot">C.L.A. Title &amp; Escrow · 9210 Corporate Blvd #150, Rockville, MD 20850 · 888-924-9008 · 301-887-5311 · www.clatitle.com</p></footer>
 <script>
 (async () => {
   // buyer quote with a down payment entered (Janette Fiallo 11/02): saved in inputs.down {mode, val}; older quotes have none, so nothing shows
@@ -44,11 +100,24 @@
   $("cobrand").innerHTML = (clientSide || "") + (clientSide && repSide ? '<div class="divider"></div>' : "") + (repSide || '<div class="party"><div class="logo" style="width:56px;height:56px;font-size:18px">CLA</div><div><b>C.L.A. Title &amp; Escrow</b><span>Closing cost estimate</span></div></div>') +
     '<div class="meta">Prepared ' + CLA.date(q.createdAt) + "<br>" + esc(q.propertyAddress || "") + (q.feeVersion ? "<br>Fees: " + esc(q.feeVersion) : "") + (q.state === "VA" && q.inputs && +q.inputs.assessed > +(q.price || 0) ? "<br>Assessed value " + CLA.money(+q.inputs.assessed) + " (Virginia deed taxes use the higher value)" : "") + downLine(q) + "</div>";
   const r = q.results || {}, h = r.headline || {};
-  $("hLabel").textContent = h.label || (q.quoteType === "buyer" ? "Estimated total" : "Net proceeds"); $("hValue").textContent = CLA.money(h.value);
+  const HL = { "Buyer total": "Buyer's estimated closing costs", "Borrower total": "Borrower's estimated closing costs", "Net seller proceeds": "Estimated net proceeds to the seller" };
+  $("hLabel").textContent = HL[h.label] || h.label || (q.quoteType === "buyer" ? "Estimated total" : "Net proceeds");
+  $("pTitle").textContent = q.quoteType === "buyer" ? (q.inputs && q.inputs.type === "refi" ? "Refinance Closing Cost Estimate" : "Buyer's Closing Cost Estimate") : "Seller's Net Sheet";
+  $("pDate").textContent = "Prepared " + CLA.date(q.createdAt); $("hValue").textContent = CLA.money(h.value);
   $("hSub").textContent = [q.label, q.county ? q.county + ", " + q.state : null].filter(Boolean).join(" · ");
   const groups = []; (r.lines || []).forEach((l) => { let g = groups.find((x) => x.sec === l.sec); if (!g) groups.push((g = { sec: l.sec, rows: [] })); g.rows.push(l); });
   const two = (r.lines || []).some((l) => "b" in l);
-  $("lines").innerHTML = groups.map((g) => '<section class="card flush"><div class="sh"><h2>' + esc(g.sec) + '</h2></div><div class="tablewrap"><table><tbody>' + g.rows.map((l) => "<tr><td>" + esc(l.item) + "</td>" + (two ? '<td class="num">' + (l.b ? CLA.money(l.b) : "—") + '</td><td class="num">' + (l.s ? CLA.money(l.s) : "—") + "</td>" : '<td class="num">' + CLA.money(l.amt) + "</td>") + "</tr>").join("") + "</tbody></table></div>" + (g.rows.some((l) => /^Recording fees/.test(l.item)) ? '<p class="secnote">Recording fees may change depending on the number of pages.</p>' : "") + "</section>").join("") || '<div class="card"><pre style="white-space:pre-wrap;margin:0;font:inherit">' + esc(r.text || "") + "</pre></div>";
+  // ledger: column headings, a total under each section and a grand total from the saved totals (print redesign 11/02/26; the lines themselves are unchanged)
+  const isRefi = q.inputs && q.inputs.type === "refi", colB = isRefi ? "Borrower" : "Buyer", T = r.totals || {}, r2 = (x) => Math.round(x * 100) / 100;
+  const SELLER_TOT = { "Commissions": "Total commissions", "Government tax & recording fees": "Total government tax & fees", "Title & settlement fees": "Total title & settlement", "Mortgage payoffs": "Total payoffs", "Prorations & credits": "Total prorations & credits", "Other costs": "Total other costs" };
+  const totLabel = (sec) => { const m = /^([A-Z])\. /.exec(sec || ""); return m ? "Section " + m[1] + " total" : SELLER_TOT[sec] || null; };
+  const head = two ? '<thead><tr><th>Item</th><th class="num">' + colB + '</th><th class="num">Seller</th></tr></thead>' : '<thead><tr><th>Item</th><th class="num">Amount</th></tr></thead>';
+  const totRow = (g) => { const lb = totLabel(g.sec); if (!lb) return ""; if (two) { const b = r2(g.rows.reduce((a, l) => a + (+l.b || 0), 0)), sv = r2(g.rows.reduce((a, l) => a + (+l.s || 0), 0)); return '<tr class="tot"><td>' + lb + '</td><td class="num">' + (b ? CLA.money(b) : "—") + '</td><td class="num">' + (sv ? CLA.money(sv) : "—") + "</td></tr>"; }
+    return '<tr class="tot"><td>' + lb + '</td><td class="num">' + CLA.money(r2(g.rows.reduce((a, l) => a + (+l.amt || 0), 0))) + "</td></tr>"; };
+  const grand = !groups.length ? "" : two
+    ? '<section class="card flush grand"><div class="tablewrap"><table><thead><tr><th>Estimate total</th><th class="num">' + colB + '</th><th class="num">Seller</th></tr></thead><tbody><tr class="tot"><td>Total</td><td class="num">' + CLA.money(T.buyer != null ? T.buyer : h.value) + '</td><td class="num">' + (T.seller != null ? CLA.money(T.seller) : "—") + "</td></tr></tbody></table></div></section>"
+    : (T.net != null ? '<section class="card flush grand"><div class="tablewrap"><table><thead><tr><th>Net proceeds</th><th class="num">Amount</th></tr></thead><tbody>' + '<tr><td>Selling price</td><td class="num">' + CLA.money(T.price) + "</td></tr>" + '<tr><td>Less: total seller costs</td><td class="num">' + CLA.money(-T.costs) + "</td></tr>" + (T.payoffs ? '<tr><td>Less: mortgage payoffs</td><td class="num">' + CLA.money(-T.payoffs) + "</td></tr>" : "") + (T.withholding ? '<tr><td>Less: Maryland non-resident withholding</td><td class="num">' + CLA.money(-T.withholding) + "</td></tr>" : "") + '<tr class="tot"><td>Net seller proceeds</td><td class="num">' + CLA.money(T.net) + "</td></tr></tbody></table></div></section>" : "");
+  $("lines").innerHTML = (groups.map((g) => '<section class="card flush' + (g.rows.length <= 8 ? " keep" : "") + '"><div class="sh"><h2>' + esc(g.sec) + '</h2></div><div class="tablewrap"><table class="led">' + head + "<tbody>" + g.rows.map((l) => "<tr><td>" + esc(l.item) + "</td>" + (two ? '<td class="num">' + (l.b ? CLA.money(l.b) : "—") + '</td><td class="num">' + (l.s ? CLA.money(l.s) : "—") + "</td>" : '<td class="num">' + CLA.money(l.amt) + "</td>") + "</tr>").join("") + totRow(g) + "</tbody></table></div>" + (g.rows.some((l) => /^Recording fees/.test(l.item)) ? '<p class="secnote">Recording fees may change depending on the number of pages.</p>' : "") + "</section>").join("") + grand) || '<div class="card"><pre style="white-space:pre-wrap;margin:0;font:inherit">' + esc(r.text || "") + "</pre></div>";
   $("warns").innerHTML = (r.warnings || []).map(esc).join("<br>");
   $("expiry").innerHTML = CLA.expiryHtml(q) + ". Run a new quote any time from the calculator.";
   $("body").hidden = false;

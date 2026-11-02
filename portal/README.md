@@ -471,3 +471,11 @@ Janette asked for these by email and video. All are optional and blank by defaul
 - **MD non-resident seller withholding** (Seller Net Sheet, MD only): `#s_nr` checkbox, `#s_nrt` type, `#s_nrown` ownership %, `#s_nrc` exemption certificate amount. `mdWithholding()` follows MW506NRS line 8: (price − selling expenses − mortgages/liens paid) × ownership % × rate; a certificate amount (MW506E) replaces it. `sellerNet().withholding` and `net` reduced by it. Saved as `inputs.nonRes / nonResType / nonResOwn / nonResCert`, results sec "Maryland non-resident withholding", `totals.withholding`.
   - Rates: individual / estate / trust **8.75%** (Comptroller Tax Alert, sales after 6/30/2025), entity **8.25%**. Melissa's PDF is the 2024 MW506NRS, which still prints 8.0% for individuals.
 - Cache-bust `20261102k`.
+
+## Print / Save PDF redesign (branch `pdf-refresh-1102`, 11/02/26, local only)
+
+- Calculator (`index.html` `@media print`) and saved quote (`portal/quote.html`): a band with the colour CLA logo (`img/cla-logo-color.png`, 472×133, cut from clatitle.com's email header), title + "Prepared" date, the rep / client card (`#claBrand`, `.cobrand`), a details block (address, county, price / loan, underwriter), a highlighted total box ("Buyer's / Borrower's estimated closing costs", "Estimated net proceeds to the seller"), dark section bars, striped rows, bold section totals, a dark grand-total row, CLA contact line, and page numbers (`@page` margin boxes; Chrome / Edge).
+- `print-color-adjust: exact`; every colour is paired with a border or weight, so it reads in black and white.
+- Page breaks: long sections may split (the column heads repeat); sections of 8 rows or fewer (`.keep`) and the grand total stay whole, and the grand total stays with the last section. The typical MD quotes print on 1 page (were 2–3).
+- Saved quote: column headings, section totals (sums of the saved lines) and a grand total from `results.totals`.
+- No calculation changes. Screen only changes: the total's label wording, and the saved quote's new headings / totals.

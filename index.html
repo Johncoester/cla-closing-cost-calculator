@@ -176,34 +176,85 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 }
 @media(max-width:360px){.row{grid-template-columns:1fr}.row3{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:no-preference){.btn,.seg button{transition:background .15s,box-shadow .15s}}
-/* print */
+/* print / Save PDF (redesign 11/02/26): branded band with the CLA logo, a details block, a highlighted total box, dark section bars,
+   striped rows, bold totals, a dark grand-total row, the rep card, CLA contact footer and page numbers. Colour is forced to print
+   (print-color-adjust) and every colour is paired with a border or weight so it still reads in black and white. */
+.pband,.pfoot{display:none}
 @media print{
- @page{margin:14mm}
- .claChip{display:none!important}
- body{background:#fff;font-size:11pt;color:#000}
- header{background:#fff!important;color:#000;border-bottom:3px solid #8dc63f}
- header .hr,.statusbar,.modebar,.col.in,.foot,.btn,.seg,.noprint{display:none!important}
- .logo{background:#fff;border:2px solid #8dc63f}
- .ht,.ht span{color:#000}
- main{display:block;padding:12px 0 0;max-width:none}
+ @page{size:letter;margin:9mm 12mm 13mm;
+  @bottom-left{content:"C.L.A. Title & Escrow  ·  888-924-9008  ·  www.clatitle.com";font:600 7.5pt Inter,Arial,sans-serif;color:#5d6656}
+  @bottom-right{content:"Page " counter(page) " of " counter(pages);font:600 7.5pt Inter,Arial,sans-serif;color:#5d6656}}
+ *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+ html,body{background:#fff!important}
+ body{font-size:9.5pt;color:#111;line-height:1.35}
+ header,.statusbar,.modebar,.col.in,.foot,.btn,.seg,.noprint,.claChip{display:none!important}
+ /* band */
+ .pband{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:0 0 6px;margin:0 0 8px;border-bottom:3.5pt solid #8dc63f;box-shadow:0 1.5pt 0 #10140d;break-inside:avoid;break-after:avoid}
+ .pband img{height:.46in;width:auto;display:block}
+ .pband .pttl{text-align:right}
+ .pband b{display:block;font-size:15pt;font-weight:800;letter-spacing:-.01em;color:#10140d;line-height:1.15}
+ .pband span{display:block;font-size:8.5pt;color:#4a5242;margin-top:2px}
+ .pband .ps{display:none}
+ body:has(#mainS:not([hidden])) .pband .ps{display:block}body:has(#mainS:not([hidden])) .pband .pq{display:none}
+ /* rep / client card (portal-hook adds #claBrand when signed in) */
+ #claBrand{border:1px solid #cfd8c2!important;border-left:4pt solid #8dc63f!important;border-radius:5px;margin:0 0 7px;background:#fff!important;break-inside:avoid}
+ #claBrand .wrap{padding:5px 10px!important;max-width:none;gap:12px!important;align-items:center!important}
+ #claBrand img{width:.62in!important;height:.62in!important;border-radius:6px!important;box-shadow:0 0 0 1.5px #8dc63f!important}
+ #claBrand .party b{font-size:11pt!important;margin:0!important}#claBrand .party span{font-size:8pt!important;color:#222!important;line-height:1.25!important}#claBrand .party .lines{columns:2!important;column-gap:14px}
+ #claBrand .dv{background:#cfd8c2!important}
+ main{display:block;padding:0;max-width:none;margin:0}
  .col.out{display:block}.col{gap:0}
- .card,.hero{box-shadow:none;border:1px solid #bbb;border-radius:8px;break-inside:avoid;margin-bottom:12px}
- .hero{background:#fff;color:#000;border:2px solid #000}.hero::after{display:none}
- .hero small,.hero .sum,.tile small{color:#333}.big{color:#000}.tile{background:#fff;border:1px solid #999}.tile b{color:#000}
+ /* details block */
+ .ph{display:block;margin:0 0 7px;padding:5px 10px;background:#f4f7ef;border:1px solid #dfe6d4;border-radius:5px;break-inside:avoid}
+ .ph h2{display:none}
+ .ph p{margin:1px 0;font-size:9pt;color:#111}.ph p:first-of-type{font-weight:700;font-size:10pt}
+ /* total box */
+ .hero{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"l t" "b t" "s t";align-items:center;column-gap:14px;background:#eef7dd!important;color:#10140d;border:1px solid #b9d68a;border-left:7pt solid #8dc63f;border-radius:6px;padding:7px 12px;margin:0 0 9px;box-shadow:none;break-inside:avoid;overflow:visible}
+ .hero::after,.hero::before{display:none}
+ .hero small{grid-area:l;display:block;font-size:8pt;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#33451f}
+ .hero .big{grid-area:b;font-size:25pt;font-weight:800;letter-spacing:-.02em;color:#10140d;margin:1px 0 1px;line-height:1.05}
+ .hero .sum{grid-area:s;font-size:8.5pt;color:#33451f;margin:0}
+ .hero #sSum{display:none}
+ .tiles{grid-area:t;display:flex;gap:6px;margin:0}
+ .tile{background:#fff!important;border:1px solid #b9d68a;border-radius:5px;padding:5px 9px;min-width:1.15in}
+ .tile small{display:block;font-size:7pt;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#4a5242}
+ .tile b{display:block;font-size:11.5pt;color:#10140d;margin-top:1px}
  .flag{background:#fff;color:#000;border:1px solid #000}
- .warn{background:#fff;border:1px solid #888;color:#000;break-inside:avoid;margin-bottom:12px}.warn::before{border:1px solid #000;background:#fff;color:#000}
+ .warn{display:block;background:#fff8e3!important;border:1px solid #d9b84a;border-radius:5px;color:#000;break-inside:avoid;margin:0 0 9px;padding:6px 10px;font-size:8.5pt}.warn::before{display:none}
+ /* ledger sections */
  #ledger,#sLedger{display:block}
- .sh{background:#fff;border-bottom:1px solid #999}.sh .l{background:#fff;border:1.5px solid #000}
- .ledger td,.ledger th{padding:5px 8px;font-size:10.5pt}.ledger td{border-top:1px solid #ccc}
- .ledger tr.tot td,.grand .ledger tr.tot td{background:#fff;border-top:2px solid #000}
+ .card,.card.sec{box-shadow:none;border:0;border-radius:0;margin:0 0 7px;padding:0;overflow:visible;break-inside:auto;background:#fff}
+ .sh{display:flex;align-items:center;gap:7px;background:#10140d!important;color:#fff;padding:3px 8px;border:0;border-radius:4px 4px 0 0;break-after:avoid;break-inside:avoid}
+ .sh .l{width:16px;height:16px;border-radius:4px;background:#8dc63f!important;color:#000;border:0;font-size:8pt;font-weight:800}
+ .sh h3{margin:0;color:#fff;font-size:9.5pt;font-weight:700;text-transform:none;letter-spacing:0}
+ .ledger{table-layout:fixed;border:1px solid #dfe6d4;border-top:0}
+ .ledger thead{display:table-header-group}
+ .ledger th{padding:2.4px 8px;font-size:7pt;font-weight:700;color:#4a5242;background:#e7eedc!important;letter-spacing:.07em;border:0}
  .ledger th.num::before{display:none}
+ .ledger td{padding:1.9px 8px;font-size:8.5pt;border-top:0;color:#111}
+ .ledger tbody tr:nth-child(even):not(.tot) td{background:#f5f8f0!important}
+ .ledger td.z{color:#8a9080}
+ .ledger tr.tot td{background:#dcebc4!important;border-top:1.2pt solid #10140d;font-weight:800;color:#10140d}
+ .ledger th.num,.ledger td.num{width:1.05in}
+ .ledger.one th.num,.ledger.one td.num{width:1.3in}
  tr{break-inside:avoid}
- .disc{padding:8px 0;color:#333}
- .ph{display:block;margin:0 0 12px;padding:0 0 8px;border-bottom:2px solid #000}.ph h2{margin:0 0 4px;font-size:15pt;color:#000}.ph p{margin:2px 0;font-size:10.5pt;color:#000}
- .cr{color:#000}.hero #sSum{display:none}
- .ledger.one th.num,.ledger.one td.num{width:150px}
+ .card.sec.keep{break-inside:avoid;page-break-inside:avoid}
+ .ledger tr.tot{break-before:avoid}
+ .secnote{margin:0;padding:2px 8px 0;font-size:7pt;color:#4a5242;background:#fff}
+ .grand,.grand table,.grand tbody{break-inside:avoid;page-break-inside:avoid}.grand{break-before:avoid;page-break-before:avoid}#ledger>section:last-child,#sLedger>section:last-child{break-after:avoid}.grand{margin-top:4px}
+ .grand .ledger{border:0}
+ .grand .ledger th{background:#10140d!important;color:#cfe8a6;padding:4px 8px}
+ .grand .ledger td{background:#fff!important;border-top:1px solid #dfe6d4}
+ .grand .ledger tr.tot td{background:#10140d!important;color:#fff;font-size:11pt;padding:5px 8px;border-top:0}
+ .cr{color:#000}
+ /* footer */
+ .disc{display:block;max-width:none;margin:6px 0 0;padding:4px 0 0;border-top:1px solid #cfd8c2;font-size:7pt;color:#333;break-inside:avoid}
+ .disc p{max-width:none}
+ .pfoot{display:block!important;margin-top:1px!important;font-weight:600;color:#10140d!important}
 }
 </style></head><body>
+<div class="pband" aria-hidden="true"><img src="img/cla-logo-color.png" alt=""><div class="pttl"><b class="pq" id="pTitleQ">Closing Cost Estimate</b><b class="ps">Seller's Net Sheet</b><span id="pDate"></span></div></div>
+<script id="claPDate">document.getElementById("pDate").textContent="Prepared "+new Date().toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});</script>
 <header><div class="wrap hwrap">
 <div class="logo" aria-hidden="true">CLA</div>
 <h1 class="ht">C.L.A. Title &amp; Escrow <span>—</span> Closing Cost Estimator</h1>
@@ -253,8 +304,9 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 </section>
 </div>
 <div class="col out">
+<div class="ph" id="q_ph"><h2 id="q_phT">Closing Cost Estimate</h2><p id="q_phAddr"></p><p id="q_phLine"></p></div>
 <section class="hero" data-tour="k-total" aria-label="Estimate summary">
-<small><span id="buyerLbl">Buyer</span> total · estimate</small>
+<small><span id="buyerLbl">Buyer</span>'s estimated closing costs</small>
 <div class="big" id="tB">$0</div>
 <p class="sum" id="summary"></p>
 <div class="tiles"><div class="tile"><small>Seller total</small><b id="tS">$0</b></div><div class="tile"><small>All parties</small><b id="tA">$0</b></div></div>
@@ -317,7 +369,7 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 <div class="col out">
 <div class="ph"><h2>Seller's Net Sheet</h2><p id="s_phAddr"></p><p id="s_phLine"></p></div>
 <section class="hero" data-tour="k-seller" aria-label="Net seller proceeds">
-<small>Net seller proceeds · estimate</small>
+<small>Estimated net proceeds to the seller</small>
 <div class="big" id="sNet">$0</div>
 <p class="sum" id="sSum"></p>
 <div class="tiles t3"><div class="tile"><small>Selling price</small><b id="sPrice">$0</b></div><div class="tile"><small>Total seller costs</small><b id="sCosts">$0</b></div><div class="tile"><small>Mortgage payoffs</small><b id="sPay">$0</b></div></div>
@@ -329,7 +381,7 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 </div>
 </main>
 
-<footer class="disc" data-tour="k-disclaimer"><p id="discQ">Estimates only, not a Loan Estimate or Closing Disclosure; actual charges may vary. Contact C.L.A. Title &amp; Escrow for a binding quote.</p><p id="discS" hidden>Estimate only. Not a settlement statement. Actual proceeds depend on final payoff, prorations and charges at closing.</p></footer>
+<footer class="disc" data-tour="k-disclaimer"><p id="discQ">Estimates only, not a Loan Estimate or Closing Disclosure; actual charges may vary. Contact C.L.A. Title &amp; Escrow for a binding quote.</p><p id="discS" hidden>Estimate only. Not a settlement statement. Actual proceeds depend on final payoff, prorations and charges at closing.</p><p class="pfoot">C.L.A. Title &amp; Escrow · 9210 Corporate Blvd #150, Rockville, MD 20850 · 888-924-9008 · 301-887-5311 · www.clatitle.com</p></footer>
 <script>
 // ---------- config ----------
 const SHEET_ID="1kVBo3hchS-B5-g8NHn5ZSAdAZxXxOjuaHTv6SuXamOM"; // "CLA Fee Tables (Live - Calculator)" (anyone-with-link viewer)
@@ -652,12 +704,16 @@ function syncLoan(){if(type!=="purchase"||$("downv").value.trim()==="")return;co
 function syncDown(){if(type!=="purchase"||$("downv").value.trim()==="")return;const p=+$("price").value||0,d=Math.max(0,p-(+$("loan").value||0));$("downv").value=String($("downm").value==="flat"?r2(d):p>0?+(d/p*100).toFixed(3):0)}
 function run(){ownPayOpts();const i=inputs();$("assessWrap").hidden=!(i.state==="VA"&&type!=="refi");$("fthbWrap").hidden=type==="refi"||NO_OO.test(i.state);$("occWrap").hidden=NO_OO.test(i.state);/* nor the owner-occupied box (FL: Caroline 11/02; VA: John 11/02, neither changes VA transfer / recordation taxes): it only matters for MD / DC rules *//* Florida has no first-time buyer transfer-tax program: the box is hidden there */$("occNote").textContent=i.state==="MD"&&!i.occ?"Maryland: not a principal residence, so the deed of trust records for $115 instead of $60 (RP 3-601). The deed stays $60.":"";$("cntyNote").textContent=!i.county?"Enter a ZIP or choose a county to include county taxes.":usesDefaults(R,i.state,i.county)?"Using state default rates for this county":"";const res=calc(R,i);last={i,res};renderTaxPay($("taxPay"),res.taxes,taxQ,run,type==="refi"?"Borrower":"Buyer");
  downHints(i);
+ {/* printed details block (display only) */const ad=[[$("addr").value.trim(),$("city").value.trim()].filter(Boolean).join(", "),[i.state,$("zip").value.trim()].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+  $("q_phT").textContent=$("pTitleQ").textContent=type==="refi"?"Refinance Closing Cost Estimate":"Buyer's Closing Cost Estimate";
+  $("q_phAddr").textContent=(ad||"(no address)")+(i.county?` · ${i.county}, ${i.state}`:"");
+  $("q_phLine").textContent=type==="refi"?`Loan amount ${fmt(i.loan)} · Payoff ${fmt(i.payoff)} · ${i.uw}`:`Sale price ${fmt(i.price)}${type==="cash"?" · Cash purchase":" · Loan amount "+fmt(i.loan)} · ${i.uw}`}
  $("summary").innerHTML=`${TN[type]} · ${i.county||"(no county)"}, ${i.state} · ${i.uw}${esc(assessedNote(i)+downNote(i))} ${src==="snapshot"?'<span class="flag">BUILT-IN SNAPSHOT</span>':""}`;
  $("tB").textContent=fmt(res.buyer);$("tS").textContent=fmt(res.seller);$("tA").textContent=fmt(res.total);const bl=type==="refi"?"Borrower":"Buyer",groups=[];let g=null;
  for(const l of res.lines){if(!g||l.sec!==g.sec){g={sec:l.sec,rows:"",b:0,s:0,items:[]};groups.push(g)}g.items.push(l);g.b+=l.b||0;g.s+=l.s||0;
   g.rows+=`<tr><td>${l.item}</td><td class="num${l.b?"":" z"}">${l.b?fmt(l.b):"—"}</td><td class="num${l.s?"":" z"}">${l.s?fmt(l.s):"—"}</td></tr>`}
  $("ledger").innerHTML=groups.map(g=>{const m=String(g.sec).match(/^([A-Z])\.\s*(.*)$/),letter=m?m[1]:"•",name=m?m[2]:g.sec;
-  return`<section class="card sec"><div class="sh"><span class="l">${letter}</span><h3>${name}</h3></div><table class="ledger"><thead><tr><th>Item</th><th class="num">${bl}</th><th class="num s">Seller</th></tr></thead><tbody>${g.rows}<tr class="tot"><td>Section ${letter} total</td><td class="num${g.b?"":" z"}">${g.b?fmt(g.b):"—"}</td><td class="num${g.s?"":" z"}">${g.s?fmt(g.s):"—"}</td></tr></tbody></table>${hasRec(g.items)?`<p class="secnote">${REC_NOTE} <button type="button" class="lnk noprint" data-docs>Change documents / pages</button></p>`:""}</section>`}).join("");
+  return`<section class="card sec${(g.items||[]).length<=8?" keep":""}"><div class="sh"><span class="l">${letter}</span><h3>${name}</h3></div><table class="ledger"><thead><tr><th>Item</th><th class="num">${bl}</th><th class="num s">Seller</th></tr></thead><tbody>${g.rows}<tr class="tot"><td>Section ${letter} total</td><td class="num${g.b?"":" z"}">${g.b?fmt(g.b):"—"}</td><td class="num${g.s?"":" z"}">${g.s?fmt(g.s):"—"}</td></tr></tbody></table>${hasRec(g.items)?`<p class="secnote">${REC_NOTE} <button type="button" class="lnk noprint" data-docs>Change documents / pages</button></p>`:""}</section>`}).join("");
  $("docsSum").textContent="("+Object.entries(i.docs).filter(([,[n]])=>n>0).map(([d,[n,pg]])=>`${d} ×${n}, ${pg} page${pg===1?"":"s"}`).join(" · ")+")";
  $("grand").innerHTML=`<tr class="tot"><td>Total</td><td class="num">${fmt(res.buyer)}</td><td class="num">${fmt(res.seller)}</td></tr>`;
  $("warns").innerHTML=res.warnings.length?`<div class="warn"><div><b>Warnings</b><ul>${res.warnings.map(w=>`<li>${w}</li>`).join("")}</ul></div></div>`:""}
@@ -707,7 +763,7 @@ function sinputs(){const n=id=>+$(id).value||0;return{state:$("s_state").value,c
  ownerPays:$("s_own").checked,fthb:$("s_fthb").checked&&!NO_OO.test($("s_state").value),bpst:$("s_bpst").checked,taxPayers:taxChoices(taxS,$("s_state").value+"|"+$("s_county").value),
  fees:[...document.querySelectorAll("#s_fees .fee")].filter(d=>d.children[0].checked).map(d=>Object.assign({name:d.children[0].dataset.name,payer:d.children[0].dataset.payer,tx:d.children[0].dataset.tx,sec:d.children[0].dataset.sec,amt:+d.children[2].value||0},d.children[0].dataset.special?{special:true,std:+d.children[0].dataset.std}:{}))}}
 const sgn=x=>x<0?`<span class="cr">−${fmt(-x)}</span>`:fmt(x);
-function sCard(n,title,rows,total,tl){return`<section class="card sec"><div class="sh"><span class="l">${n}</span><h3>${title}</h3></div><table class="ledger one"><thead><tr><th>Item</th><th class="num">Amount</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.item)}</td><td class="num">${sgn(r.amt)}</td></tr>`).join("")||'<tr><td class="z">None</td><td class="num z">—</td></tr>'}<tr class="tot"><td>${tl}</td><td class="num">${sgn(total)}</td></tr></tbody></table>${hasRec(rows)?`<p class="secnote">${REC_NOTE}</p>`:""}</section>`}
+function sCard(n,title,rows,total,tl){return`<section class="card sec${rows.length<=8?" keep":""}"><div class="sh"><span class="l">${n}</span><h3>${title}</h3></div><table class="ledger one"><thead><tr><th>Item</th><th class="num">Amount</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.item)}</td><td class="num">${sgn(r.amt)}</td></tr>`).join("")||'<tr><td class="z">None</td><td class="num z">—</td></tr>'}<tr class="tot"><td>${tl}</td><td class="num">${sgn(total)}</td></tr></tbody></table>${hasRec(rows)?`<p class="secnote">${REC_NOTE}</p>`:""}</section>`}
 const fullAddr=i=>[[$("s_addr").value.trim(),$("s_city").value.trim()].filter(Boolean).join(", "),[i.state,$("s_zip").value.trim()].filter(Boolean).join(" ")].filter(Boolean).join(", ");
 function runS(){syncOwn();$("s_assessWrap").hidden=$("s_state").value!=="VA";$("s_nrWrap").hidden=$("s_state").value!=="MD";$("s_nrOpts").hidden=$("s_nrWrap").hidden||!$("s_nr").checked;$("s_fthbWrap").hidden=NO_OO.test($("s_state").value);const i=sinputs(),r=sellerNet(R,i),T=r.totals,cd=pDate(i.closing);sLast={i,r};renderTaxPay($("s_taxPay"),r.calc.taxes,taxS,runS,"Buyer");
  $("s_cntyNote").textContent=!i.county?"Enter a ZIP or choose a county to include county taxes.":usesDefaults(R,i.state,i.county)?"Using state default rates for this county":"";
