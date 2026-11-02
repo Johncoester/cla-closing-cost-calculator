@@ -21,6 +21,10 @@
 <footer class="disc"><p>Estimate only, not a Loan Estimate, Closing Disclosure, or commitment to insure; actual charges may vary. Contact C.L.A. Title &amp; Escrow for a binding quote.</p></footer>
 <script>
 (async () => {
+  // buyer quote with a down payment entered (Janette Fiallo 11/02): saved in inputs.down {mode, val}; older quotes have none, so nothing shows
+  const downLine = (q) => { const i = q.inputs || {}, d = i.down, p = +i.price || 0; if (q.quoteType !== "buyer" || i.type !== "purchase" || !d || d.val == null) return "";
+    const a = Math.min(p, Math.max(0, d.mode === "flat" ? +d.val || 0 : p * (+d.val || 0) / 100));
+    return "<br>Price " + CLA.money(p) + " · Down payment " + CLA.money(a) + (p > 0 ? " (" + +(a / p * 100).toFixed(2) + "%)" : "") + " · Loan " + CLA.money(+i.loan || 0); };
   const { $, esc } = CLA; const { A, me } = await CLA.boot(null);
   $("print").onclick = () => window.print();
   const id = CLA.q("id"); const q = id && (await A.getQuote(id));
@@ -38,7 +42,7 @@
   const clientSide = owner && owner.role === "client" ? await party(owner, "client") : "";
   const repSide = await party(rep, "rep");
   $("cobrand").innerHTML = (clientSide || "") + (clientSide && repSide ? '<div class="divider"></div>' : "") + (repSide || '<div class="party"><div class="logo" style="width:56px;height:56px;font-size:18px">CLA</div><div><b>C.L.A. Title &amp; Escrow</b><span>Closing cost estimate</span></div></div>') +
-    '<div class="meta">Prepared ' + CLA.date(q.createdAt) + "<br>" + esc(q.propertyAddress || "") + (q.feeVersion ? "<br>Fees: " + esc(q.feeVersion) : "") + (q.state === "VA" && q.inputs && +q.inputs.assessed > +(q.price || 0) ? "<br>Assessed value " + CLA.money(+q.inputs.assessed) + " (Virginia deed taxes use the higher value)" : "") + "</div>";
+    '<div class="meta">Prepared ' + CLA.date(q.createdAt) + "<br>" + esc(q.propertyAddress || "") + (q.feeVersion ? "<br>Fees: " + esc(q.feeVersion) : "") + (q.state === "VA" && q.inputs && +q.inputs.assessed > +(q.price || 0) ? "<br>Assessed value " + CLA.money(+q.inputs.assessed) + " (Virginia deed taxes use the higher value)" : "") + downLine(q) + "</div>";
   const r = q.results || {}, h = r.headline || {};
   $("hLabel").textContent = h.label || (q.quoteType === "buyer" ? "Estimated total" : "Net proceeds"); $("hValue").textContent = CLA.money(h.value);
   $("hSub").textContent = [q.label, q.county ? q.county + ", " + q.state : null].filter(Boolean).join(" · ");

@@ -495,5 +495,41 @@ ok(SN({fees:[]}).totals.title===0&&near(SN({fees:[{name:"Custom",payer:"Seller",
   clickPay("s_taxPay","County transfer tax","split");ok(w.getElementById("sNet").textContent===net0&&/County transfer tax \(split 50\/50\)/.test(w.getElementById("sLedger").textContent),"DOM seller net: Split restores the net and shows the label");
   const sSnap=d.window.CLA_QUOTE_API.snapshot();ok(sSnap.quoteType==="seller_net"&&/County transfer tax \(split 50\/50\)/.test(sSnap.results.text)&&sSnap.results.lines.some(l=>/County transfer tax \(split 50\/50\)/.test(l.item)),"DOM seller net: snapshot and Copy summary carry the split label");
   w.querySelector("[data-mode=quote]").click();w.querySelector("[data-t=refi]").click();ok(w.getElementById("taxPay").hidden,"DOM tax payer: no control on a refinance");w.querySelector("[data-t=purchase]").click()}
+  // Janette Fiallo 11/02: down payment ($ or %), commission paid by buyer, broker admin fee (buyer quote); broker admin fee (seller net sheet)
+  {const v=id=>w.getElementById(id),txt=id=>v(id).textContent,tot=()=>["tB","tS","tA"].map(txt).join("|");
+   w.querySelector("[data-mode=quote]").click();w.querySelector("[data-t=purchase]").click();setv("state","FL");setv("county","Charlotte");setv("ownPay","");setv("price","400000");setv("loan","320000");
+   ok(v("downv").value===""&&v("bcv").value===""&&v("badm").value===""&&txt("tB")==="$6,212.50"&&txt("tS")==="$4,434.00","new fields default blank; Charlotte $400k unchanged (buyer $6,212.50 / seller $4,434.00)");
+   const s0=d.window.CLA_QUOTE_API.snapshot();ok(s0.inputs.down===null&&s0.inputs.brokerAdminFee===0&&s0.inputs.buyerPaidComm.val===0&&!s0.results.lines.some(l=>/Commission paid by buyer|Broker admin/.test(l.item)),"blank fields: no lines, saved inputs carry empty values");
+   ok(/Now: \$80,000\.00 \(20% of the price\)/.test(txt("downh")),"down payment hint shows the implied down payment from price and loan");
+   setv("downm","pct");setv("downv","10");ok(v("loan").value==="360000"&&/= \$40,000\.00 · loan \$360,000\.00/.test(txt("downh")),"10% down on $400k sets the loan to $360,000");
+   ok(/Down payment \$40,000\.00 \(10%\)/.test(txt("summary"))&&/Down payment \$40,000\.00 \(10%\) · Loan \$360,000\.00/.test(d.window.CLA_QUOTE_API.snapshot().results.text),"summary (printed) and copied quote show the down payment");
+   const s1=d.window.CLA_QUOTE_API.snapshot();ok(JSON.stringify(s1.inputs.down)===JSON.stringify({mode:"pct",val:10})&&s1.inputs.loan===360000,"saved quote inputs keep the down payment {mode, val} and the loan");
+   setv("price","500000");ok(v("loan").value==="450000","price change keeps 10% down: loan follows ($450,000)");
+   setv("downm","flat");ok(v("downv").value==="50000"&&v("loan").value==="450000","switching % -> $ keeps the same down payment ($50,000)");
+   setv("downv","25000");ok(v("loan").value==="475000","$25,000 down -> loan $475,000");
+   setv("loan","400000");ok(v("downv").value==="100000","typing the loan amount directly updates the down payment ($100,000)");
+   setv("downm","pct");ok(v("downv").value==="20"&&v("loan").value==="400000","switching $ -> % shows 20%");
+   setv("downv","120");ok(v("loan").value==="0","down payment is capped at the price (loan never below 0)");
+   setv("downv","");setv("loan","320000");setv("price","400000");ok(v("loan").value==="320000"&&d.window.CLA_QUOTE_API.snapshot().inputs.down===null,"cleared down payment: loan typed directly, price changes leave it alone");
+   ok(txt("tB")==="$6,212.50"&&txt("tS")==="$4,434.00","Charlotte back to $6,212.50 / $4,434.00");
+   setv("bcm","pct");setv("bcv","1");ok(/= \$4,000\.00/.test(txt("bch"))&&/Commission paid by buyer \(1% of price\)/.test(txt("ledger"))&&txt("tB")==="$10,212.50"&&txt("tS")==="$4,434.00","1% commission paid by buyer: H. Other buyer line $4,000, buyer total +$4,000, seller unchanged");
+   setv("bcm","flat");setv("bcv","2500");ok(/= \$2,500\.00 \(0\.63% of price\)/.test(txt("bch"))&&txt("tB")==="$8,712.50","flat $2,500 commission paid by buyer");
+   setv("badm","495");ok(/Broker admin fee \(buyer's broker\)/.test(txt("ledger"))&&txt("tB")==="$9,207.50"&&txt("tS")==="$4,434.00","buyer broker admin fee $495 adds a buyer line");
+   {const sn=d.window.CLA_QUOTE_API.snapshot();ok(sn.inputs.brokerAdminFee===495&&JSON.stringify(sn.inputs.buyerPaidComm)===JSON.stringify({mode:"flat",val:2500})&&sn.results.lines.filter(l=>/Commission paid by buyer|Broker admin fee/.test(l.item)).every(l=>l.sec==="H. Other"&&l.s===0)&&/Broker admin fee \(buyer's broker\): Buyer \$495\.00/.test(sn.results.text),"saved quote and copied text include both lines (buyer column, H. Other)")}
+   w.querySelector("[data-t=cash]").click();ok(v("downWrap").hidden&&!v("bAgentWrap").hidden&&/Broker admin fee/.test(txt("ledger"))&&!/Down payment/.test(txt("summary")),"cash: no down payment; agent costs still apply");
+   w.querySelector("[data-t=refi]").click();ok(v("downWrap").hidden&&v("bAgentWrap").hidden&&!/Commission paid by buyer|Broker admin/.test(txt("ledger")),"refinance: fields hidden, no lines");
+   w.querySelector("[data-t=purchase]").click();setv("bcv","");setv("badm","");ok(tot()==="$6,212.50|$4,434.00|$10,646.50","cleared: Charlotte totals unchanged");
+   // seller net sheet
+   w.querySelector("[data-mode=seller]").click();const n0=txt("sNet"),c0=txt("sCosts");ok(v("s_adm").value===""&&!/Broker admin fee/.test(txt("sLedger")),"seller: broker admin fee blank by default, no line");
+   setv("s_adm","695");const toN=x=>+x.replace(/[$,]/g,"");ok(/Broker admin fee/.test(txt("sLedger"))&&near(toN(n0)-toN(txt("sNet")),695)&&near(toN(txt("sCosts"))-toN(c0),695),"seller: $695 broker admin fee in Commissions, net down by $695");
+   {const sn=d.window.CLA_QUOTE_API.snapshot();ok(sn.inputs.brokerAdminFee===695&&sn.results.lines.some(l=>l.sec==="Commissions"&&l.item==="Broker admin fee"&&l.amt===695)&&/Broker admin fee: \$695\.00/.test(sn.results.text),"seller: saved quote + copied summary include it")}
+   setv("s_adm","");ok(txt("sNet")===n0,"seller: cleared -> net restored");w.querySelector("[data-mode=quote]").click();setv("state","MD");setv("zip","20850")}
+  // pure functions
+  ok(X.loanFromDown(400000,{mode:"pct",val:10})===360000&&X.loanFromDown(400000,{mode:"flat",val:40000})===360000&&X.loanFromDown(400000,null)===null&&X.loanFromDown(400000,{mode:"pct",val:150})===0,"loanFromDown: % and $, none, capped");
+  {const b=X.calc(R,inp({state:"FL",county:"Charlotte",price:400000,loan:320000})),c=X.calc(R,inp({state:"FL",county:"Charlotte",price:400000,loan:320000,buyerPaidComm:{mode:"pct",val:2},brokerAdminFee:695}));
+   ok(near(c.buyer-b.buyer,8695)&&c.seller===b.seller&&line(c,/Commission paid by buyer \(2% of price\)/)===8000,"calc: 2% commission + $695 admin fee are buyer-only");
+   const r0=X.calc(R,inp({type:"refi",buyerPaidComm:{mode:"pct",val:2},brokerAdminFee:695})),r1=X.calc(R,inp({type:"refi"}));ok(r0.buyer===r1.buyer,"calc: refinance ignores them")}
+  {const a=X.sellerNet(R,{state:"MD",county:"Montgomery",uw:"Fidelity National Title",price:500000,closing:"2026-11-20"}),b=X.sellerNet(R,{state:"MD",county:"Montgomery",uw:"Fidelity National Title",price:500000,closing:"2026-11-20",brokerAdminFee:495});
+   ok(near(a.net-b.net,495)&&b.commissions.length===3&&a.commissions.length===2,"sellerNet: broker admin fee deducted from net")}
 ok(errs.length===0,"no DOM errors "+errs);
  if(fails){console.error(fails,"FAILED");process.exit(1)}console.log("ALL PASS")})();

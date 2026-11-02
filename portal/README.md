@@ -271,7 +271,7 @@ The same engine also runs on the public calculator, for **anyone** (guest or sig
 - **Tabs:** the Seller Net Sheet step opens that tab and puts the person's own tab back afterwards (also if they skip or press Esc). The tour never clicks Purchase / Cash / Refinance, because switching those rebuilds the documents and endorsements and would discard edits; it only points at them. No fee or number is changed.
 - **The chip:** shown only to someone who has not dismissed it. The x, starting the tour from the chip or from the header link all store `cla_calc_tour_chip = "1"` in `localStorage`, so it never comes back. If browser storage is blocked the chip is not shown at all. It does not print.
 - **Phones:** the box is a bottom sheet (also for the centred welcome note); on desktop a tall target (the breakdown) gets the box beside it instead of on top of it.
-- **Cache-bust:** `?v=20261102f` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
+- **Cache-bust:** `?v=20261102g` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
 - **Tests:** the "calculator tour" block in `portal/test-portal.js` (link, step counts, targets, skipping, tab restore, chip persistence, phone sheet, versions). Screenshots: `portal/tools/screenshots_calculator_tour.py`.
 
 ## Who pays each transfer / recordation tax (live since 2026-10-28; calculator only, no database change)
@@ -342,7 +342,7 @@ Two pages, both **generated** by `node portal/tools/build-help.js` (do not edit 
 - **Header Help link** (`CLA.helpHref` in `portal-ui.js`; the calculator header link in `portal-hook.js` uses the same function): clients go to `help.html`, reps, admins and super admins to `staff-help.html`. Signed-in users only.
 - **Guards:** both pages use `CLA.boot(null)` (signed-out visitors go to `login.html?next=...`) and stay hidden until then. `staff-help.html` sends a client to `help.html`. **Be honest about what that is:** static pages can be fetched by anyone who knows the URL; the guard decides what a signed-in person sees on screen, it is not access control. Neither page has a key, a secret or customer data (the pictures use made-up sample people).
 - **Pictures:** `python3 portal/tools/screenshots_help.py` (serves this repo on a local port with the mock config forced, hides the demo banner), then `python3 portal/tools/optimize_help_images.py`, which sorts them into `help/client/` (used by the client guide) and `help/staff/` (everything else the staff manual uses) and removes anything unused.
-- Cache-bust letter: `20261102f` (see above).
+- Cache-bust letter: `20261102g` (see above).
 
 ## Florida: owner-occupied / first-time homebuyer boxes removed (branch `fl-no-oo-1102`, 11/02/26)
 
@@ -410,3 +410,20 @@ Two pages, both **generated** by `node portal/tools/build-help.js` (do not edit 
   3. Push the site.
   - Until migration 20 is applied the button stays hidden everywhere (`list_invite_status` unknown), so pushing the site first is harmless. Deploy the function before or with the migration.
 - Cache-bust `20261102f`.
+
+## Janette Fiallo's calculator fields (branch `janette-fields-1102`, 11/02/26; site only, no database change)
+
+Janette asked for these by email and video. All are optional and blank by default, so existing quotes and every total are unchanged (Charlotte $400k: buyer $6,212.50 / seller $4,434.00).
+- **Down payment** (Buyer Quote, financed purchase only): `#downm` (`pct` | `flat`) and `#downv`.
+  - Typing a down payment, or changing the price while one is entered, sets loan = price − down (`loanFromDown`). The down payment is capped at the price.
+  - Typing the loan amount with a down payment entered recomputes the down payment in its current mode (`syncDown`).
+  - Switching $/% keeps the same amount.
+  - Blank = the old behavior (loan typed directly).
+  - Saved as `inputs.down = {mode, val}` (null when blank). Shown in the summary line, print, copy text and saved `quote.html` header: "Price · Down payment (x%) · Loan".
+- **Commission paid by buyer** (purchase and cash): `#bcm` / `#bcv`, % of price or $ flat. Adds a buyer-only line in **H. Other**, "Commission paid by buyer (x% of price)". Saved as `inputs.buyerPaidComm`.
+- **Broker admin fee, buyer quote** (purchase and cash): `#badm`. Adds a buyer-only line in H. Other, "Broker admin fee (buyer's broker)". Saved as `inputs.brokerAdminFee`.
+- **Broker admin fee, seller net sheet**: `#s_adm` in the Commissions card. Adds "Broker admin fee" to `commissions`, so it counts in total seller costs and lowers the net. Saved as `inputs.brokerAdminFee` on the seller_net quote.
+- **Refinance**: these fields are hidden and ignored.
+- **Storage**: saved quotes keep `inputs` and `results` as jsonb, so the new values persist with no migration. `quote.html` lists the new lines automatically from `results.lines`.
+- **Tests**: `test.js` (DOM and pure functions) and `test-portal.js` (the saved quote header and lines).
+- Cache-bust `20261102g`.
