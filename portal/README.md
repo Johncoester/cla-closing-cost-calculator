@@ -271,7 +271,7 @@ The same engine also runs on the public calculator, for **anyone** (guest or sig
 - **Tabs:** the Seller Net Sheet step opens that tab and puts the person's own tab back afterwards (also if they skip or press Esc). The tour never clicks Purchase / Cash / Refinance, because switching those rebuilds the documents and endorsements and would discard edits; it only points at them. No fee or number is changed.
 - **The chip:** shown only to someone who has not dismissed it. The x, starting the tour from the chip or from the header link all store `cla_calc_tour_chip = "1"` in `localStorage`, so it never comes back. If browser storage is blocked the chip is not shown at all. It does not print.
 - **Phones:** the box is a bottom sheet (also for the centred welcome note); on desktop a tall target (the breakdown) gets the box beside it instead of on top of it.
-- **Cache-bust:** `?v=20261102g` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
+- **Cache-bust:** `?v=20261102h` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
 - **Tests:** the "calculator tour" block in `portal/test-portal.js` (link, step counts, targets, skipping, tab restore, chip persistence, phone sheet, versions). Screenshots: `portal/tools/screenshots_calculator_tour.py`.
 
 ## Who pays each transfer / recordation tax (live since 2026-10-28; calculator only, no database change)
@@ -342,7 +342,7 @@ Two pages, both **generated** by `node portal/tools/build-help.js` (do not edit 
 - **Header Help link** (`CLA.helpHref` in `portal-ui.js`; the calculator header link in `portal-hook.js` uses the same function): clients go to `help.html`, reps, admins and super admins to `staff-help.html`. Signed-in users only.
 - **Guards:** both pages use `CLA.boot(null)` (signed-out visitors go to `login.html?next=...`) and stay hidden until then. `staff-help.html` sends a client to `help.html`. **Be honest about what that is:** static pages can be fetched by anyone who knows the URL; the guard decides what a signed-in person sees on screen, it is not access control. Neither page has a key, a secret or customer data (the pictures use made-up sample people).
 - **Pictures:** `python3 portal/tools/screenshots_help.py` (serves this repo on a local port with the mock config forced, hides the demo banner), then `python3 portal/tools/optimize_help_images.py`, which sorts them into `help/client/` (used by the client guide) and `help/staff/` (everything else the staff manual uses) and removes anything unused.
-- Cache-bust letter: `20261102g` (see above).
+- Cache-bust letter: `20261102h` (see above).
 
 ## Florida: owner-occupied / first-time homebuyer boxes removed (branch `fl-no-oo-1102`, 11/02/26)
 
@@ -427,3 +427,12 @@ Janette asked for these by email and video. All are optional and blank by defaul
 - **Storage**: saved quotes keep `inputs` and `results` as jsonb, so the new values persist with no migration. `quote.html` lists the new lines automatically from `results.lines`.
 - **Tests**: `test.js` (DOM and pure functions) and `test-portal.js` (the saved quote header and lines).
 - Cache-bust `20261102g`.
+
+## Melissa Gamble: MD lien certificate line + recording note (branch `melissa-lien-1102`, 11/02/26; code only, no sheet change)
+
+- Recording_Fees rows whose Fee Name matches `/lien certificate/i` (the MD county rows filed under Document = Deed) are no longer summed into "Recording fees – Deed". `calc()` lists each one as its own Section E line, right after the deed: **"Lien certificate – <County> County"** ("Baltimore City" keeps its own name). The line uses the same amount and payer. A $0 row (Anne Arundel) shows no line.
+- Totals are unchanged. The deed line is $60 in every MD county (or $115 at 10+ pages when not a principal residence, as before).
+- Any section with a "Recording fees …" line ends with the note "Recording fees may change depending on the number of pages.". This applies to Section E on the buyer quote, the seller's government fees card, the copy/print text and saved `quote.html`; the saved page works out the note from the stored lines, so older saved quotes show it too.
+- Lodestar regression Q5 (Frederick) now expects deed $60 + lien certificate $25, which is still the 85 Lodestar shows.
+- Not done (waiting on Melissa): Simplifile on purchases, the refi "Tax Cert Fee" question, non-resident withholding.
+- Cache-bust `20261102h`.

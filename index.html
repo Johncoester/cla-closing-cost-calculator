@@ -4,8 +4,8 @@
 <meta name="theme-color" content="#000000">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="zip-county.js?v=20261102g"></script>
-<script src="fee-snapshot.js?v=20261102g"></script>
+<script src="zip-county.js?v=20261102h"></script>
+<script src="fee-snapshot.js?v=20261102h"></script>
 <style>
 :root{--g:#8dc63f;--gd:#6fa52a;--gdd:#4d7a17;--ink:#111;--mut:#5b6272;--line:#e3e8da;--bg:#f4f7ef;--field:#d5dbca}
 *{box-sizing:border-box}
@@ -136,6 +136,7 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 .modebar .wrap{padding-top:12px;padding-bottom:12px}
 .cm{display:grid;grid-template-columns:84px minmax(0,1fr);gap:10px}
 .fh{margin:6px 0 0;font-size:12.5px;color:var(--mut)}.fh:empty{display:none}
+.secnote{margin:0;padding:8px 16px 12px;font-size:12.5px;color:var(--mut)}
 .orow{display:grid;grid-template-columns:minmax(0,1fr) 124px;gap:10px;margin-bottom:10px}
 .orow>div{min-width:0}
 .btn.sm{padding:8px 14px;font-size:13px;border-radius:10px}
@@ -331,6 +332,10 @@ const sheetCsvUrl=tab=>`https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/
 const DOC_DEFAULTS={purchase:{"Deed":[1,3],"Deed of Trust":[1,30],"Release":[0,3],"Power of Attorney":[0,3]},
 cash:{"Deed":[1,3],"Deed of Trust":[0,30],"Release":[0,3],"Power of Attorney":[0,3]},
 refi:{"Deed":[0,3],"Deed of Trust":[1,30],"Release":[1,3],"Power of Attorney":[0,3]}};
+const LIEN_CERT=/lien certificate/i,lienPlace=c=>{c=String(c||"").trim();return/\bcity$|^district of columbia$/i.test(c)?c:c+" County"};
+// note shown under Section E (and the seller's government fees card) whenever a recording fee line is listed (Melissa Gamble 11/02)
+const hasRec=rows=>(rows||[]).some(l=>/^Recording fees/.test(l.item));
+const REC_NOTE="Recording fees may change depending on the number of pages.";
 const MD_BIG_INSTR={"Deed":115,"Deed of Trust":115}; // Maryland clerk fee incl. $40 surcharge for an instrument of 10+ pages not solely a principal residence
 const SEC={B:"B. Services you cannot shop for",C:"C. Services you can shop for",E:"E. Taxes and other government fees",H:"H. Other"};
 
@@ -437,10 +442,13 @@ function calc(R,i){const L=[],W=[],refi=i.type==="refi";
  for(const[d,[n,pg]]of docs){
   const rows=pick(R.Recording_Fees,i.state,i.county,i.type,r=>r.Document+"|"+r["Fee Name"],null).filter(r=>eq(r.Document,d)&&(num(r["Page Tier From"])==null||pg>=num(r["Page Tier From"]))&&(num(r["Page Tier To"])==null||pg<=num(r["Page Tier To"])));
   if(!rows.length){W.push(`No recording fee found for ${d} in ${i.county||"(county)"}, ${i.state}.`);continue}
-  let amt=0,payer=rows[0]["Paid By"];for(const r of rows){const inc=num(r["Pages Included"]);amt+=(num(r["Flat Fee ($)"])||0)+(inc!=null?Math.max(0,pg-inc)*(num(r["Per Add'l Page ($)"])||0):0)}
+  // Melissa Gamble 11/02: a county lien certificate row (MD, filed under Deed on the sheet) is its own line, not folded into the deed's recording fee (same amount, same payer, so totals do not change)
+  const lienRows=rows.filter(r=>LIEN_CERT.test(r["Fee Name"])),recRows=rows.filter(r=>!LIEN_CERT.test(r["Fee Name"]));
+  let amt=0,payer=(recRows[0]||rows[0])["Paid By"];for(const r of recRows){const inc=num(r["Pages Included"]);amt+=(num(r["Flat Fee ($)"])||0)+(inc!=null?Math.max(0,pg-inc)*(num(r["Per Add'l Page ($)"])||0):0)}
   // Maryland (RP 3-601(a)(2)(iv)): an instrument of 10+ pages that does not solely involve a principal residence records for $115 (instead of $60); occ is the "principal residence" answer
   let big=false;if(i.state==="MD"&&i.occ===false&&MD_BIG_INSTR[d]&&pg>=10){const base=rows.filter(r=>/^Recording fee/i.test(r["Fee Name"])).reduce((a,r)=>a+(num(r["Flat Fee ($)"])||0),0);if(base>0){amt+=MD_BIG_INSTR[d]-base;big=true}}
-  add(SEC.E,`Recording fees – ${d}${n>1?" ×"+n:""}${big?" (10+ pages, not a principal residence)":""}`,...split(payer,amt*n))}
+  if(recRows.length)add(SEC.E,`Recording fees – ${d}${n>1?" ×"+n:""}${big?" (10+ pages, not a principal residence)":""}`,...split(payer,amt*n));
+  for(const r of lienRows)add(SEC.E,`Lien certificate – ${lienPlace(i.county)}`,...split(r["Paid By"],(num(r["Flat Fee ($)"])||0)*n))}
  // transfer and recordation taxes
  const taxes=pick(R.Transfer_Taxes,i.state,i.county,i.type,r=>r["Tax Name"]+"|"+r.Transaction);let anyTax=false;const agg={};
  for(const t of taxes){const x=taxAmount(t,i);if(!x)continue;anyTax=true;const k=t["Tax Name"],adj=/^sale/i.test(String(t.Basis||"").trim());const a=agg[k]=agg[k]||{amt:0,payer:x.payer,fthb:false,fixed:false,fthbPayer:"",adj:true,onAssessed:false};a.amt+=x.amt;a.fthb=a.fthb||x.fthb;a.fixed=a.fixed||x.fixed;a.fthbPayer=a.fthbPayer||x.fthbPayer;a.adj=a.adj&&adj;a.onAssessed=a.onAssessed||(adj&&assessedOn(i))}
@@ -617,15 +625,16 @@ function run(){ownPayOpts();const i=inputs();$("assessWrap").hidden=!(i.state===
  downHints(i);
  $("summary").innerHTML=`${TN[type]} · ${i.county||"(no county)"}, ${i.state} · ${i.uw}${esc(assessedNote(i)+downNote(i))} ${src==="snapshot"?'<span class="flag">BUILT-IN SNAPSHOT</span>':""}`;
  $("tB").textContent=fmt(res.buyer);$("tS").textContent=fmt(res.seller);$("tA").textContent=fmt(res.total);const bl=type==="refi"?"Borrower":"Buyer",groups=[];let g=null;
- for(const l of res.lines){if(!g||l.sec!==g.sec){g={sec:l.sec,rows:"",b:0,s:0};groups.push(g)}g.b+=l.b||0;g.s+=l.s||0;
+ for(const l of res.lines){if(!g||l.sec!==g.sec){g={sec:l.sec,rows:"",b:0,s:0,items:[]};groups.push(g)}g.items.push(l);g.b+=l.b||0;g.s+=l.s||0;
   g.rows+=`<tr><td>${l.item}</td><td class="num${l.b?"":" z"}">${l.b?fmt(l.b):"—"}</td><td class="num${l.s?"":" z"}">${l.s?fmt(l.s):"—"}</td></tr>`}
  $("ledger").innerHTML=groups.map(g=>{const m=String(g.sec).match(/^([A-Z])\.\s*(.*)$/),letter=m?m[1]:"•",name=m?m[2]:g.sec;
-  return`<section class="card sec"><div class="sh"><span class="l">${letter}</span><h3>${name}</h3></div><table class="ledger"><thead><tr><th>Item</th><th class="num">${bl}</th><th class="num s">Seller</th></tr></thead><tbody>${g.rows}<tr class="tot"><td>Section ${letter} total</td><td class="num${g.b?"":" z"}">${g.b?fmt(g.b):"—"}</td><td class="num${g.s?"":" z"}">${g.s?fmt(g.s):"—"}</td></tr></tbody></table></section>`}).join("");
+  return`<section class="card sec"><div class="sh"><span class="l">${letter}</span><h3>${name}</h3></div><table class="ledger"><thead><tr><th>Item</th><th class="num">${bl}</th><th class="num s">Seller</th></tr></thead><tbody>${g.rows}<tr class="tot"><td>Section ${letter} total</td><td class="num${g.b?"":" z"}">${g.b?fmt(g.b):"—"}</td><td class="num${g.s?"":" z"}">${g.s?fmt(g.s):"—"}</td></tr></tbody></table>${hasRec(g.items)?`<p class="secnote">${REC_NOTE}</p>`:""}</section>`}).join("");
  $("grand").innerHTML=`<tr class="tot"><td>Total</td><td class="num">${fmt(res.buyer)}</td><td class="num">${fmt(res.seller)}</td></tr>`;
  $("warns").innerHTML=res.warnings.length?`<div class="warn"><div><b>Warnings</b><ul>${res.warnings.map(w=>`<li>${w}</li>`).join("")}</ul></div></div>`:""}
 function quote(){const{i,res}=last,b=type==="refi"?"Borrower":"Buyer";let t=`C.L.A. Title & Escrow — Closing Cost Estimate\n${$("addr").value||"(no address)"} ${$("city").value} ${i.state} ${$("zip").value}\n${TN[type]} · ${i.county}, ${i.state} · ${i.uw}\n`;
  t+=type==="refi"?`Loan ${fmt(i.loan)} · Payoff ${fmt(i.payoff)}\n`:`Price ${fmt(i.price)}${type==="purchase"?(i.down?` · Down payment ${fmt(downAmt(i.price,i.down))}${i.price>0?` (${+(downAmt(i.price,i.down)/i.price*100).toFixed(2)}%)`:""}`:"")+" · Loan "+fmt(i.loan):""}${assessedNote(i)}\n`;let sec="";
- for(const l of res.lines){if(l.sec!==sec){sec=l.sec;t+=`\n${sec.toUpperCase()}\n`}t+=`  ${l.item}: ${l.b?b+" "+fmt(l.b):""}${l.b&&l.s?" / ":""}${l.s?"Seller "+fmt(l.s):""}\n`}
+ for(const l of res.lines){if(l.sec!==sec){if(sec&&hasRec(res.lines.filter(x=>x.sec===sec)))t+=`  (${REC_NOTE})\n`;sec=l.sec;t+=`\n${sec.toUpperCase()}\n`}t+=`  ${l.item}: ${l.b?b+" "+fmt(l.b):""}${l.b&&l.s?" / ":""}${l.s?"Seller "+fmt(l.s):""}\n`}
+ if(sec&&hasRec(res.lines.filter(x=>x.sec===sec)))t+=`  (${REC_NOTE})\n`;
  t+=`\n${b} total: ${fmt(res.buyer)}\nSeller total: ${fmt(res.seller)}\nAll parties: ${fmt(res.total)}\n\nEstimate only; not a Loan Estimate or Closing Disclosure.`;return t}
 $("copy").onclick=()=>{const t=quote();(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>$("copied").textContent="Copied!",()=>{prompt("Copy quote:",t)})};
 $("tabs").onclick=e=>{if(e.target.dataset.t)setType(e.target.dataset.t)};
@@ -664,7 +673,7 @@ function sinputs(){const n=id=>+$(id).value||0;return{state:$("s_state").value,c
  ownerPays:$("s_own").checked,fthb:$("s_fthb").checked&&!NO_OO.test($("s_state").value),bpst:$("s_bpst").checked,taxPayers:taxChoices(taxS,$("s_state").value+"|"+$("s_county").value),
  fees:[...document.querySelectorAll("#s_fees .fee")].filter(d=>d.children[0].checked).map(d=>Object.assign({name:d.children[0].dataset.name,payer:d.children[0].dataset.payer,tx:d.children[0].dataset.tx,sec:d.children[0].dataset.sec,amt:+d.children[2].value||0},d.children[0].dataset.special?{special:true,std:+d.children[0].dataset.std}:{}))}}
 const sgn=x=>x<0?`<span class="cr">−${fmt(-x)}</span>`:fmt(x);
-function sCard(n,title,rows,total,tl){return`<section class="card sec"><div class="sh"><span class="l">${n}</span><h3>${title}</h3></div><table class="ledger one"><thead><tr><th>Item</th><th class="num">Amount</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.item)}</td><td class="num">${sgn(r.amt)}</td></tr>`).join("")||'<tr><td class="z">None</td><td class="num z">—</td></tr>'}<tr class="tot"><td>${tl}</td><td class="num">${sgn(total)}</td></tr></tbody></table></section>`}
+function sCard(n,title,rows,total,tl){return`<section class="card sec"><div class="sh"><span class="l">${n}</span><h3>${title}</h3></div><table class="ledger one"><thead><tr><th>Item</th><th class="num">Amount</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.item)}</td><td class="num">${sgn(r.amt)}</td></tr>`).join("")||'<tr><td class="z">None</td><td class="num z">—</td></tr>'}<tr class="tot"><td>${tl}</td><td class="num">${sgn(total)}</td></tr></tbody></table>${hasRec(rows)?`<p class="secnote">${REC_NOTE}</p>`:""}</section>`}
 const fullAddr=i=>[[$("s_addr").value.trim(),$("s_city").value.trim()].filter(Boolean).join(", "),[i.state,$("s_zip").value.trim()].filter(Boolean).join(" ")].filter(Boolean).join(", ");
 function runS(){syncOwn();$("s_assessWrap").hidden=$("s_state").value!=="VA";$("s_fthbWrap").hidden=NO_OO.test($("s_state").value);const i=sinputs(),r=sellerNet(R,i),T=r.totals,cd=pDate(i.closing);sLast={i,r};renderTaxPay($("s_taxPay"),r.calc.taxes,taxS,runS,"Buyer");
  $("s_cntyNote").textContent=!i.county?"Enter a ZIP or choose a county to include county taxes.":usesDefaults(R,i.state,i.county)?"Using state default rates for this county":"";
@@ -682,7 +691,7 @@ function runS(){syncOwn();$("s_assessWrap").hidden=$("s_state").value!=="VA";$("
  $("sGrand").innerHTML=`<tr><td>Selling price</td><td class="num">${fmt(r.price)}</td></tr><tr><td>Less: total seller costs</td><td class="num">${r.totalCosts<0?sgn(-r.totalCosts).replace("−",""):"−"+fmt(r.totalCosts)}</td></tr>${r.payoffTotal?`<tr><td>Less: mortgage payoffs</td><td class="num">−${fmt(r.payoffTotal)}</td></tr>`:""}<tr class="tot"><td>Net seller proceeds</td><td class="num">${fmt(r.net)}</td></tr>`;
  $("sWarns").innerHTML=r.warnings.length?`<div class="warn"><div><b>Heads up</b><ul>${r.warnings.map(w=>`<li>${esc(w)}</li>`).join("")}</ul></div></div>`:""}
 function sQuote(){const{i,r}=sLast,cd=pDate(i.closing);let t=`C.L.A. Title & Escrow — Seller's Net Sheet (estimate)\n${fullAddr(i)||"(no address)"}\n${i.county?i.county+", ":""}${i.state}${cd?" · Closing "+longDate(cd):""}\nSelling price: ${fmt(r.price)}${assessedOn(Object.assign({type:"cash"},i))?`\nAssessed value: ${fmt(i.assessed)} (Virginia deed taxes use the higher value)`:""}\n`;
- for(const[name,rows,tot]of[["Commissions",r.commissions,r.totals.commissions],["Government tax & recording fees",r.gov,r.totals.gov],["Title & settlement fees",r.title,r.totals.title],["Prorations & credits",r.prorations,r.totals.pro],["Other costs",r.other,r.totals.other]]){if(!rows.length)continue;t+=`\n${name.toUpperCase()}\n`;for(const x of rows)t+=`  ${x.item}: ${x.amt<0?"-"+fmt(-x.amt):fmt(x.amt)}\n`;t+=`  Subtotal: ${tot<0?"-"+fmt(-tot):fmt(tot)}\n`}
+ for(const[name,rows,tot]of[["Commissions",r.commissions,r.totals.commissions],["Government tax & recording fees",r.gov,r.totals.gov],["Title & settlement fees",r.title,r.totals.title],["Prorations & credits",r.prorations,r.totals.pro],["Other costs",r.other,r.totals.other]]){if(!rows.length)continue;t+=`\n${name.toUpperCase()}\n`;for(const x of rows)t+=`  ${x.item}: ${x.amt<0?"-"+fmt(-x.amt):fmt(x.amt)}\n`;t+=`  Subtotal: ${tot<0?"-"+fmt(-tot):fmt(tot)}\n`;if(hasRec(rows))t+=`  (${REC_NOTE})\n`}
  t+=`\nTotal seller costs: ${fmt(r.totalCosts)}\n`;if(r.payoffs.length){t+=`\nMORTGAGE PAYOFFS\n`;for(const x of r.payoffs)t+=`  ${x.item}: ${fmt(x.amt)}\n`;t+=`  Total payoffs: ${fmt(r.payoffTotal)}\n`}
  return t+`\nNET SELLER PROCEEDS: ${fmt(r.net)}\n\nEstimate only. Not a settlement statement. Actual proceeds depend on final payoff, prorations and charges at closing.`}
 $("sCopy").onclick=()=>{const t=sQuote();(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>$("sCopied").textContent="Copied!",()=>{prompt("Copy summary:",t)})};
@@ -725,7 +734,7 @@ load(SNAP,"Built-in snapshot","snapshot");$("status").textContent="Loading fees 
 // Guided tour: "Take the tour" (header) and a small first-visit chip. Works for everyone, signed in or not. The engine is portal/js/tour.js + portal/tour.css,
 // downloaded only when someone starts the tour. The chip shows once; dismissing it (x), starting the tour, or finishing it hides it for good (localStorage).
 (function(){
- var V="20261102g",KEY="cla_calc_tour_chip",link=document.getElementById("claCalcTourLink"),chip=document.getElementById("claTourChip"),loading=null;
+ var V="20261102h",KEY="cla_calc_tour_chip",link=document.getElementById("claCalcTourLink"),chip=document.getElementById("claTourChip"),loading=null;
  function seen(){try{return window.localStorage.getItem(KEY)==="1"}catch(e){return true}} // no storage: never show the chip (it could not remember "no thanks")
  function dismiss(){try{window.localStorage.setItem(KEY,"1")}catch(e){}if(chip)chip.hidden=true}
  function add(tag,attrs){return new Promise(function(res){var e=document.createElement(tag);for(var k in attrs)e[k]=attrs[k];e.onload=e.onerror=function(){res()};document.head.appendChild(e)})}
@@ -739,4 +748,4 @@ load(SNAP,"Built-in snapshot","snapshot");$("status").textContent="Loading fees 
   document.getElementById("claTourChipX").onclick=function(){dismiss();if(link)link.focus()}}
 })();
 </script>
-<script src="portal/js/portal-hook.js?v=20261102g" defer></script></body></html>
+<script src="portal/js/portal-hook.js?v=20261102h" defer></script></body></html>

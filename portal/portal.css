@@ -152,3 +152,4 @@ tr.click{cursor:pointer}tr.click:hover td{background:#fafcf6}
 .acts{display:inline-flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.dlg .delList{margin:8px 0 12px;padding-left:18px;font-size:13.5px}.dlg .delList li{margin:3px 0}.dlg .delConfirm{font-family:ui-monospace,Menlo,monospace}.dlg .delErr{color:#a31616;font-size:13px;min-height:18px;margin-top:6px}
 @media (max-width:640px){.ufilters{padding:12px 16px}.ufilters input[type=text]{width:100%}.ufilters .sum{margin-left:0;width:100%}}
 .invsent{display:block;font-size:11.5px;color:#6b6f66;margin-top:4px;white-space:nowrap}
+.secnote{margin:0;padding:8px 16px 12px;font-size:12.5px;color:#6b6f66}

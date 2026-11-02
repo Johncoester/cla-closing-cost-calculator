@@ -108,6 +108,7 @@ sec("results", 4, "What your results mean", "The estimate on the right of the ca
     ["Settlement fee (closing fee) to CLA Title & Escrow", "CLA's fee for handling the closing."],
     ["Other CLA fees", "Smaller fees for the work around a closing, such as preparing documents, notary, secure document storage, title review, title search and abstract, a closing protection letter (lender only), and electronic recording."],
     ["Recording fees", "What the county charges to record each document (a deed, a deed of trust, a release) in the land records. Shown as \"x2\" and so on when there is more than one."],
+    ["Lien certificate", "In some Maryland counties, a certificate from the county showing whether property taxes or other county charges are owed on the property. It is listed on its own line next to the recording fees. Recording fees may change depending on the number of pages."],
     ["Transfer and recordation taxes", "State, county or city taxes paid when ownership or a loan is recorded. Who pays follows local custom and your contract. You can set each one to the seller, the buyer, or split half and half."],
     ["Warnings box", "A yellow box that appears when something could not be calculated, for example no recording fee found for a county. Treat the total as incomplete until you understand the warning, and ask your CLA rep."],
   ] },

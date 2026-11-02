@@ -61,7 +61,7 @@ ok(!X.calc(R,inp({state:"VA",county:"Fairfax"})).warnings.some(w=>/premium rates
 {const rf=(o,re)=>line(X.calc(R,inp(Object.assign({fees:[]},o))),re);
  // MD lien/tax certificate (county treasurer; paid at recording, shown in the deed's recording line): only these counties charge; Anne Arundel is not ordered by CLA
  for(const[co,add]of[["Frederick",25],["Charles",25],["Howard",50],["Harford",50],["Baltimore",55],["Baltimore City",55],["Carroll",40],["Anne Arundel",0],["Montgomery",0],["Prince George's",0],["Calvert",0],["Washington",0]])
-  ok(near(rf({county:co},/Recording fees – Deed$/),60+add),`MD ${co}: deed recording = $60 + lien certificate $${add}`);
+  ok(near(rf({county:co},/Recording fees – Deed$/),60)&&near(rf({county:co},new RegExp("^Lien certificate – "+co+(/City$/.test(co)?"":" County")+"$")),add),`MD ${co}: deed recording $60, lien certificate $${add} on its own line (Melissa 11/02)`);
  // VA $5 clerk paper-filing fee only in the paper-filing localities; $3 open-space fee in the localities she listed (and, for now, everywhere else in the sheet)
  const vaD=co=>rf({state:"VA",county:co},/Recording fees – Deed$/),vaT=co=>rf({state:"VA",county:co},/Recording fees – Deed of Trust/);
  for(const co of["Appomattox","Amelia","Amherst","Alleghany","Bath","Bland","Buchanan","Charlotte","Cumberland","Highland","Lee","Lunenburg","Mathews","Nelson","Patrick","Rappahannock","Russell","Surry"])
@@ -76,7 +76,7 @@ ok(!X.calc(R,inp({state:"VA",county:"Fairfax"})).warnings.some(w=>/premium rates
  r=md({occ:false,docs:D(9,9)});ok(near(line(r,/Recording fees – Deed$/),60)&&near(line(r,/Recording fees – Deed of Trust/),60),"MD not a principal residence, 9 pages: $60 (the $115 starts at 10 pages)");
  r=md({occ:false,docs:D(10,10)});ok(near(line(r,/Recording fees – Deed( \(|$)/),115)&&near(line(r,/Recording fees – Deed of Trust/),115),"MD not a principal residence, 10 pages: deed $115 and deed of trust $115");
  r=md({occ:true,docs:D(12,40)});ok(near(line(r,/Recording fees – Deed$/),60)&&near(line(r,/Recording fees – Deed of Trust/),60),"MD principal residence stays $60 at any length");
- r=md({county:"Frederick",occ:false,docs:D(12,30)});ok(near(line(r,/Recording fees – Deed( \(|$)/),115+25),"MD Frederick not a principal residence, 12-page deed: $115 + $25 lien certificate");
+ r=md({county:"Frederick",occ:false,docs:D(12,30)});ok(near(line(r,/Recording fees – Deed( \(|$)/),115)&&near(line(r,/^Lien certificate – Frederick County$/),25),"MD Frederick not a principal residence, 12-page deed: $115, plus the $25 lien certificate on its own line");
  r=md({type:"refi",occ:false,docs:X.DOC_DEFAULTS.refi});ok(near(line(r,/Recording fees – Deed of Trust/),115)&&near(line(r,/Recording fees – Release/),50),"MD refinance not a principal residence: deed of trust $115; release unchanged $50");
  r=md({type:"refi",docs:X.DOC_DEFAULTS.refi});ok(near(line(r,/Recording fees – Deed of Trust/),60),"MD refinance of a principal residence: deed of trust $60");
  r=md({occ:false,docs:D(12,30),state:"VA",county:"Fairfax"});ok(!r.lines.some(l=>/not a principal residence/.test(l.item)),"principal-residence rule is Maryland only (VA unchanged)");
@@ -108,7 +108,7 @@ ok(q4.lines.filter(l=>/Qualia/.test(l.item)&&l.b>0).length===1&&q4.lines.filter(
 const q4r=Q({type:"refi",state:"DC",county:"District of Columbia",loan:360000,payoff:300000});ok(q4r.lines.filter(l=>/Qualia/.test(l.item)).length===1&&near(bs(q4r,/Qualia/,"b"),59),"DC refi: Qualia once to borrower");
 // Q5 MD Frederick purchase $500k/$400k
 const q5=Q({state:"MD",county:"Frederick",price:500000,loan:400000});
-expect("Q5",q5,[...CLA_BUYER(50),[/Recording fees – Deed$/,"b",85],[/Recording fees – Deed of Trust/,"b",60],[/County recordation/,"b",3500],[/State transfer/,"b",1250],[/County recordation/,"s",3500],[/State transfer/,"s",1250],...CLA_SELLER]);
+expect("Q5",q5,[...CLA_BUYER(50),[/Recording fees – Deed$/,"b",60],[/^Lien certificate – Frederick County$/,"b",25],[/Recording fees – Deed of Trust/,"b",60],[/County recordation/,"b",3500],[/State transfer/,"b",1250],[/County recordation/,"s",3500],[/State transfer/,"s",1250],...CLA_SELLER]);
 absent("Q5",q5,/County transfer/);
 // Q6 VA Fairfax purchase $500k/$400k
 const q6=Q({state:"VA",county:"Fairfax",price:500000,loan:400000});
@@ -531,5 +531,19 @@ ok(SN({fees:[]}).totals.title===0&&near(SN({fees:[{name:"Custom",payer:"Seller",
    const r0=X.calc(R,inp({type:"refi",buyerPaidComm:{mode:"pct",val:2},brokerAdminFee:695})),r1=X.calc(R,inp({type:"refi"}));ok(r0.buyer===r1.buyer,"calc: refinance ignores them")}
   {const a=X.sellerNet(R,{state:"MD",county:"Montgomery",uw:"Fidelity National Title",price:500000,closing:"2026-11-20"}),b=X.sellerNet(R,{state:"MD",county:"Montgomery",uw:"Fidelity National Title",price:500000,closing:"2026-11-20",brokerAdminFee:495});
    ok(near(a.net-b.net,495)&&b.commissions.length===3&&a.commissions.length===2,"sellerNet: broker admin fee deducted from net")}
+  // Melissa Gamble 11/02: lien certificate on its own line, recording-fee note
+  {const v=id=>w.getElementById(id);w.querySelector("[data-mode=quote]").click();w.querySelector("[data-t=purchase]").click();setv("state","MD");setv("zip","21701");setv("county","Frederick");setv("price","400000");setv("loan","320000");
+   const secE=[...v("ledger").querySelectorAll("section")].find(x=>/Taxes and other government fees/.test(x.textContent));
+   ok(secE&&/Recording fees – Deed\$60\.00/.test(secE.textContent.replace(/\s+/g,""))===false&&[...secE.querySelectorAll("tr")].some(r=>/^Recording fees – Deed\s*\$60\.00/.test(r.textContent.trim()))&&[...secE.querySelectorAll("tr")].some(r=>/^Lien certificate – Frederick County\s*\$25\.00/.test(r.textContent.trim())),"DOM Frederick: Section E lists Recording fees – Deed $60.00 and Lien certificate – Frederick County $25.00");
+   ok(secE.querySelector(".secnote")&&secE.querySelector(".secnote").textContent==="Recording fees may change depending on the number of pages.","DOM: Section E carries the recording-fee note");
+   ok([...v("ledger").querySelectorAll(".secnote")].length===1,"DOM: the note is shown once (Section E only)");
+   const sn=d.window.CLA_QUOTE_API.snapshot();ok(sn.results.lines.some(l=>l.item==="Lien certificate – Frederick County"&&l.b===25)&&/Lien certificate – Frederick County: Buyer \$25\.00/.test(sn.results.text)&&/\(Recording fees may change depending on the number of pages\.\)/.test(sn.results.text),"DOM: saved quote lines and copied quote carry the lien certificate line and the note");
+   setv("county","Baltimore City");ok(/Lien certificate – Baltimore City/.test(v("ledger").textContent)&&!/Baltimore City County/.test(v("ledger").textContent),"DOM Baltimore City: 'Lien certificate – Baltimore City' (no 'County')");
+   setv("county","Montgomery");ok(!/Lien certificate/.test(v("ledger").textContent)&&/Recording fees may change/.test(v("ledger").textContent),"DOM Montgomery: no lien certificate line, note still shown");
+   w.querySelector("[data-mode=seller]").click();setv("s_po1","200000");ok(/Recording fees may change depending on the number of pages\./.test(v("sLedger").textContent)&&/Recording fees may change/.test(d.window.CLA_QUOTE_API.snapshot().results.text),"seller net: the government fees card and summary carry the note");
+   setv("s_po1","");w.querySelector("[data-mode=quote]").click();setv("zip","20850")}
+  // totals identical to the folded version: deed + lien certificate = the old single deed line, for every MD county with a lien row
+  for(const[co,add]of[["Frederick",25],["Charles",25],["Howard",50],["Harford",50],["Baltimore",55],["Baltimore City",55],["Carroll",40],["Anne Arundel",0],["Montgomery",0]]){const r=X.calc(R,inp({county:co,price:400000,loan:320000}));
+   ok(near(line(r,/^Recording fees – Deed$/)+line(r,/^Lien certificate/),60+add)&&r.lines.filter(l=>/^Lien certificate/.test(l.item)).length===(add?1:0),`MD ${co}: deed $60 + lien line $${add} (same total as before)`)}
 ok(errs.length===0,"no DOM errors "+errs);
  if(fails){console.error(fails,"FAILED");process.exit(1)}console.log("ALL PASS")})();
