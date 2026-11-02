@@ -1,4 +1,4 @@
-// Supabase Edge Function: resend-invite   (NOT DEPLOYED; written 11/02/26 to the documented APIs, tested locally with a stubbed client)
+// Supabase Edge Function: resend-invite   (deployed 11/02/26, verify_jwt on; tested locally with a stubbed client: test-handler.mjs)
 //
 // "Resend invite" button: admin Users tab (admins / super admins: anyone) and the rep's client list (reps: their own active clients). The browser sends only { userId, redirectTo } with the signed-in user's JWT. The function:
 //   1. calls public.admin_resend_invite() AS THE CALLER (migration 20). The database checks the caller's role and, for a rep, that the person is

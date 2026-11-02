@@ -378,7 +378,7 @@ Two pages, both **generated** by `node portal/tools/build-help.js` (do not edit 
 - The lien search ($200) and survey ($500) estimates stay on the buyer. No sheet change: the Jurisdictions row for Charlotte stays Seller (the code adds the title search exception).
 - Cache-bust `20261102e`.
 
-## Resend invite (branch `resend-invite-1102`, 11/02/26; migration 20 + Edge Function `resend-invite`, NOT applied / deployed)
+## Resend invite (11/02/26; LIVE 11/02/26: Edge Function `resend-invite` deployed with verify_jwt on, migration 20 applied, site pushed)
 
 - John: "Can we create a button to resend the invite", then "allow sales team to reinvite their clients as well".
 - **Who:**
