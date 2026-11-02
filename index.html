@@ -4,8 +4,8 @@
 <meta name="theme-color" content="#000000">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="zip-county.js?v=20261102d"></script>
-<script src="fee-snapshot.js?v=20261102d"></script>
+<script src="zip-county.js?v=20261102e"></script>
+<script src="fee-snapshot.js?v=20261102e"></script>
 <style>
 :root{--g:#8dc63f;--gd:#6fa52a;--gdd:#4d7a17;--ink:#111;--mut:#5b6272;--line:#e3e8da;--bg:#f4f7ef;--field:#d5dbca}
 *{box-sizing:border-box}
@@ -412,7 +412,7 @@ function calc(R,i){const L=[],W=[],refi=i.type==="refi";
  const docs=Object.entries(i.docs||{}).filter(([d,[n]])=>n>0&&!(d==="Deed of Trust"&&cash));const nDocs=docs.reduce((a,[,[n]])=>a+n,0);
  // title premiums
  const P=premiums(R,i);W.push(...P.warnings);const trid=i.pres!=="actual";
- const flt=refi?"":flTitleOpt(R,i),ownPay=flt?(flt==="seller"?"Seller":"Buyer"):(i.ownPay||ownerPayDefault(R,i.state,i.county));
+ const flt=refi?"":flTitleOpt(R,i),ownPay=flt?(flt==="seller"||flt==="cha"?"Seller":"Buyer"):(i.ownPay||ownerPayDefault(R,i.state,i.county));
  if(P.lenderFull!=null){const lend=trid?P.lenderFull:P.lenderActual;add(SEC.C,"Title – Lender's Title Policy",lend,0)}
  if(P.owner!=null){let own=P.owner;if(trid&&P.lenderFull!=null&&P.lenderActual!=null)own=P.owner+P.lenderActual-P.lenderFull;
   add(SEC.H,"Title – Owner's Title Policy (optional)"+(trid&&P.lenderFull!=null?" [TRID simultaneous-issue]":""),...split(ownPay,Math.max(0,own)))}
@@ -426,7 +426,7 @@ function calc(R,i){const L=[],W=[],refi=i.type==="refi";
  for(const f of i.fees||[]){if(refi&&eq(f.payer,"Seller"))continue;if(cash&&lenderOnly(f))continue; // refi: no seller rows; cash: no lender-only fees
   const per=perDoc(f),amt=per?f.amt*nDocs:f.amt,nm=(NOT_TITLE.test(f.name)?"":"Title – ")+f.name+(per&&nDocs>1?` (${nDocs} docs × ${fmt(f.amt)})`:""),sc=SEC[String(f.sec||"C").toUpperCase()]||SEC.C;
   if(flt&&FL_SEARCH.test(f.name)&&!eq(f.payer,"Seller")){const capped=FL_CAPPED.test(f.name),sAmt=flt==="seller"?amt:flt==="mdb"?(capped?Math.min(amt,FL_SEARCH_CAP):amt):0;
-   add(sc,nm+(flt==="seller"?" (seller chose title)":flt==="mdb"?(capped?` (Miami-Dade/Broward custom: seller pays up to ${fmt(FL_SEARCH_CAP)})`:" (Miami-Dade/Broward custom: seller pays)"):""),amt-sAmt,sAmt);continue}
+   add(sc,nm+(flt==="seller"?" (seller chose title)":flt==="cha"?" (Charlotte custom: buyer pays)":flt==="mdb"?(capped?` (Miami-Dade/Broward custom: seller pays up to ${fmt(FL_SEARCH_CAP)})`:" (Miami-Dade/Broward custom: seller pays)"):""),amt-sAmt,sAmt);continue}
   add(sc,nm,...split(f.payer,amt))}
  // recording fees
  for(const[d,[n,pg]]of docs){
@@ -492,18 +492,19 @@ function prorateTaxes(i){const annual=+i.annual||0,closing=pDate(i.closing);cons
 // buyer  = (ii) buyer chose title: buyer pays all of them;
 // mdb    = (iii) Miami-Dade/Broward regional provision: buyer pays the owner's policy; seller pays the title search /
 //          continuation (up to $200 unless the contract says otherwise), tax search and municipal lien search.
+// cha    = Charlotte County custom (John 11/02/26): seller pays the owner's policy; buyer pays the title search (not an AS IS 9(c) option).
 // Old saved values keep working: "" = local custom, "Seller" = (i), "Buyer" = (ii). Local custom: Miami-Dade and Broward
-// use (iii); otherwise the sheet's Owner Policy Paid By (Collier and Sarasota say Buyer -> (ii); everywhere else (i)).
+// use (iii); Charlotte uses the Charlotte custom (cha); otherwise the sheet's Owner Policy Paid By (Collier and Sarasota say Buyer -> (ii); everywhere else, Lee included, (i)).
 // John 11/02/26: the Lien Search Fee Estimate is always the buyer's, whatever the Who chose title option, so "lien search" is not in FL_SEARCH
-const FL_MDB=/^(miami-dade|broward)$/i,FL_SEARCH=/title search|tax search/i,FL_SEARCH_CAP=200;
+const FL_MDB=/^(miami-dade|broward)$/i,FL_CHA=/^charlotte$/i,FL_SEARCH=/title search|tax search/i,FL_SEARCH_CAP=200;
 // 9(c)(iii): the $200 limit is on the title search / continuation only; the seller pays the tax search and municipal lien search in full
 const FL_CAPPED=/title search|continuation/i;
 // a sheet fee that is not a title charge (a survey estimate) is listed without the "Title – " prefix
 const NOT_TITLE=/^survey\b/i;
-const FL_TITLE={seller:"Seller chose title",buyer:"Buyer chose title",mdb:"Miami-Dade/Broward custom"};
-const FL_TITLE_HINT={seller:"seller pays the owner's policy and title search (AS IS contract 9(c)(i)); the lien search estimate stays with the buyer",buyer:"buyer pays the owner's policy, title search and lien search estimate (AS IS contract 9(c)(ii))",mdb:"buyer pays the owner's policy; seller pays the title search (up to $200) (AS IS contract 9(c)(iii)); the lien search estimate stays with the buyer"};
-function flTitleOpt(R,i){if(i.state!=="FL")return"";const v=String(i.ownPay||"");if(v==="MDB")return"mdb";if(v==="Seller")return"seller";if(v==="Buyer")return"buyer";
- return FL_MDB.test(String(i.county||"").trim())?"mdb":ownerPayDefault(R,"FL",i.county)==="Seller"?"seller":"buyer"}
+const FL_TITLE={seller:"Seller chose title",buyer:"Buyer chose title",mdb:"Miami-Dade/Broward custom",cha:"Charlotte custom"};
+const FL_TITLE_HINT={seller:"seller pays the owner's policy and title search (AS IS contract 9(c)(i)); the lien search estimate stays with the buyer",buyer:"buyer pays the owner's policy, title search and lien search estimate (AS IS contract 9(c)(ii))",mdb:"buyer pays the owner's policy; seller pays the title search (up to $200) (AS IS contract 9(c)(iii)); the lien search estimate stays with the buyer",cha:"seller pays the owner's policy; buyer pays the title search and lien search estimate (Charlotte County custom)"};
+function flTitleOpt(R,i){if(i.state!=="FL")return"";const v=String(i.ownPay||"");if(v==="MDB")return"mdb";if(v==="CHA")return"cha";if(v==="Seller")return"seller";if(v==="Buyer")return"buyer";
+ const co=String(i.county||"").trim();return FL_MDB.test(co)?"mdb":FL_CHA.test(co)?"cha":ownerPayDefault(R,"FL",i.county)==="Seller"?"seller":"buyer"}
 function ownerPayDefault(R,st,co){const j=R.Jurisdictions.find(j=>eq(j.State,st)&&eq(j["County/City"],co));return j&&String(j["Owner Policy Paid By"]).trim()?j["Owner Policy Paid By"]:"Buyer"}
 const sellerFeeRows=(R,st)=>claFees(R,st,"cash").filter(f=>["seller","split"].includes(String(f["Paid By"]).trim().toLowerCase()));
 const sellerFeeInputs=(R,st,ov)=>applyRepFees(sellerFeeRows(R,st).filter(f=>f["Default On"]!=="N").map(f=>({name:f["Fee Name"],payer:f["Paid By"],tx:f.Transaction,sec:f["LE Section"],amt:num(f.Amount)||0})),ov,st,"purchase");
@@ -511,7 +512,7 @@ const commission=(price,c)=>{c=c||{};const v=+c.val||0;return c.mode==="flat"?r2
 function sellerNet(R,i){const price=+i.price||0,W=[],sum=a=>r2(a.reduce((t,x)=>t+x.amt,0));
  const bc=commission(price,i.buyerComm),sc=commission(price,i.sellerComm),pc=c=>c&&c.mode!=="flat"?` (${+c.val||0}%)`:" (flat)";
  const releases=(+i.payoff1>0?1:0)+(+i.payoff2>0?1:0),ownPay0=i.ownerPays==null?ownerPayDefault(R,i.state,i.county):i.ownerPays?"Seller":"Buyer",
-  ownPay=i.state==="FL"&&ownPay0==="Buyer"&&FL_MDB.test(String(i.county||"").trim())?"MDB":ownPay0;
+  ownPay=i.state==="FL"&&ownPay0==="Buyer"&&FL_MDB.test(String(i.county||"").trim())?"MDB":i.state==="FL"&&ownPay0==="Seller"&&FL_CHA.test(String(i.county||"").trim())?"CHA":ownPay0;
  // Florida: the title search row is a buyer row on the sheet, but the seller pays it under 9(c)(i) and (iii), so it is offered here too
  let sfees=i.fees||sellerFeeInputs(R,i.state);if(i.state==="FL"){const have=new Set(sfees.map(f=>f.name));sfees=sfees.concat(applyRepFees(claFees(R,"FL","purchase").filter(f=>FL_SEARCH.test(f["Fee Name"])&&!eq(f["Paid By"],"Seller")&&f["Default On"]!=="N"&&!have.has(f["Fee Name"])).map(f=>({name:f["Fee Name"],payer:f["Paid By"],tx:f.Transaction,sec:f["LE Section"],amt:num(f.Amount)||0})),i.repOv,"FL","purchase"))}
  // a cash-style purchase (no buyer loan) so only seller lines remain; actual premium split, so the seller pays the full owner's premium
@@ -565,9 +566,9 @@ function rebuild(){buildEnds();buildFees()}
 function setType(t){type=t;document.querySelectorAll("#tabs button").forEach(b=>{b.classList.toggle("on",b.dataset.t===t);b.setAttribute("aria-pressed",b.dataset.t===t)});
  $("priceWrap").hidden=t==="refi";$("payoffWrap").hidden=t!=="refi";$("loanWrap").hidden=t==="cash";$("ownWrap").hidden=$("ownPayWrap").hidden=t==="refi";$("fthbWrap").hidden=$("bpstWrap").hidden=t==="refi";
  buildDocs();rebuild();$("buyerLbl").textContent=$("colB").textContent=t==="refi"?"Borrower":"Buyer";run()}
-// the Owner's policy paid by list: Florida shows the three AS IS contract 9(c) title options (values "Seller", "Buyer", "MDB")
+// the Owner's policy paid by list: Florida shows the three AS IS contract 9(c) title options (values "Seller", "Buyer", "MDB") plus the Charlotte custom ("CHA")
 function ownPayOpts(){const sel=$("ownPay"),fl=$("state").value==="FL",cur=sel.value;
- if(sel.dataset.fl!==String(fl)){sel.dataset.fl=String(fl);const o=fl?[["","Local custom"],["Seller",FL_TITLE.seller],["Buyer",FL_TITLE.buyer],["MDB",FL_TITLE.mdb]]:[["","Local custom"],["Buyer","Buyer"],["Seller","Seller"]];
+ if(sel.dataset.fl!==String(fl)){sel.dataset.fl=String(fl);const o=fl?[["","Local custom"],["Seller",FL_TITLE.seller],["Buyer",FL_TITLE.buyer],["MDB",FL_TITLE.mdb],["CHA",FL_TITLE.cha]]:[["","Local custom"],["Buyer","Buyer"],["Seller","Seller"]];
   sel.innerHTML=o.map(([v,t])=>`<option value="${v}">${t}</option>`).join("");sel.value=o.some(x=>x[0]===cur)?cur:""}
  $("ownPayLbl").textContent=fl?"Who chose title (Florida)":"Owner's policy paid by";
  const h=$("ownPayHint");if(!fl||type==="refi"){h.hidden=true;return}const k=flTitleOpt(R,{state:"FL",county:$("county").value,ownPay:sel.value});
@@ -629,7 +630,7 @@ function sOtherRow(){const d=document.createElement("div");d.className="orow";d.
 function sOtherBtn(){$("s_addo").hidden=SC.children.length>=5}
 function buildSFees(){$("s_fees").innerHTML=sellerFeeRows(R,$("s_state").value).map(f=>{const std=num(f.Amount)||0,sp=repFeeOverride(repOv,$("s_state").value,"purchase",f["Fee Name"],f["Paid By"]);return`<div class="fee"><input type="checkbox" disabled aria-label="Always included" ${f["Default On"]!=="N"?"checked":""} data-name="${String(f["Fee Name"]).replace(/"/g,"&quot;")}" data-payer="${f["Paid By"]}" data-tx="${f.Transaction}" data-sec="${f["LE Section"]||"C"}"${sp==null?"":` data-special="1" data-std="${std}"`}><span>${f["Fee Name"]}${spBadge(sp,std)}</span><input type="number" class="locked" readonly tabindex="-1" aria-readonly="true" value="${sp==null?std:sp}" aria-label="Amount"><span class="tag s">${f["Paid By"]}</span></div>`}).join("")||'<span class="sum">No seller fees in the sheet for this state.</span>'}
 function syncOwn(){const st=$("s_state").value,co=$("s_county").value,c=ownerPayDefault(R,st,co);if(!ownTouched)$("s_own").checked=c==="Seller";
- $("s_ownNote").textContent=co?`(local custom in ${co}: ${st==="FL"&&FL_MDB.test(co)?"Miami-Dade/Broward custom, buyer pays the owner's policy and the seller pays the title search":c.toLowerCase()+" pays"}${ownTouched&&$("s_own").checked!==(c==="Seller")?" — overridden":""})`:""}
+ $("s_ownNote").textContent=co?`(local custom in ${co}: ${st==="FL"&&FL_MDB.test(co)?"Miami-Dade/Broward custom, buyer pays the owner's policy and the seller pays the title search":st==="FL"&&FL_CHA.test(co)?"Charlotte custom, seller pays the owner's policy and the buyer pays the title search":c.toLowerCase()+" pays"}${ownTouched&&$("s_own").checked!==(c==="Seller")?" — overridden":""})`:""}
 function sinputs(){const n=id=>+$(id).value||0;return{state:$("s_state").value,county:$("s_county").value,uw:$("uw").value,price:n("s_price"),assessed:$("s_state").value==="VA"?n("s_assessed"):0,closing:$("s_close").value,
  buyerComm:{mode:$("s_bbm").value,val:n("s_bbv")},sellerComm:{mode:$("s_slm").value,val:n("s_slv")},payoff1:n("s_po1"),payoff2:n("s_po2"),annualTax:n("s_tax"),paidThrough:$("s_ptd").value,
  hoaDues:n("s_hoa"),hoaTransfer:n("s_hoat"),special:n("s_spec"),concession:{mode:$("s_cm").value,val:n("s_cv")},warranty:n("s_war"),termination:n("s_term"),
@@ -698,7 +699,7 @@ load(SNAP,"Built-in snapshot","snapshot");$("status").textContent="Loading fees 
 // Guided tour: "Take the tour" (header) and a small first-visit chip. Works for everyone, signed in or not. The engine is portal/js/tour.js + portal/tour.css,
 // downloaded only when someone starts the tour. The chip shows once; dismissing it (x), starting the tour, or finishing it hides it for good (localStorage).
 (function(){
- var V="20261102d",KEY="cla_calc_tour_chip",link=document.getElementById("claCalcTourLink"),chip=document.getElementById("claTourChip"),loading=null;
+ var V="20261102e",KEY="cla_calc_tour_chip",link=document.getElementById("claCalcTourLink"),chip=document.getElementById("claTourChip"),loading=null;
  function seen(){try{return window.localStorage.getItem(KEY)==="1"}catch(e){return true}} // no storage: never show the chip (it could not remember "no thanks")
  function dismiss(){try{window.localStorage.setItem(KEY,"1")}catch(e){}if(chip)chip.hidden=true}
  function add(tag,attrs){return new Promise(function(res){var e=document.createElement(tag);for(var k in attrs)e[k]=attrs[k];e.onload=e.onerror=function(){res()};document.head.appendChild(e)})}
@@ -712,4 +713,4 @@ load(SNAP,"Built-in snapshot","snapshot");$("status").textContent="Loading fees 
   document.getElementById("claTourChipX").onclick=function(){dismiss();if(link)link.focus()}}
 })();
 </script>
-<script src="portal/js/portal-hook.js?v=20261102d" defer></script></body></html>
+<script src="portal/js/portal-hook.js?v=20261102e" defer></script></body></html>
