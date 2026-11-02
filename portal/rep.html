@@ -56,13 +56,18 @@
     clients = await A.listMyClients(); $("cCount").textContent = clients.length + " client" + (clients.length === 1 ? "" : "s");
     $("clients").innerHTML = clients.length ? clients.map((c, i) => {
       const p = c.profile, name = p ? CLA.fullName(p) : c.email;
-      const st = c.pending ? '<span class="badge warn">Invited, not signed up</span>' : p.status === "disabled" ? '<span class="badge off">Disabled</span>' : '<span class="badge">Active</span>';
+      // migration 20: signedIn === false = has an account from the invite but never signed in; the rep may resend the invite to their own client
+      const never = !c.pending && p.status === "active" && c.signedIn === false;
+      const st = c.pending ? '<span class="badge warn">Invited, not signed up</span>' : p.status === "disabled" ? '<span class="badge off">Disabled</span>'
+        : never ? '<span class="badge warn">Invited, never signed in</span>' + CLA.inviteSentNote(c.inviteSentAt) + '<div style="margin-top:6px">' + CLA.resendInviteBtn(p.id, c.inviteSentAt) + "</div>" : '<span class="badge">Active</span>';
       return '<tr class="' + (p ? "click" : "") + '" data-i="' + i + '"><td><div class="who">' + (p ? CLA.avImg(p, "sm") : CLA.avatarImg(null, {}, "sm")) + "<div><b>" + esc(name) + "</b><span>" + esc(p && p.companyName || "") + "</span></div></div></td><td>" + esc(c.email) + "</td><td>" + (CLA.telLink(c.cellPhone) || '<span class="sum">—</span>') + '</td><td class="num">' + c.quoteCount + "</td><td>" + CLA.date(c.lastQuoteAt) + "</td><td>" + st + "</td></tr>";
     }).join("") : '<tr><td colspan="6" class="empty">No clients yet. Invite one below, or ' + (CLA.isAdmin(me) ? "assign some from the admin dashboard." : "ask an admin to assign you some.") + '</td></tr>';
     CLA.fillAvatars(A, $("clients"));
   }
   $("clients").onclick = async (e) => {
     if (e.target.closest("a")) return;   // a tel: link dials; it does not open the quotes panel
+    const rs = e.target.closest("[data-resend]");
+    if (rs) { const c = clients.find((x) => x.profile && x.profile.id === rs.dataset.resend); if (c && await CLA.resendInvite(A, Object.assign({}, c.profile, { email: c.email }), rs)) await loadClients(); return; }
     const tr = e.target.closest("tr[data-i]"); if (!tr) return; const c = clients[+tr.dataset.i]; if (!c.profile) return;
     const qs = await A.listQuotesForClient(c.profile.id);
     $("dTitle").textContent = "Saved quotes: " + CLA.fullName(c.profile); $("detail").hidden = false;

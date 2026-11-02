@@ -271,7 +271,7 @@ The same engine also runs on the public calculator, for **anyone** (guest or sig
 - **Tabs:** the Seller Net Sheet step opens that tab and puts the person's own tab back afterwards (also if they skip or press Esc). The tour never clicks Purchase / Cash / Refinance, because switching those rebuilds the documents and endorsements and would discard edits; it only points at them. No fee or number is changed.
 - **The chip:** shown only to someone who has not dismissed it. The x, starting the tour from the chip or from the header link all store `cla_calc_tour_chip = "1"` in `localStorage`, so it never comes back. If browser storage is blocked the chip is not shown at all. It does not print.
 - **Phones:** the box is a bottom sheet (also for the centred welcome note); on desktop a tall target (the breakdown) gets the box beside it instead of on top of it.
-- **Cache-bust:** `?v=20261102e` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
+- **Cache-bust:** `?v=20261102f` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
 - **Tests:** the "calculator tour" block in `portal/test-portal.js` (link, step counts, targets, skipping, tab restore, chip persistence, phone sheet, versions). Screenshots: `portal/tools/screenshots_calculator_tour.py`.
 
 ## Who pays each transfer / recordation tax (live since 2026-10-28; calculator only, no database change)
@@ -342,7 +342,7 @@ Two pages, both **generated** by `node portal/tools/build-help.js` (do not edit 
 - **Header Help link** (`CLA.helpHref` in `portal-ui.js`; the calculator header link in `portal-hook.js` uses the same function): clients go to `help.html`, reps, admins and super admins to `staff-help.html`. Signed-in users only.
 - **Guards:** both pages use `CLA.boot(null)` (signed-out visitors go to `login.html?next=...`) and stay hidden until then. `staff-help.html` sends a client to `help.html`. **Be honest about what that is:** static pages can be fetched by anyone who knows the URL; the guard decides what a signed-in person sees on screen, it is not access control. Neither page has a key, a secret or customer data (the pictures use made-up sample people).
 - **Pictures:** `python3 portal/tools/screenshots_help.py` (serves this repo on a local port with the mock config forced, hides the demo banner), then `python3 portal/tools/optimize_help_images.py`, which sorts them into `help/client/` (used by the client guide) and `help/staff/` (everything else the staff manual uses) and removes anything unused.
-- Cache-bust letter: `20261102e` (see above).
+- Cache-bust letter: `20261102f` (see above).
 
 ## Florida: owner-occupied / first-time homebuyer boxes removed (branch `fl-no-oo-1102`, 11/02/26)
 
@@ -377,3 +377,36 @@ Two pages, both **generated** by `node portal/tools/build-help.js` (do not edit 
 - **Seller net sheet, Charlotte:** "Seller pays the owner's title policy" ticked = Charlotte custom (owner's policy only, no title search); unticked = Buyer chose title.
 - The lien search ($200) and survey ($500) estimates stay on the buyer. No sheet change: the Jurisdictions row for Charlotte stays Seller (the code adds the title search exception).
 - Cache-bust `20261102e`.
+
+## Resend invite (branch `resend-invite-1102`, 11/02/26; migration 20 + Edge Function `resend-invite`, NOT applied / deployed)
+
+- John: "Can we create a button to resend the invite", then "allow sales team to reinvite their clients as well".
+- **Who:**
+  - Admins and super admins: anyone who has never signed in and is not disabled (Users tab).
+  - Reps: only their own clients, through an ACTIVE assignment, who have never signed in (My clients on rep.html).
+  - Not allowed: clients; reps for anyone else (another rep's client, an unassigned or former client, staff). These get 42501.
+- **How (server):**
+  - The browser calls the `resend-invite` Edge Function with `{ userId, redirectTo }` only.
+  - The function first calls `public.admin_resend_invite(p_user)` as the caller (migration 20). That function:
+    - checks the caller's role, and for a rep the active assignment;
+    - refuses people who have signed in or are disabled (55000);
+    - applies the 60-second limit (PT429: the original invite's `auth.users.invited_at` or the last resend), using an atomic upsert on `private.invite_resends`;
+    - writes the `invite_resent` audit row;
+    - returns the email address from the database.
+  - Only then does the function use the service-role key:
+    - Not confirmed (the usual case): `auth.admin.inviteUserByEmail()` again. Supabase Auth re-sends invites to existing **unconfirmed** users: it issues a new token, so the old link dies, and sends the **same "Invite user" template** via the custom SMTP to `set-password.html?invite=1`. It refuses only confirmed users.
+    - Confirmed but never signed in (rare), or a race where invite says "already registered": `auth.resetPasswordForEmail()` with the same redirect (Reset password template).
+  - HTTP statuses: 403, 404, 409, 429, and 502 for an email failure.
+- **Known limit:** if the email send fails after the database recorded the resend, the next try must wait out the 60 seconds.
+- **List:** `public.list_invite_status()` returns `signed_in` and `invite_last_sent_at`: admins see every profile, reps see their own active clients. It drives the button and the "Invite last sent <date>" note.
+- **Tests:**
+  - `10_access_rules.sql`: rep, admin and client rules; rate limit; signed in / disabled; the list.
+  - `97_upgrade_from_19.sql`: upgrade check 10.
+  - `supabase/functions/resend-invite/test-handler.mjs`: handler with a stubbed client (also run by `test-portal.js`).
+  - `test-portal.js`: mock rules, admin and rep pages.
+- **Go-live:**
+  1. Apply migration 20 (SQL editor or `supabase db push`).
+  2. `supabase functions deploy resend-invite` (verify_jwt on; `PORTAL_ORIGIN` as for invite-user).
+  3. Push the site.
+  - Until migration 20 is applied the button stays hidden everywhere (`list_invite_status` unknown), so pushing the site first is harmless. Deploy the function before or with the migration.
+- Cache-bust `20261102f`.

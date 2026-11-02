@@ -55,6 +55,12 @@
       return data.session.user.id;
     }
     // Edge Function errors carry the JSON body in error.context
+    // migration 20: { user_id: { signedIn, sentAt } } for the people the caller may see (admins: everyone; reps: their own active clients); null = unknown (not applied yet)
+    async function inviteStatus() {
+      let r = { error: true }; try { r = await sb.rpc("list_invite_status"); } catch (e) { /* unknown stays unknown */ }
+      if (r.error || !Array.isArray(r.data)) return null;
+      const m = {}; r.data.forEach((x) => { m[x.user_id] = { signedIn: !!x.signed_in, sentAt: x.invite_last_sent_at ? iso(x.invite_last_sent_at) : null }; }); return m;
+    }
     async function fn(name, body) {
       const { data, error } = await sb.functions.invoke(name, { body });
       if (error) {
@@ -168,11 +174,13 @@
         // clients who have not signed up yet: the cell number lives on the pending invitation (RLS lets the assigned rep read it)
         const waiting = asg.filter((a) => !a.clientUserId).map((a) => a.clientEmail);
         const invs = waiting.length ? must(await sb.from("invitations").select("email, cell_phone").in("email", waiting).is("accepted_at", null)) : [];
+        const st = ids.length ? await inviteStatus() : null;   // migration 20: signed in yet? invite last sent? (undefined when unknown)
         return asg.map((a) => {
           const p = profs.find((x) => x.id === a.clientUserId) || null, mine = qs.filter((q) => q.owner_id === a.clientUserId);
           const inv = !p && invs.find((i) => i.email === a.clientEmail);
           return { email: a.clientEmail, profile: p, pending: !p, cellPhone: p ? p.cellPhone : (inv && inv.cell_phone) || null, quoteCount: mine.length,
-            lastQuoteAt: mine.length ? mine.map((q) => q.created_at).sort().pop() : null };
+            lastQuoteAt: mine.length ? mine.map((q) => q.created_at).sort().pop() : null,
+            signedIn: p && st && st[p.id] ? st[p.id].signedIn : undefined, inviteSentAt: p && st && st[p.id] ? st[p.id].sentAt : null };
         });
       },
       async listQuotesForClient(cid) {
@@ -189,10 +197,14 @@
         // (migration 15 not applied yet, or the call failed) so the page never guesses. profiles.last_seen_at is NOT used: nothing writes it.
         let r = { error: true }; try { r = await sb.rpc("admin_list_last_sign_ins"); } catch (e) { /* unknown stays unknown */ }
         if (!r.error && Array.isArray(r.data)) { const m = {}; r.data.forEach((x) => { m[x.user_id] = x.last_sign_in_at ? iso(x.last_sign_in_at) : null; }); rows.forEach((u) => { if (u.id in m) u.lastSignInAt = m[u.id]; }); }
+        // inviteSentAt (migration 20, list_invite_status): when an invite last went out (the original or a resend); undefined = unknown
+        const inv = await inviteStatus(); rows.forEach((u) => { if (inv && u.id in inv) u.inviteSentAt = inv[u.id].sentAt; });
         return rows;
       },
       async adminListAssignments() { return must(await sb.from("assignments").select("*").order("created_at", { ascending: false })).map(toAssignment); },
       async adminListQuotes() { return must(await sb.from("quotes").select("*").order("created_at", { ascending: false })).map(toQuote); },
+      // resend an invite (migration 20 + the resend-invite Edge Function): admins / super admins: anyone; reps: their own active clients. The server decides.
+      async resendInvite(id) { return fn("resend-invite", { userId: id, redirectTo: redirectBase() + "?invite=1" }); },
       async adminInvite(o) { return fn("invite-user", { email: o.email, role: o.role, repId: o.repId || null, isRep: (o.role === "super_admin" || o.role === "admin") && !!o.isRep, cellPhone: await invitedCell(o.cellPhone), redirectTo: redirectBase() + "?invite=1" }); },
       async adminSetStatus(id, status) { return fn("set-user-status", { userId: id, status }); },
       // permanent: only a disabled user (migration 18 + the delete-user Edge Function); confirmEmail = the email typed in the dialog; reassignTo = successor rep when they have active clients

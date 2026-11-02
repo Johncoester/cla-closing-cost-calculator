@@ -26,6 +26,8 @@
     const isStaff = (u) => !!u && u.status === "active" && ["super_admin", "admin", "rep"].includes(u.role);   // private.is_staff(): by ROLE
     const needAdmin = (s) => { const u = need(s); if (!isAdminRole(u)) err("Admins only."); return u; };
     const needSuper = (s) => { const u = needAdmin(s); if (!isSuper(u)) err("Only a super admin can do that."); return u; };
+    // when an invite last went out (migration 20 list_invite_status): the latest resend, else the invitation, else the account's creation (= the invite)
+    const inviteSentAt = (s, u) => u.inviteSentAt || ((s.invitations || []).filter((i) => i.email === u.email).map((i) => i.createdAt).sort().pop()) || u.createdAt || null;
     const activeClients = (s, repId) => s.assignments.filter((a) => a.repId === repId && a.active);
     // hand every ACTIVE client of `fromId` to `toId` (history kept: old rows inactive, new rows created), like private.move_rep_clients()
     const moveClients = (s, actor, fromId, toId) => {
@@ -57,7 +59,7 @@
       s.audit.unshift({ id: uid(), at: new Date().toISOString(), actorId: actor, action, targetType, targetId, details: details || {} });
     const repOf = (s, clientId) => { const a = s.assignments.find((x) => x.active && x.clientUserId === clientId); const r = a && s.users.find((u) => u.id === a.repId && u.status === "active" && isRep(u)); return r || null; };
     const myClientIds = (s, repId) => s.assignments.filter((a) => a.active && a.repId === repId && a.clientUserId).map((a) => a.clientUserId);
-    const dto = (p) => { const o = clone(p); delete o.lastSignInAt; o.cellPhone = o.cellPhone || null; o.isRep = isRep(p); o.isComplete = complete(p); return o; };
+    const dto = (p) => { const o = clone(p); delete o.lastSignInAt; delete o.inviteSentAt; o.cellPhone = o.cellPhone || null; o.isRep = isRep(p); o.isComplete = complete(p); return o; };
     // same rule as the database trigger: blank -> null, valid US -> +1XXXXXXXXXX, anything else -> error
     const cellOrNull = (v) => { const n = CLA.normalizePhone(v); if (n === null) err(CLA.PHONE_MSG); return n || null; };
 
@@ -145,7 +147,9 @@
           const qs = p ? visibleQuotes(s, u).filter((q) => q.ownerId === p.id) : [];
           const inv = !p && s.invitations.find((i) => i.email === a.clientEmail);   // RLS: a rep reads pending invitations of clients assigned to them
           return { email: a.clientEmail, profile: p ? dto(p) : null, pending: !p, cellPhone: p ? p.cellPhone || null : (inv && inv.cellPhone) || null, quoteCount: qs.length,
-            lastQuoteAt: qs.length ? qs.map((q) => q.createdAt).sort().pop() : null };
+            lastQuoteAt: qs.length ? qs.map((q) => q.createdAt).sort().pop() : null,
+            // migration 20 (list_invite_status): has this client ever signed in, and when did an invite last go out (undefined = unknown)
+            signedIn: p ? (p.lastSignInAt === undefined ? undefined : p.lastSignInAt !== null) : undefined, inviteSentAt: p ? inviteSentAt(s, p) : null };
         });
       },
       async listQuotesForClient(clientId) { const s = load(), u = need(s); return visibleQuotes(s, u).filter((q) => q.ownerId === clientId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(qdto); },
@@ -154,9 +158,23 @@
         return invite(s, u, { email, role: "client", repId: u.id, cellPhone: opts && opts.cellPhone }, true);   // asRep: rep rules even for an admin+rep (never takes over another rep's client)
       },
 
-      async adminListUsers() { const s = load(); needAdmin(s); return s.users.map((u) => Object.assign(dto(u), { lastSignInAt: u.lastSignInAt })); },   // lastSignInAt: ISO or null = never signed in (like auth.users.last_sign_in_at via migration 15)
+      async adminListUsers() { const s = load(); needAdmin(s); return s.users.map((u) => Object.assign(dto(u), { lastSignInAt: u.lastSignInAt, inviteSentAt: inviteSentAt(s, u) })); },   // lastSignInAt: ISO or null = never signed in (like auth.users.last_sign_in_at via migration 15)
       async adminListAssignments() { const s = load(); needAdmin(s); return clone(s.assignments); },
       async adminListQuotes() { const s = load(), u = needAdmin(s); return visibleQuotes(s, u).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((q) => Object.assign(qdto(q), { deleted: !!q.deletedAt })); },
+      // resend an invite (migration 20 + resend-invite Edge Function rules): admins / super admins: anyone; a rep: only their own ACTIVE client;
+      // never someone who has signed in or is disabled; not twice within 60 seconds. Demo mode sends nothing.
+      async resendInvite(id) {
+        const s = load(), u = need(s), t = s.users.find((x) => x.id === id);
+        if (!isAdminRole(u) && !(isRep(u) && t && t.role === "client" && s.assignments.some((a) => a.active && a.repId === u.id && (a.clientUserId === t.id || a.clientEmail === t.email))))
+          err("You can only resend an invite to your own clients.");
+        if (!t) err("no such user");
+        if (t.status !== "active") err("This person is disabled. Re-enable them first.");
+        if (t.lastSignInAt) err('This person has already signed in. They can use "Forgot password" on the sign-in page.');
+        const last = inviteSentAt(s, t); if (last && Date.now() - new Date(last).getTime() < 60000) err("An invite was sent less than a minute ago. Wait a minute before sending another.");
+        t.inviteSentAt = new Date().toISOString(); t.inviteResends = (t.inviteResends || 0) + 1;
+        log(s, u.id, "invite_resent", "profile", t.id, { email: t.email, role: t.role, resend_count: t.inviteResends, as: isAdminRole(u) ? "admin" : "rep" }); save(s);
+        return { ok: true, via: "invite", sentAt: t.inviteSentAt, mockNote: "Demo mode: no email is sent." };
+      },
       async adminInvite(o) { const s = load(), u = needAdmin(s); return invite(s, u, o); },
       async adminSetIsRep(id, on, reassignTo) {
         const s = load(), u = needSuper(s);   // super admin only, for admins and super admins (an admin cannot switch anyone, not even themselves)

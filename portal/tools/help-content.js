@@ -220,6 +220,7 @@ sec("quotes", 5, "Quotes in the portal", "E", "Saving, finding and who can see w
 
 sec("reps", 6, "Rep screens and realtor assignments", "R", "The Rep dashboard, inviting clients and how a client becomes yours.", [
   { t: "p", x: "Your top bar shows your photo, phone and cell. The My clients tab lists everyone assigned to you." },
+  { t: "p", x: "If one of your clients shows Invited, never signed in, choose Resend invite in their row, then OK, to email them a fresh invitation link (the row also says when the invite was last sent). You can resend only to your own clients who have not signed in yet; ask an admin for anyone else. Wait a minute between sends." },
   { t: "table", cols: ["Column", "Meaning"], rows: [
     ["Client", "Name, photo and company. Click the row to see their saved quotes."],
     ["Email, Cell", "Cell numbers are tap-to-call on a phone."],
@@ -296,6 +297,7 @@ sec("admin", 7, "Admin guide", "A", "People, roles, assignments, the audit log a
   { t: "h3", x: "Audit log and last sign-in" },
   { t: "p", x: "The Audit log is read-only and newest first, with When, Who, Action and Details. It records invitations, role and status changes, deleted users, the rep switch, assignments, photo changes, quote deletions and admin views of quotes, the nightly purge, feedback and pricing table changes. Nobody can edit or delete entries." },
   { t: "p", x: "In the Users table, the Status badge tells you whether someone has signed in: Active (hover to see the last sign-in date), Invited, never signed in (they have not opened the invitation yet), or Disabled." },
+  { t: "p", x: "Resend invite: a person who shows Invited, never signed in (and is not disabled) has a Resend invite button, and the row says when the invite was last sent. Admins and super admins can resend to anyone in that state. Choose Resend invite, then OK: they get the same invitation email again with a new link to set their password (the link lasts 24 hours, and the link in the earlier email stops working). A message at the bottom says whether it was sent. The button is greyed out for a minute afterwards, and the portal refuses a second send within 60 seconds so nobody gets two emails. Someone who has already signed in has no button: they use Forgot password on the sign-in page. Every resend is in the audit log as invite_resent." },
   { t: "img", f: "admin-audit.png", cap: "The audit log.", alt: "Audit log" },
   { t: "h3", x: "Staff feedback review" },
   { t: "p", x: "Admins and super admins read every item and can filter by status and category or search. Only a super admin can add a note and choose Approve or Dismiss; admins see it read-only. The sender sees the status and note in their feedback panel (My suggestions). Statuses are New, Notified, Approved, Shipped and Dismissed." },

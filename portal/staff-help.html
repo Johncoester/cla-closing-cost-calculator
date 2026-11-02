@@ -4,8 +4,8 @@
 <meta name="theme-color" content="#000000"><meta name="robots" content="noindex">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="portal.css">
-<link rel="stylesheet" href="help/help.css?v=20261102e">
-<link rel="stylesheet" href="help/staff.css?v=20261102e">
+<link rel="stylesheet" href="help/help.css?v=20261102f">
+<link rel="stylesheet" href="help/staff.css?v=20261102f">
 <script src="config.js"></script>
 <script src="js/mock-data.js"></script><script src="js/mock-adapter.js"></script><script src="js/supabase-adapter.js"></script><script src="js/auth-adapter.js"></script><script src="js/portal-ui.js"></script>
 </head><body>
@@ -136,6 +136,7 @@
 <div class="hsh"><h2 id="reps-h"><span class="num">6</span>Rep screens and realtor assignments</h2><span class="badge audR">For reps</span></div>
 <p class="lead">The Rep dashboard, inviting clients and how a client becomes yours.</p>
 <p>Your top bar shows your photo, phone and cell. The My clients tab lists everyone assigned to you.</p>
+<p>If one of your clients shows Invited, never signed in, choose Resend invite in their row, then OK, to email them a fresh invitation link (the row also says when the invite was last sent). You can resend only to your own clients who have not signed in yet; ask an admin for anyone else. Wait a minute between sends.</p>
 <div class="tablewrap"><table><thead><tr><th>Column</th><th>Meaning</th></tr></thead><tbody><tr><th scope="row">Client</th><td>Name, photo and company. Click the row to see their saved quotes.</td></tr><tr><th scope="row">Email, Cell</th><td>Cell numbers are tap-to-call on a phone.</td></tr><tr><th scope="row">Saved quotes, Last quote</th><td>How many live quotes they have and when the latest was saved.</td></tr><tr><th scope="row">Status</th><td>Active, Disabled, or Invited, not signed up (the invitation is waiting).</td></tr></tbody></table></div>
 <figure class="shot"><img src="help/staff/rep-dashboard.png" alt="Rep dashboard" width="1128" height="830" loading="lazy"><figcaption>A rep's clients and agents.</figcaption></figure>
 <h3>Invite a client</h3>
@@ -178,6 +179,7 @@
 <h3>Audit log and last sign-in</h3>
 <p>The Audit log is read-only and newest first, with When, Who, Action and Details. It records invitations, role and status changes, deleted users, the rep switch, assignments, photo changes, quote deletions and admin views of quotes, the nightly purge, feedback and pricing table changes. Nobody can edit or delete entries.</p>
 <p>In the Users table, the Status badge tells you whether someone has signed in: Active (hover to see the last sign-in date), Invited, never signed in (they have not opened the invitation yet), or Disabled.</p>
+<p>Resend invite: a person who shows Invited, never signed in (and is not disabled) has a Resend invite button, and the row says when the invite was last sent. Admins and super admins can resend to anyone in that state. Choose Resend invite, then OK: they get the same invitation email again with a new link to set their password (the link lasts 24 hours, and the link in the earlier email stops working). A message at the bottom says whether it was sent. The button is greyed out for a minute afterwards, and the portal refuses a second send within 60 seconds so nobody gets two emails. Someone who has already signed in has no button: they use Forgot password on the sign-in page. Every resend is in the audit log as invite_resent.</p>
 <figure class="shot"><img src="help/staff/admin-audit.png" alt="Audit log" width="1200" height="471" loading="lazy"><figcaption>The audit log.</figcaption></figure>
 <h3>Staff feedback review</h3>
 <p>Admins and super admins read every item and can filter by status and category or search. Only a super admin can add a note and choose Approve or Dismiss; admins see it read-only. The sender sees the status and note in their feedback panel (My suggestions). Statuses are New, Notified, Approved, Shipped and Dismissed.</p>

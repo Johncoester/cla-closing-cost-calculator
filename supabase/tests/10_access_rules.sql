@@ -1969,6 +1969,58 @@ select tests.is('the only write policies on assignments are the admin ones', (se
 select tests.is('a rep cannot use the admin assignment call', tests.x(tests.id('b1'), 'select public.admin_reassign_client(''brian.unassigned@example.com'', ' || tests.u('b1') || ')'), 'ERR:42501');
 select tests.is('...and the client is still the super admin''s', (select rep_id::text from public.assignments where client_email = 'brian.unassigned@example.com' and active), tests.id('a1')::text);
 
+-- ---------------- resend an invite (migration 20; reps for their own clients, John 11/02) ----------------
+-- 91 client of rep b1 | 92 rep | 93 admin | 94 client who signed in (b1's) | 95 disabled client (b1's) | 96 client of rep b2 | 97 unassigned client | 98 b1's FORMER client (now b2's)
+do $$ begin
+  insert into public.invitations (email, role, is_rep) values ('rs.client@example.com', 'client', false), ('rs.rep@clatitle.com', 'rep', true), ('rs.admin@clatitle.com', 'admin', false),
+    ('rs.signed@example.com', 'client', false), ('rs.off@example.com', 'client', false), ('rs.other@example.com', 'client', false), ('rs.nobody@example.com', 'client', false), ('rs.moved@example.com', 'client', false);
+  insert into auth.users (id, email, invited_at) select tests.id(k), e, now() - interval '3 days' from (values ('91', 'rs.client@example.com'), ('92', 'rs.rep@clatitle.com'), ('93', 'rs.admin@clatitle.com'),
+    ('94', 'rs.signed@example.com'), ('95', 'rs.off@example.com'), ('96', 'rs.other@example.com'), ('97', 'rs.nobody@example.com'), ('98', 'rs.moved@example.com')) v(k, e);
+  update auth.users set last_sign_in_at = now() - interval '1 day', email_confirmed_at = now() - interval '1 day' where id = tests.id('94');
+  update public.profiles set status = 'disabled' where id = tests.id('95');
+  insert into public.assignments (client_email, client_user_id, rep_id, active) values
+    ('rs.client@example.com', tests.id('91'), tests.id('b1'), true), ('rs.signed@example.com', tests.id('94'), tests.id('b1'), true), ('rs.off@example.com', tests.id('95'), tests.id('b1'), true),
+    ('rs.other@example.com', tests.id('96'), tests.id('b2'), true), ('rs.moved@example.com', tests.id('98'), tests.id('b1'), false), ('rs.moved@example.com', tests.id('98'), tests.id('b2'), true);
+end $$;
+select tests.is('resend invite: test people were created from their invitations', (select count(*)::text from public.profiles where email like 'rs.%'), '8');
+select tests.is('resend invite: a client may not resend, not even to themselves (42501)', tests.rpc(tests.id('c1'), $$public.admin_resend_invite('$$ || tests.id('91') || $$')$$) || '/' || tests.rpc(tests.id('91'), $$public.admin_resend_invite('$$ || tests.id('91') || $$')$$), 'ERR:42501/ERR:42501');
+select tests.is('resend invite: a rep resends to their OWN assigned client who never signed in: email from the database, not confirmed, count 1',
+  tests.rpc(tests.id('b1'), $$public.admin_resend_invite('$$ || tests.id('91') || $$') - 'role'$$), '{"email": "rs.client@example.com", "confirmed": false, "resend_count": 1}');
+select tests.is('...recorded once, by the rep, with an invite_resent audit row (as rep) naming the email',
+  (select resend_count || '/' || (last_sent_by = tests.id('b1'))::text from private.invite_resends where user_id = tests.id('91')) || '/' ||
+  (select count(*)::text from public.audit_log where action = 'invite_resent' and target_id = tests.id('91') and actor_id = tests.id('b1') and details ->> 'email' = 'rs.client@example.com' and details ->> 'as' = 'rep'), '1/true/1');
+select tests.is('resend invite: a rep may NOT resend to another rep''s client, an unassigned client, a former client, a rep, an admin or a super admin (42501)',
+  tests.rpc(tests.id('b1'), $$public.admin_resend_invite('$$ || tests.id('96') || $$')$$) || '/' || tests.rpc(tests.id('b1'), $$public.admin_resend_invite('$$ || tests.id('97') || $$')$$) || '/' || tests.rpc(tests.id('b1'), $$public.admin_resend_invite('$$ || tests.id('98') || $$')$$) || '/' || tests.rpc(tests.id('b1'), $$public.admin_resend_invite('$$ || tests.id('92') || $$')$$) || '/' || tests.rpc(tests.id('b1'), $$public.admin_resend_invite('$$ || tests.id('93') || $$')$$) || '/' || tests.rpc(tests.id('b1'), $$public.admin_resend_invite('$$ || tests.id('a1') || $$')$$),
+  'ERR:42501/ERR:42501/ERR:42501/ERR:42501/ERR:42501/ERR:42501');
+select tests.is('...nor to an unknown id (42501: a rep learns nothing about other people), and those refusals record nothing',
+  tests.rpc(tests.id('b1'), $$public.admin_resend_invite('$$ || tests.id('9f') || $$')$$) || '/' || (select count(*)::text from private.invite_resends where user_id in (tests.id('96'), tests.id('97'), tests.id('98'), tests.id('92'), tests.id('93'))), 'ERR:42501/0');
+select tests.is('resend invite: the other rep may resend to THEIR client (96) and to the client who moved to them (98)', tests.rpc(tests.id('b2'), $$public.admin_resend_invite('$$ || tests.id('96') || $$') ->> 'resend_count'$$) || '/' || tests.rpc(tests.id('b2'), $$public.admin_resend_invite('$$ || tests.id('98') || $$') ->> 'resend_count'$$), '1/1');
+select tests.is('resend invite: a rep''s own client who already signed in or is disabled is refused (55000)', tests.rpc(tests.id('b1'), $$public.admin_resend_invite('$$ || tests.id('94') || $$')$$) || '/' || tests.rpc(tests.id('b1'), $$public.admin_resend_invite('$$ || tests.id('95') || $$')$$), 'ERR:55000/ERR:55000');
+select tests.is('...a second click within 60 seconds is refused (PT429), by anyone, and nothing more is recorded',
+  tests.rpc(tests.id('b1'), $$public.admin_resend_invite('$$ || tests.id('91') || $$')$$) || '/' || tests.rpc(tests.id('a1'), $$public.admin_resend_invite('$$ || tests.id('91') || $$')$$) || '/' ||
+  (select resend_count::text from private.invite_resends where user_id = tests.id('91')) || '/' || (select count(*)::text from public.audit_log where action = 'invite_resent' and target_id = tests.id('91')), 'ERR:PT429/ERR:PT429/1/1');
+update private.invite_resends set last_sent_at = now() - interval '2 minutes' where user_id = tests.id('91');
+select tests.is('...after a minute an admin can resend it again (count 2)', tests.rpc(tests.id('a2'), $$public.admin_resend_invite('$$ || tests.id('91') || $$') ->> 'resend_count'$$), '2');
+update auth.users set invited_at = now() - interval '10 seconds' where id = tests.id('92');
+select tests.is('resend invite: an original invite sent less than 60 seconds ago also counts (PT429)', tests.rpc(tests.id('a2'), $$public.admin_resend_invite('$$ || tests.id('92') || $$')$$), 'ERR:PT429');
+update auth.users set invited_at = now() - interval '3 days' where id = tests.id('92');
+select tests.is('resend invite: an admin may resend to anyone who has not signed in: a rep, an admin, an unassigned client, another rep''s client',
+  tests.rpc(tests.id('a2'), $$public.admin_resend_invite('$$ || tests.id('92') || $$') ->> 'role'$$) || '/' || tests.rpc(tests.id('a2'), $$public.admin_resend_invite('$$ || tests.id('93') || $$') ->> 'role'$$) || '/' || tests.rpc(tests.id('a2'), $$public.admin_resend_invite('$$ || tests.id('97') || $$') ->> 'role'$$) || '/' || (tests.rpc(tests.id('a2'), $$public.admin_resend_invite('$$ || tests.id('96') || $$') ->> 'role'$$) in ('client', 'ERR:PT429'))::text, 'rep/admin/client/true');
+select tests.is('resend invite: admins are refused for someone who already signed in, a disabled person (55000) and an unknown id (P0002)',
+  tests.rpc(tests.id('a1'), $$public.admin_resend_invite('$$ || tests.id('94') || $$')$$) || '/' || tests.rpc(tests.id('a1'), $$public.admin_resend_invite('$$ || tests.id('95') || $$')$$) || '/' || tests.rpc(tests.id('a1'), $$public.admin_resend_invite('$$ || tests.id('9f') || $$')$$), 'ERR:55000/ERR:55000/ERR:P0002');
+update auth.users set email_confirmed_at = now() - interval '1 day' where id = tests.id('93');
+update private.invite_resends set last_sent_at = now() - interval '2 minutes' where user_id = tests.id('93');
+select tests.is('resend invite: a confirmed person who never signed in is allowed and flagged confirmed (the function then sends a set-password email)',
+  tests.rpc(tests.id('a1'), $$public.admin_resend_invite('$$ || tests.id('93') || $$') ->> 'confirmed'$$), 'true');
+select tests.is('invite status: clients 42501; an admin sees every profile; a rep sees ONLY their own active clients',
+  tests.q(tests.id('c1'), 'select * from public.list_invite_status()') || '/' ||
+  (tests.q(tests.id('a2'), 'select * from public.list_invite_status()') = (select count(*)::text from public.profiles))::text || '/' ||
+  (select string_agg(email, ',' order by email) from public.profiles where id::text in (select unnest(string_to_array(tests.v(tests.id('b1'), $q$select string_agg(user_id::text, ',') from public.list_invite_status() where user_id in (select id from public.profiles where email like 'rs.%')$q$), ',')))),
+  'ERR:42501/true/rs.client@example.com,rs.off@example.com,rs.signed@example.com');
+select tests.is('invite status: signed_in and the latest of the invite and the resends',
+  tests.v(tests.id('b1'), $q$select string_agg(signed_in::text || ':' || (invite_last_sent_at > now() - interval '5 minutes')::text, ',' order by user_id) from public.list_invite_status() where user_id in (tests.id('91'), tests.id('94'))$q$), 'false:true,true:false');
+select tests.is('resend bookkeeping is not reachable through the API (private schema)', tests.q(tests.id('a1'), 'select * from private.invite_resends'), 'ERR:42501');
+
 -- ---------------- summary ----------------
 do $$ declare f int; t int; begin
   select count(*) filter (where not ok), count(*) into f, t from tests.results;

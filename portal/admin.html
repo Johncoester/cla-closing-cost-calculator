@@ -5,7 +5,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="portal.css">
 <script src="config.js"></script>
-<script src="../fee-snapshot.js?v=20261102e"></script>
+<script src="../fee-snapshot.js?v=20261102f"></script>
 <script src="js/mock-data.js"></script><script src="js/mock-adapter.js"></script><script src="js/supabase-adapter.js"></script><script src="js/auth-adapter.js"></script><script src="js/portal-ui.js"></script>
 <style>
 .repbox{position:relative;display:inline-block;vertical-align:middle;width:230px}
@@ -220,7 +220,7 @@
       // "Active" only means "not disabled" (a profile is active from invite time). lastSignInAt === null = invited but has never signed in (migration 15);
       // undefined = unknown (migration not applied), which stays plain "Active" rather than guessing.
       const st = u.status !== "active" ? '<span class="badge off">Disabled</span>'
-        : u.lastSignInAt === null ? '<span class="badge warn" title="Invited ' + esc(CLA.date(u.createdAt)) + '; has not signed in yet">Invited, never signed in</span>'
+        : u.lastSignInAt === null ? '<span class="badge warn" title="Invited ' + esc(CLA.date(u.createdAt)) + '; has not signed in yet">Invited, never signed in</span>' + CLA.inviteSentNote(u.inviteSentAt)
         : '<span class="badge"' + (u.lastSignInAt ? ' title="Last signed in ' + esc(CLA.date(u.lastSignInAt)) + '"' : "") + ">Active</span>";
       const mine = u.id === me.id, block = mine ? "" : CLA.manageBlock(me, u);   // "" = this person may be changed by me
       // "Also works as a rep": only for admin / super admin rows; only a super admin may switch it (CLA email needed to switch on)
@@ -232,7 +232,9 @@
         : '<select data-tour="u-role" data-role="' + esc(u.id) + '" aria-label="Role" style="min-height:34px;padding:4px 30px 4px 10px;font-size:13px;width:auto">' + (isSuper ? ["super_admin", "admin", "rep", "client"] : u.role === "admin" ? ["admin", "rep", "client"] : ["rep", "client"]).map((r) => '<option value="' + r + '"' + (r === u.role ? " selected" : "") + ">" + CLA.roleLabel(r) + "</option>").join("") + "</select>";
       const btn = '<button class="btn ' + (u.status === "active" ? "danger" : "o") + ' sm" data-st="' + esc(u.id) + '" data-to="' + (u.status === "active" ? "disabled" : "active") + '" type="button"' + (block ? ' disabled aria-disabled="true"' : "") + ">" + (u.status === "active" ? "Disable" : "Re-enable") + "</button>";
       const del = u.status !== "active" ? '<button class="btn danger sm" data-del="' + esc(u.id) + '" type="button"' + (block ? ' disabled aria-disabled="true"' : "") + ' title="Permanently delete this disabled user">Delete…</button>' : "";   // only for a DISABLED person
-      const action = mine ? "" : '<span class="acts">' + (block ? '<span class="tip"' + tip(block) + ">" + btn + del + "</span>" : btn + del) + "</span>";   // the tooltip sits on a wrapper: a disabled button gets no hover / focus events
+      // Resend invite (migration 20): admins and super admins may resend to anyone who has never signed in and is not disabled (even where "block" applies); hidden until migration 20 answers (inviteSentAt undefined = unknown)
+      const resend = !mine && u.status === "active" && u.lastSignInAt === null && u.inviteSentAt !== undefined ? CLA.resendInviteBtn(u.id, u.inviteSentAt) : "";
+      const action = mine ? "" : '<span class="acts">' + resend + (block ? '<span class="tip"' + tip(block) + ">" + btn + del + "</span>" : btn + del) + "</span>";   // the tooltip sits on a wrapper: a disabled button gets no hover / focus events
       return "<tr><td><div class='who'>" + CLA.avImg(u, "sm") + "<div><b>" + esc(CLA.fullName(u)) + "</b><span>" + esc(u.email) + (u.companyName && u.role === "client" ? " · " + esc(u.companyName) : "") + "</span></div></div></td><td>" + (CLA.telLink(u.cellPhone) || '<span class="sum">—</span>') + "</td><td>" + roleSel + alsoBox + "</td><td>" + (u.role === "client" ? repPick(u, rep) : "—") + "</td><td>" + st + '</td><td class="num">' + action + "</td></tr>";
     }).join("");
     CLA.fillAvatars(A, $("users"));
@@ -314,6 +316,8 @@
   filterEls.forEach((id) => { $(id).addEventListener("input", () => loadUsers(false)); $(id).addEventListener("change", () => loadUsers(false)); });
   $("uClear").onclick = () => { $("uSearch").value = ""; $("uRole").value = ""; $("uStatus").value = ""; loadUsers(false); };
   $("users").onclick = async (e) => {
+    const rs = e.target.closest("[data-resend]");
+    if (rs) { const u = uById(rs.dataset.resend); if (u && await CLA.resendInvite(A, u, rs)) await loadUsers(); return; }
     const d = e.target.closest("[data-del]");
     if (d) { const u = uById(d.dataset.del); if (!u) return; const r = await confirmDelete(u);
       if (r) { CLA.toast(u.email + " deleted" + (r.clients_moved ? ". " + r.clients_moved + " realtor" + (r.clients_moved === 1 ? "" : "s") + " moved" : "")); await loadUsers(); } return; }

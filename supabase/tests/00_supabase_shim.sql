@@ -18,6 +18,8 @@ create table if not exists auth.users (
   confirmation_token varchar(255), recovery_token varchar(255),
   email_change varchar(255), email_change_token_new varchar(255), email_change_token_current varchar(255)
 );
+-- columns real Supabase Auth has that migrations 15 and 20 read (NULL = never signed in / never invited)
+alter table auth.users add column if not exists last_sign_in_at timestamptz, add column if not exists invited_at timestamptz;
 create or replace function auth.jwt() returns jsonb language sql stable as $$
   select coalesce(nullif(current_setting('request.jwt.claim', true), ''),
                   nullif(current_setting('request.jwt.claims', true), ''))::jsonb $$;

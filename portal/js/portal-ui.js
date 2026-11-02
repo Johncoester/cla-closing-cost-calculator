@@ -67,7 +67,7 @@
   // ---- staff feedback: a "Feedback" button in the header. Staff only: others never even download the widget. ----
   // a decision the sender has not looked at yet (migration 17): drives the dot on the feedback bubble and the "Updated" tag in the list
   CLA.feedbackUnread = (f) => !!f && ["approved", "shipped", "dismissed"].includes(f.status) && (f.seenStatus || null) !== f.status;
-  CLA.FEEDBACK_V = "20261102e";   // cache-bust for feedback-widget.js / .css; bump with the ?v= in index.html
+  CLA.FEEDBACK_V = "20261102f";   // cache-bust for feedback-widget.js / .css; bump with the ?v= in index.html
   CLA.startFeedback = async function (A, me, opts) {
     try {
       if (!A || !CLA.isStaff(me) || typeof A.submitFeedback !== "function") return null;
@@ -78,7 +78,7 @@
   };
   // ---- guided tour (js/tour.js + tour.css; loaded only when someone is about to see it) ----
   // Each tour lives on the person's own dashboard: admin.html (admin / super admin), rep.html (rep), client.html (client / realtor).
-  CLA.TOUR_V = "20261102e";   // cache-bust for tour.js / tour.css; bump with the ?v= in index.html
+  CLA.TOUR_V = "20261102f";   // cache-bust for tour.js / tour.css; bump with the ?v= in index.html
   CLA.tourKind = (me) => { const f = location.pathname.split("/").pop(); return !me ? null : f === "admin.html" && CLA.isAdmin(me) ? "admin" : f === "rep.html" && CLA.isRep(me) ? "rep" : f === "client.html" && me.role === "client" ? "client" : null; };
   CLA.loadTour = () => CLA.startTour ? Promise.resolve() : new Promise((res, rej) => { const s = document.createElement("script"); s.src = "js/tour.js?v=" + CLA.TOUR_V; s.onload = res; s.onerror = () => rej(new Error("load")); document.head.appendChild(s); });
   // Called by each dashboard once it has drawn itself. Starts the tour on its own ONLY for a person who has never seen it (profiles.tour_seen_at is NULL,
@@ -108,6 +108,20 @@
   CLA.q = (name) => new URLSearchParams(location.search).get(name);
   CLA.safeNext = (n) => (n && /^[\w./-]+\.html(\?[\w=&%.-]*)?$/.test(n) && !/^\/\//.test(n) ? n : null);   // same-folder pages only
 
+  // ---- resend an invite (migration 20 + resend-invite Edge Function): admin Users tab and the rep's client list ----
+  // Shown only for someone who has never signed in and is not disabled. The server decides who may (admins: anyone; reps: their own clients).
+  const RESEND_WAIT = 60000;   // the database refuses a second send within 60 seconds; the button stays greyed out for that minute too
+  CLA.inviteSentNote = (at) => (at ? '<span class="invsent">Invite last sent ' + CLA.esc(CLA.date(at)) + "</span>" : "");
+  CLA.resendInviteBtn = (id, sentAt) => { const soon = sentAt && Date.now() - new Date(sentAt).getTime() < RESEND_WAIT;
+    return '<button class="btn o sm" data-resend="' + CLA.esc(id) + '" type="button"' + (soon ? ' disabled aria-disabled="true" title="An invite was just sent. Wait a minute before sending another."' : ' title="Email a fresh invite link"') + ">Resend invite</button>"; };
+  // confirm, send, toast. Resolves true when an email went out.
+  CLA.resendInvite = async function (A, person, btn) {
+    const name = CLA.fullName(person) || person.email;
+    if (!confirm("Resend the invite to " + name + " (" + person.email + ")?\n\nThey get a new email with a link to set their password. The link in the earlier invite stops working.")) return false;
+    if (btn) btn.disabled = true;
+    try { const r = await A.resendInvite(person.id); CLA.toast("Invite sent to " + person.email + (r && r.via === "recovery" ? " (as a set-password email)" : "")); return true; }
+    catch (ex) { CLA.toast("Invite not sent: " + ex.message); if (btn) btn.disabled = false; return false; }
+  };
   CLA.toast = function (msg) {
     const t = document.createElement("div"); t.className = "toast"; t.setAttribute("role", "status"); t.textContent = msg;
     document.body.appendChild(t); setTimeout(() => t.remove(), 3200);

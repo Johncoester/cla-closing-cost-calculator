@@ -51,6 +51,11 @@
  *                                            (migration not applied). profiles.status 'active' only means 'not disabled'; the Users table shows 'Invited, never signed in' for null.
  *   adminListAssignments()                -> Assignment[]
  *   adminListQuotes()                     -> Quote[]
+ *   resendInvite(userId)                  -> { ok, via: "invite" | "recovery", sentAt }   (migration 20 + resend-invite Edge Function) a fresh invite email for
+ *                                            someone who has NEVER signed in and is not disabled. Admins / super admins: anyone; reps: only their own active
+ *                                            clients; nobody twice within 60 seconds. The server decides; the email address comes from the database.
+ *   adminListUsers() rows and listMyClients() rows also carry inviteSentAt (ISO, when an invite last went out); listMyClients rows carry
+ *                                            signedIn (true / false; undefined = unknown, migration 20 not applied)
  *   adminInvite({email, role, repId, cellPhone, isRep})   role: "rep" | "client" for an admin; also "admin" | "super_admin" for a SUPER ADMIN only.
  *                                            (repId, cellPhone, isRep optional; isRep only with role "admin" / "super_admin": the new admin also works as a rep, CLA email required)
  *                                            repId may be any rep OR an admin who also works as a rep

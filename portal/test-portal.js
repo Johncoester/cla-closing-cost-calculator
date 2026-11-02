@@ -1288,9 +1288,72 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
 
     // cache-bust: every ?v= in index.html and TOUR_V agree
     const vs = [...idx.matchAll(/\?v=(\d{8}[a-z])/g)].map((m) => m[1]), pu = fs.readFileSync(path.join(__dirname, "js", "portal-ui.js"), "utf8");
-    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261102e" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261102e");
+    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261102f" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261102f");
     // the new elements are inert in print and add no external requests
     assert.ok(/@media print\{\s*@page\{margin:14mm\}\s*\.claChip\{display:none!important\}/.test(idx) && !/https?:\/\//.test(tj2)); ok("calculator tour: the chip is not printed; tour.js has no external libraries or CDN");
+  }
+
+  // ---- resend an invite (migration 20 + resend-invite Edge Function; John 11/02: admins anyone, reps their own clients) ----
+  {
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms || 40));
+    const assignC7 = (raw) => { const st = JSON.parse(raw); st.assignments.push({ id: "asC7", clientEmail: "sample.new.client@example.com", clientUserId: id("c7"), repId: id("b1"), active: true, createdAt: new Date().toISOString() }); return JSON.stringify(st); };
+    // adapter rules (mock = same rules as the database function)
+    const w = boot(), M = w.CLA.createMockAdapter({}), signAs = async (e) => { w.localStorage.removeItem("cla_portal_mock_session"); await M.signIn(e, "x"); };
+    const refuse = async (fn, re) => { let m = ""; try { await fn(); } catch (e) { m = e.message; } assert.match(m, re); };
+    await signAs("sam.agent@example.com"); await refuse(() => M.resendInvite(id("c7")), /only resend an invite to your own clients/); ok("resend invite (mock): a client cannot resend");
+    await signAs("sample.rep.jane@clatitle.com");
+    await refuse(() => M.resendInvite(id("c7")), /own clients/); await refuse(() => M.resendInvite(id("c4")), /own clients/); await refuse(() => M.resendInvite(id("b3")), /own clients/); await refuse(() => M.resendInvite(id("a2")), /own clients/);
+    ok("resend invite (mock): a rep cannot resend to an unassigned client, another rep's client, a rep or an admin");
+    w.localStorage.setItem("cla_portal_mock_v1", assignC7(w.localStorage.getItem("cla_portal_mock_v1")));
+    const r1 = await M.resendInvite(id("c7")); assert.ok(r1.ok && r1.via === "invite" && r1.sentAt && /no email is sent/.test(r1.mockNote)); ok("resend invite (mock): a rep resends to their OWN client who never signed in (demo: no email)");
+    await refuse(() => M.resendInvite(id("c7")), /less than a minute ago/); ok("resend invite (mock): a second send within 60 seconds is refused");
+    await refuse(() => M.resendInvite(id("c1")), /already signed in/); ok("resend invite (mock): a rep's client who already signed in is refused (Forgot password instead)");
+    const myc = (await M.listMyClients()).find((c) => c.email === "sample.new.client@example.com"); assert.ok(myc.signedIn === false && myc.inviteSentAt === r1.sentAt); assert.strictEqual((await M.listMyClients()).find((c) => c.email === "sam.agent@example.com").signedIn, true); ok("resend invite (mock): the rep's client list says who signed in and when the invite last went out");
+    await signAs("sample.robin.admin@clatitle.com");
+    const r2 = await M.resendInvite(id("b3")); assert.ok(r2.ok); await refuse(() => M.resendInvite(id("c4")), /disabled/); await refuse(() => M.resendInvite(id("a1")), /already signed in/); ok("resend invite (mock): an admin may resend to a rep who never signed in; never to a disabled or signed-in person");
+    const aud = (await M.adminAuditLog(50)).filter((x) => x.action === "invite_resent"); assert.strictEqual(JSON.stringify(aud.map((x) => [x.details.email, x.details.as]).sort()), JSON.stringify([["sample.new.client@example.com", "rep"], ["sample.new.rep@clatitle.com", "admin"]])); ok("resend invite (mock): each send writes an invite_resent audit row (who, as admin / rep)");
+    assert.ok((await M.adminListUsers()).find((u) => u.id === id("b3")).inviteSentAt === r2.sentAt); ok("resend invite (mock): the Users list carries when the invite last went out");
+    w.close();
+
+    // admin Users tab (jsdom)
+    const R = await renderAdmin("sample.robin.admin@clatitle.com"), d = R.d, btnOf = (uid) => R.row(uid).querySelector("button[data-resend]");
+    assert.strictEqual(R.errs.length, 0, R.errs.join());
+    assert.ok(btnOf(id("c7")) && btnOf(id("b3")) && !btnOf(id("c1")) && !btnOf(id("c4")) && !btnOf(id("a2")) && !btnOf(id("a1"))); ok("admin.html: Resend invite only on never-signed-in, not-disabled rows (Nia, Riley); not for signed-in, disabled or your own row");
+    assert.match(R.row(id("c7")).querySelector(".invsent").textContent, /^Invite last sent [A-Z][a-z]{2} \d{1,2}, \d{4}$/); ok("admin.html: the row says when the invite was last sent");
+    let asked = ""; R.dom.window.confirm = (m) => { asked = m; return false; };
+    btnOf(id("c7")).click(); await tick(80); assert.ok(/^Resend the invite to Nia Newcomer \(sample.new.client@example.com\)\?/.test(asked) && /earlier invite stops working/.test(asked)); assert.ok(!d.querySelector(".toast")); ok("admin.html: Resend invite asks first; Cancel sends nothing");
+    R.dom.window.confirm = () => true; btnOf(id("c7")).click(); await tick(150);
+    assert.ok([...d.querySelectorAll(".toast")].some((t) => t.textContent === "Invite sent to sample.new.client@example.com")); ok("admin.html: OK sends it and shows a success toast");
+    assert.ok(btnOf(id("c7")).disabled && /just sent/.test(btnOf(id("c7")).title)); ok("admin.html: after sending, the button is greyed out for a minute");
+    const st = JSON.parse(R.dom.window.localStorage.getItem("cla_portal_mock_v1")); assert.ok(st.audit.some((x) => x.action === "invite_resent" && x.targetId === id("c7"))); ok("admin.html: the send is in the audit log");
+    btnOf(id("c7")).disabled = false; btnOf(id("c7")).click(); await tick(150); assert.ok([...d.querySelectorAll(".toast")].some((t) => /^Invite not sent: An invite was sent less than a minute ago/.test(t.textContent))); ok("admin.html: a refused send shows a failure toast");
+    R.dom.window.close();
+    {   // migration 20 not applied yet (inviteSentAt unknown): no button anywhere, so pushing the site before the migration is harmless
+      const src = fs.readFileSync(path.join(pdir, "admin.html"), "utf8"); assert.ok(src.includes('u.lastSignInAt === null && u.inviteSentAt !== undefined ? CLA.resendInviteBtn')); ok("admin.html: no Resend invite button while the invite status is unknown (migration 20 not applied)"); }
+
+    // rep's client list (jsdom): Jane sees the button only for her own never-signed-in client
+    const renderRep = async (email, mutate) => {
+      const w0 = boot(), A0 = w0.CLA.createMockAdapter({}); await A0.signIn(email, "x");
+      const store = { cla_portal_mock_v1: w0.localStorage.getItem("cla_portal_mock_v1"), cla_portal_mock_session: w0.localStorage.getItem("cla_portal_mock_session") };
+      if (mutate) store.cla_portal_mock_v1 = mutate(store.cla_portal_mock_v1);
+      const html = fs.readFileSync(path.join(pdir, "rep.html"), "utf8").replace(/<link[^>]*fonts\.googleapis[^>]*>/, "").replace(/<script src="config\.js"><\/script>/, "<script>window.CLA_PORTAL_CONFIG={mode:'mock'}</script>")
+        .replace(/<script src="(js\/[\w-]+\.js)"><\/script>/g, (m, f) => "<script>" + fs.readFileSync(path.join(pdir, f), "utf8") + "</script>");
+      const errs = [], dom = new JSDOM(html, { url: "http://localhost/portal/rep.html", runScripts: "dangerously", pretendToBeVisual: true, virtualConsole: new VirtualConsole(),
+        beforeParse(win) { win.crypto.randomUUID = require("crypto").randomUUID; win.confirm = () => true; win.addEventListener("error", (e) => errs.push(e.message)); for (const k in store) win.localStorage.setItem(k, store[k]); } });
+      for (let i = 0; i < 100 && !dom.window.document.querySelector("#clients tr"); i++) await tick(20);
+      await tick(60); return { dom, d: dom.window.document, errs, row: (email) => [...dom.window.document.querySelectorAll("#clients tr")].find((tr) => tr.textContent.includes(email)) };
+    };
+    const J = await renderRep("sample.rep.jane@clatitle.com", assignC7);
+    assert.strictEqual(J.errs.length, 0, J.errs.join());
+    const nia = J.row("sample.new.client@example.com"); assert.ok(nia && /Invited, never signed in/.test(nia.textContent) && nia.querySelector("button[data-resend]") && /Invite last sent/.test(nia.textContent)); ok("rep.html: the rep's own never-signed-in client shows 'Invited, never signed in', when the invite went out, and Resend invite");
+    assert.ok(!J.row("sam.agent@example.com").querySelector("button[data-resend]") && /Active/.test(J.row("sam.agent@example.com").textContent)); ok("rep.html: a client who has signed in has no Resend invite button");
+    nia.querySelector("button[data-resend]").click(); await tick(150);
+    assert.ok([...J.d.querySelectorAll(".toast")].some((t) => t.textContent === "Invite sent to sample.new.client@example.com") && J.row("sample.new.client@example.com").querySelector("button[data-resend]").disabled); ok("rep.html: Resend invite sends (toast) and greys the button out for a minute");
+    const tr0 = [...J.d.querySelectorAll("#clients tr")].length; assert.ok(J.d.getElementById("detail").hidden); ok("rep.html: clicking the button does not open the client's quotes panel (" + tr0 + " rows)");
+    J.dom.window.close();
+    { const sa = fs.readFileSync(path.join(__dirname, "js", "supabase-adapter.js"), "utf8"); assert.ok(sa.includes('fn("resend-invite", { userId: id, redirectTo: redirectBase() + "?invite=1" })') && sa.includes('sb.rpc("list_invite_status")')); ok("supabase adapter: Resend invite goes through the resend-invite Edge Function with the same set-password redirect as the first invite"); }
+    { const out = require("child_process").execFileSync(process.execPath, [path.join(__dirname, "..", "supabase", "functions", "resend-invite", "test-handler.mjs")], { encoding: "utf8" }); assert.match(out, /ALL PASS \(\d+ checks\)/); ok("resend-invite Edge Function handler: local tests pass (" + out.match(/ALL PASS \((\d+)/)[1] + " checks)"); }
+    const K = await renderRep("sample.rep.marcus@clatitle.com", assignC7); assert.ok(!K.row("sample.new.client@example.com") && ![...K.d.querySelectorAll("button[data-resend]")].length); ok("rep.html: another rep never sees (or gets a button for) Jane's client"); K.dom.window.close();
   }
   console.log("\nALL PASS (" + pass + " checks)");
 })().catch((e) => { console.error("FAIL", e); process.exit(1); });
