@@ -7,8 +7,8 @@
 <style>
 /* saved quote: totals rows (screen + print) and the print / Save PDF redesign 11/02/26 (same look as the calculator's printout) */
 .pband{display:none}
-#lines tr.tot td{font-weight:800;background:#f1f8e4;border-top:1px solid #d9e9bd}
-#lines .grand{background:#10140d}#lines .grand th{color:#cfe8a6;background:transparent}#lines .grand td{color:#fff;border-top-color:#2a3122}#lines .grand tr.tot td{background:transparent;color:#fff;font-size:16px}
+#lines tr.tot td{font-weight:800;background:#f1f7e4;border-top:1px solid #d7eab5}
+#lines .grand{background:#10140d}#lines .grand th{color:#d2e7a9;background:transparent}#lines .grand td{color:#fff;border-top-color:#2a3122}#lines .grand tr.tot td{background:transparent;color:#fff;font-size:16px}
 .pfoot{display:none}
 @media print{
  @page{size:letter;margin:9mm 12mm 13mm;
@@ -20,20 +20,20 @@
  header.top,.demo,.noprint,.toast,#claFb,.claFb{display:none!important}
  main.pg{max-width:none;padding:0;margin:0}
  .stack{gap:0!important}
- .pband{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:0 0 6px;margin:0 0 8px;border-bottom:3.5pt solid #8dc63f;box-shadow:0 1.5pt 0 #10140d;break-inside:avoid;break-after:avoid}
+ .pband{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:0 0 6px;margin:0 0 8px;border-bottom:3.5pt solid #99c93f;box-shadow:0 1.5pt 0 #10140d;break-inside:avoid;break-after:avoid}
  .pband img{height:.46in;width:auto;display:block}
  .pband .pttl{text-align:right}.pband b{display:block;font-size:15pt;font-weight:800;letter-spacing:-.01em;color:#10140d;line-height:1.15}.pband span{display:block;font-size:8.5pt;color:#4a5242;margin-top:2px}
- .cobrand{border:1px solid #cfd8c2!important;border-left:4pt solid #8dc63f!important;border-top:1px solid #cfd8c2!important;border-radius:5px!important;box-shadow:none!important;padding:5px 10px!important;margin:0 0 7px!important;gap:4px 12px!important;flex-wrap:wrap!important;align-items:center!important;break-inside:avoid}
- .cobrand .av{width:.62in!important;height:.62in!important;border-radius:6px!important;border:0!important;box-shadow:0 0 0 1.5px #8dc63f!important}
+ .cobrand{border:1px solid #cfd8c2!important;border-left:4pt solid #99c93f!important;border-top:1px solid #cfd8c2!important;border-radius:5px!important;box-shadow:none!important;padding:5px 10px!important;margin:0 0 7px!important;gap:4px 12px!important;flex-wrap:wrap!important;align-items:center!important;break-inside:avoid}
+ .cobrand .av{width:.62in!important;height:.62in!important;border-radius:6px!important;border:0!important;box-shadow:0 0 0 1.5px #99c93f!important}
  .cobrand .party b{font-size:11pt}.cobrand .party span{font-size:8pt;color:#222;line-height:1.25}.cobrand .party .lines{columns:2;column-gap:14px}
- .cobrand .meta{font-size:8pt;color:#33451f;text-align:right;margin-left:auto}
+ .cobrand .meta{font-size:8pt;color:#344516;text-align:right;margin-left:auto}
  .cobrand .divider{background:#cfd8c2}
  .cobrand .party{flex:1 1 0!important;min-width:0}.cobrand .party.client{flex:1.7 1 0!important}.cobrand .party>div{min-width:0;flex:1 1 auto}.cobrand .meta{flex:0 0 100%!important;width:100%!important;max-width:none;text-align:left!important;margin:2px 0 0!important;padding-top:3px;border-top:1px solid #e3e9d8;columns:3;column-gap:14px}.cobrand .party span{overflow-wrap:break-word!important}.cobrand .divider{display:block!important;width:1px;align-self:stretch;flex:none}
- .hero{display:block;background:#eef7dd!important;color:#10140d;border:1px solid #b9d68a!important;border-left:7pt solid #8dc63f!important;border-radius:6px!important;padding:7px 12px!important;margin:0 0 9px;box-shadow:none!important;break-inside:avoid}
+ .hero{display:block;background:#eff7e1!important;color:#10140d;border:1px solid #b5d875!important;border-left:7pt solid #99c93f!important;border-radius:6px!important;padding:7px 12px!important;margin:0 0 9px;box-shadow:none!important;break-inside:avoid}
  .hero::before,.hero::after{display:none}
- .hero small{font-size:8pt;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#33451f}
+ .hero small{font-size:8pt;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#344516}
  .hero .big{font-size:25pt;font-weight:800;letter-spacing:-.02em;color:#10140d!important;margin:1px 0;line-height:1.05;text-shadow:none}
- .hero .sum{font-size:8.5pt;color:#33451f!important;margin:0}
+ .hero .sum{font-size:8.5pt;color:#344516!important;margin:0}
  #lines .card,#lines .card.flush{box-shadow:none!important;border:0!important;border-radius:0!important;margin:0 0 7px;padding:0;overflow:visible;break-inside:auto;background:#fff}
  #lines .sh{display:flex;background:#10140d!important;color:#fff;padding:3px 8px;border:0;border-radius:4px 4px 0 0;break-after:avoid;break-inside:avoid}
  #lines .sh h2{margin:0;color:#fff;font-size:9.5pt;font-weight:700}
@@ -44,13 +44,13 @@
  #lines td{padding:1.9px 8px;font-size:8.5pt;border-top:0;color:#111}
  #lines th.num,#lines td.num{width:1.05in}
  #lines tbody tr:nth-child(even):not(.tot) td{background:#f5f8f0!important}
- #lines tr.tot td{background:#dcebc4!important;border-top:1.2pt solid #10140d;font-weight:800;color:#10140d}
+ #lines tr.tot td{background:#dbecba!important;border-top:1.2pt solid #10140d;font-weight:800;color:#10140d}
  #lines tr{break-inside:avoid}#lines .card.keep{break-inside:avoid;page-break-inside:avoid}#lines tr.tot{break-before:avoid}
  #lines .secnote{margin:0;padding:2px 8px 0;font-size:7pt;color:#4a5242}
  #lines .grand,#lines .grand table,#lines .grand tbody{break-inside:avoid;page-break-inside:avoid}#lines .grand{break-before:avoid;page-break-before:avoid}
  #lines .grand{background:#fff!important;margin-top:4px}
  #lines .grand table{border:0}#lines .grand th.num,#lines .grand td.num{width:1.45in}
- #lines .grand th{background:#10140d!important;color:#cfe8a6;padding:4px 8px}
+ #lines .grand th{background:#10140d!important;color:#d2e7a9;padding:4px 8px}
  #lines .grand td{background:#fff!important;color:#111;border-top:1px solid #dfe6d4}
  #lines .grand tr.tot td{background:#10140d!important;color:#fff;font-size:11pt;padding:5px 8px;border-top:0}
  #warns{font-size:8pt;margin:4px 0 0}

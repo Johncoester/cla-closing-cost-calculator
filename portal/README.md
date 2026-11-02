@@ -480,3 +480,9 @@ Janette asked for these by email and video. All are optional and blank by defaul
 - Saved quote: column headings, section totals (sums of the saved lines) and a grand total from `results.totals`.
 - No calculation changes. Screen only changes: the total's label wording, and the saved quote's new headings / totals.
 - Cache-bust `20261102l`.
+
+## Brand colour #99c93f (11/02/26, branch brand-color-1102, cache-bust 20261102m)
+John confirmed CLA's brand lime is **#99c93f**. Every lime in the calculator, portal, tour, feedback widget and print/PDF CSS was switched from the old #8dc63f family:
+base #8dc63f -> #99c93f (and rgba(141,198,63,a) -> rgba(153,201,63,a)); every other lime tint/shade was re-derived from #99c93f by mixing with white or black to the
+same luminance as the colour it replaces, so all text/background contrast ratios stay the same (e.g. --gd #6fa52a -> #7ca233, --gdd #4d7a17 -> #5b7725, hover
+#9bd34b -> #a7d05a, badge text #35560b -> #40531a, tag bg #e4f2cc -> #e5f1cf). Neutral grey-greens (borders, page bg) were left as they were. No calculation changes.

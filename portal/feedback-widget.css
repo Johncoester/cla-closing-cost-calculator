@@ -1,14 +1,14 @@
 /* Staff feedback widget (portal/js/feedback-widget.js): a round chat bubble fixed bottom-right + a panel that opens above it
-   (a bottom sheet on a phone). Self-contained, so it works on the portal pages and on the calculator. Brand: lime (--g, #8dc63f) + black.
+   (a bottom sheet on a phone). Self-contained, so it works on the portal pages and on the calculator. Brand: lime (--g, #99c93f) + black.
    If the AI-assistant launcher (.claChat, chatbot branch) is on the page too, the bubble sits above it (see the :has() rules). */
 .claFbFab,.claFbOvl,.claFbOvl *{box-sizing:border-box}
-.claFbFab,.claFbOvl{--fbg:var(--g,#8dc63f);--fbgd:var(--gd,#6fa52a);--fbgdd:var(--gdd,#4d7a17);--fbink:var(--ink,#111);--fbmut:var(--mut,#5b6272);--fbline:var(--line,#e3e8da);
+.claFbFab,.claFbOvl{--fbg:var(--g,#99c93f);--fbgd:var(--gd,#7ca233);--fbgdd:var(--gdd,#5b7725);--fbink:var(--ink,#111);--fbmut:var(--mut,#5b6272);--fbline:var(--line,#e3e8da);
   --fbpad-r:max(18px,env(safe-area-inset-right,0px));--fbpad-b:max(18px,env(safe-area-inset-bottom,0px));--fbfab:56px;
   font:14px/1.45 Inter,-apple-system,"Segoe UI",system-ui,Roboto,Helvetica,Arial,sans-serif}
 
 /* ---- the bubble ---- */
 .claFbFab{position:fixed;right:var(--fbpad-r);bottom:var(--fbpad-b);z-index:2147483200;width:var(--fbfab);height:var(--fbfab);padding:0;border:0;border-radius:50%;cursor:pointer;
-  display:grid;place-items:center;color:#0b0b0b;background:linear-gradient(145deg,#a4dc52 0%,var(--fbg) 55%,var(--fbgd) 100%);
+  display:grid;place-items:center;color:#0b0b0b;background:linear-gradient(145deg,#b4d873 0%,var(--fbg) 55%,var(--fbgd) 100%);
   box-shadow:0 8px 22px rgba(0,0,0,.28),0 2px 6px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.45);
   transition:transform .18s ease,box-shadow .18s ease;animation:claFbIn .4s cubic-bezier(.2,.9,.3,1.2) backwards}
 .claFbFab:hover{transform:translateY(-2px) scale(1.04);box-shadow:0 12px 28px rgba(0,0,0,.32),0 3px 8px rgba(0,0,0,.2),inset 0 1px 0 rgba(255,255,255,.45)}
@@ -40,9 +40,9 @@
 .claFbX{position:absolute;top:10px;right:10px;z-index:2;width:32px;height:32px;padding:0;border:0;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.14);color:#fff;cursor:pointer;transition:background .15s}
 .claFbX svg{width:16px;height:16px}.claFbX:hover{background:rgba(255,255,255,.28)}.claFbX:focus-visible{outline:3px solid var(--fbg);outline-offset:2px}
 /* header: gradient, "JC" avatar (CSS, no photo) and John's greeting (the <p id=claFbHi>) */
-.claFbHi{position:relative;margin:0 0 16px;padding:22px 52px 20px 82px;min-height:84px;display:flex;align-items:center;background:radial-gradient(120% 140% at 100% 0%,rgba(141,198,63,.38) 0%,rgba(141,198,63,0) 55%),linear-gradient(135deg,#0c0c0c 0%,#1f2f0b 55%,var(--fbgdd) 130%);
+.claFbHi{position:relative;margin:0 0 16px;padding:22px 52px 20px 82px;min-height:84px;display:flex;align-items:center;background:radial-gradient(120% 140% at 100% 0%,rgba(153,201,63,.38) 0%,rgba(153,201,63,0) 55%),linear-gradient(135deg,#0c0c0c 0%,#232f0f 55%,var(--fbgdd) 130%);
   color:#fff;font-size:14.5px;line-height:1.4;font-weight:600;border-bottom:3px solid var(--fbg)}
-.claFbHi::before{content:"JC";position:absolute;left:20px;top:50%;transform:translateY(-50%);width:48px;height:48px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(145deg,#b0e35f,var(--fbg));color:#0b0b0b;font-weight:800;font-size:16px;letter-spacing:.02em;box-shadow:0 0 0 3px rgba(0,0,0,.4),0 0 0 5px rgba(141,198,63,.55)}
+.claFbHi::before{content:"JC";position:absolute;left:20px;top:50%;transform:translateY(-50%);width:48px;height:48px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(145deg,#c0de88,var(--fbg));color:#0b0b0b;font-weight:800;font-size:16px;letter-spacing:.02em;box-shadow:0 0 0 3px rgba(0,0,0,.4),0 0 0 5px rgba(153,201,63,.55)}
 .claFbDlg h2{margin:0 20px 10px;font-size:17px;letter-spacing:-.01em}
 .claFbLbl{display:block;margin:12px 0 7px;font-size:12.5px;font-weight:700;color:#2a3320;letter-spacing:.01em}
 /* category chips (real radio buttons; arrow keys work; the hidden <select> is what the code reads) */
@@ -56,15 +56,15 @@
 .claFbChip input:focus-visible+span{outline:3px solid var(--fbg);outline-offset:2px}
 .claFbDlg textarea{display:block;width:100%;min-height:112px;resize:vertical;font:inherit;padding:11px 13px;border:1.5px solid #d5dbca;border-radius:14px;background:#fafcf6;color:var(--fbink);transition:border-color .15s,box-shadow .15s,background .15s}
 .claFbDlg textarea::placeholder{color:#8a917f}
-.claFbDlg textarea:focus{outline:none;background:#fff;border-color:var(--fbg);box-shadow:0 0 0 4px rgba(141,198,63,.28)}
+.claFbDlg textarea:focus{outline:none;background:#fff;border-color:var(--fbg);box-shadow:0 0 0 4px rgba(153,201,63,.28)}
 .claFbMeta{display:flex;justify-content:space-between;gap:10px;margin-top:6px;font-size:12px;color:var(--fbmut)}
 .claFbMeta span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .claFbMeta #claFbCount{flex:none;font-variant-numeric:tabular-nums}.claFbMeta #claFbCount.warn{color:#9a5b00;font-weight:700}
 .claFbErr{margin-top:10px;padding:9px 12px;background:#fdecea;border:1px solid #f3b9b3;color:#8a1c12;border-radius:12px;font-size:13px}
 .claFbErr:empty{display:none}
 .claFbRow{display:flex;gap:10px;justify-content:flex-end;margin-top:16px;margin-bottom:6px}
-.claFbBtn{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;background:linear-gradient(145deg,#a4dc52,var(--fbg));color:#000;border:1.5px solid var(--fbg);border-radius:12px;padding:10px 20px;font-weight:700;font-size:14px;line-height:1.2;font-family:inherit;cursor:pointer;box-shadow:0 2px 0 rgba(77,122,23,.35);transition:transform .12s,box-shadow .15s,background .15s}
-.claFbBtn:hover{background:linear-gradient(145deg,#b3e865,#9bd34b);box-shadow:0 5px 14px rgba(77,122,23,.35);transform:translateY(-1px)}
+.claFbBtn{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;background:linear-gradient(145deg,#b4d873,var(--fbg));color:#000;border:1.5px solid var(--fbg);border-radius:12px;padding:10px 20px;font-weight:700;font-size:14px;line-height:1.2;font-family:inherit;cursor:pointer;box-shadow:0 2px 0 rgba(91,119,37,.35);transition:transform .12s,box-shadow .15s,background .15s}
+.claFbBtn:hover{background:linear-gradient(145deg,#c7e296,#a7d05a);box-shadow:0 5px 14px rgba(91,119,37,.35);transform:translateY(-1px)}
 .claFbBtn:active{transform:none;box-shadow:none}
 .claFbBtn[disabled]{opacity:.7;cursor:not-allowed;transform:none;box-shadow:none}
 .claFbBtn.o{background:#fff;color:#2a3320;border-color:#d5dbca;box-shadow:none}.claFbBtn.o:hover{background:#f3f6ec;box-shadow:none;transform:none}
@@ -81,7 +81,7 @@
 .claFbOk.go .c{animation:claFbDraw .5s ease-out .05s forwards}.claFbOk.go .t{animation:claFbDraw .35s ease-out .45s forwards}
 .claFbOk.go svg{animation:claFbPop .45s cubic-bezier(.2,.9,.3,1.3) both}
 @keyframes claFbDraw{to{stroke-dashoffset:0}}@keyframes claFbPop{from{transform:scale(.7)}to{transform:none}}
-.claFbThanks{margin:0 0 6px;font-size:17px;font-weight:700;color:#1d3a06;letter-spacing:-.01em}
+.claFbThanks{margin:0 0 6px;font-size:17px;font-weight:700;color:#2a3711;letter-spacing:-.01em}
 #claFbDone .claFbRow{justify-content:center}
 /* my feedback */
 .claFbMine{margin-top:16px;padding:12px 0 6px;border-top:1px solid var(--fbline)}
@@ -89,9 +89,9 @@
 .claFbMine ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px;max-height:230px;overflow:auto}
 .claFbMine li{padding:8px 11px;border:1px solid var(--fbline);border-radius:12px;background:#fbfcf8;font-size:12.5px;overflow-wrap:anywhere}
 .claFbMine li b{font-weight:700}.claFbMine .st{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;background:#eef1e8;font-size:11px;font-weight:700}
-.claFbMine .st.approved{background:#d8efb6;color:#1d3a06}.claFbMine .st.dismissed{background:#e9e9e9;color:#555}.claFbMine .st.notified{background:#e4ecfa;color:#1c3d73}
-.claFbMine .st.shipped{background:#8dc63f;color:#112200}.claFbMine .up{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;background:#111;color:#fff;font-size:10.5px;font-weight:700;letter-spacing:.02em}.claFbMine li.unread{border-color:#8dc63f;background:#f4fae8}
-.claFbMine .note.sub{color:#4b5563}.claFbMine .note{display:block;margin-top:3px;color:#26370c}.claFbMine .none{color:var(--fbmut);font-size:13px;padding:2px 0}
+.claFbMine .st.approved{background:#ddedc0;color:#2a3711}.claFbMine .st.dismissed{background:#e9e9e9;color:#555}.claFbMine .st.notified{background:#e4ecfa;color:#1c3d73}
+.claFbMine .st.shipped{background:#99c93f;color:#19210a}.claFbMine .up{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;background:#111;color:#fff;font-size:10.5px;font-weight:700;letter-spacing:.02em}.claFbMine li.unread{border-color:#99c93f;background:#f4fae8}
+.claFbMine .note.sub{color:#4b5563}.claFbMine .note{display:block;margin-top:3px;color:#293711}.claFbMine .none{color:var(--fbmut);font-size:13px;padding:2px 0}
 
 /* if the AI assistant launcher is on the page too (chatbot branch: .claChat, bottom-right), sit above it */
 body:has(.claChat) .claFbFab{bottom:calc(var(--fbpad-b) + 70px)}

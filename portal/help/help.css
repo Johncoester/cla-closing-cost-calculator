@@ -13,7 +13,7 @@ main.help{max-width:980px}
 .help ul{margin:0 0 14px;padding-left:20px;max-width:80ch}.help ul li{margin:5px 0;line-height:1.5}
 .help ol.steps{list-style:none;counter-reset:s;margin:0 0 14px;padding:0;max-width:80ch}
 .help ol.steps li{counter-increment:s;position:relative;padding:4px 0 8px 40px;line-height:1.5}
-.help ol.steps li::before{content:counter(s);position:absolute;left:0;top:3px;width:26px;height:26px;border-radius:50%;background:#eef6dd;color:var(--gdd);font-weight:800;font-size:13px;display:grid;place-items:center}
+.help ol.steps li::before{content:counter(s);position:absolute;left:0;top:3px;width:26px;height:26px;border-radius:50%;background:#eef6de;color:var(--gdd);font-weight:800;font-size:13px;display:grid;place-items:center}
 .help ol.steps li b{display:block}.help ol.steps li span{display:block;color:#3a3f36}
 .help .tablewrap{margin:4px 0 16px;border:1px solid var(--line);border-radius:12px}
 .help table{font-size:13.5px}.help th,.help td{padding:9px 14px;vertical-align:top;text-align:left;white-space:normal}

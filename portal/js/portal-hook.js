@@ -38,7 +38,7 @@
       ".claBrand .party.client{flex:1 1 56%}.claBrand .party .lines{columns:2;column-gap:18px}.claBrand .party .lines span{break-inside:avoid}.claBrand .party .lines span.nw{display:inline;white-space:nowrap}" +
       "@media(max-width:700px){.claBrand .party .lines{columns:1}}" +
       // print / PDF: a bigger photo (1 in) and bigger text (name 14 pt, lines 10.5 pt) as a letterhead block; the rep block matches
-      "@media print{.claBrand{break-inside:avoid;border-bottom:1px solid #999}.claBrand .wrap{padding-top:6px;padding-bottom:6px;gap:10px;flex-wrap:nowrap;align-items:flex-start}.claBrand .party{flex:0 1 auto;gap:10px;align-items:flex-start}.claBrand .party.client{flex:1 1 0}.claBrand .party .lines{columns:1}.claBrand .party span{color:#222;font-size:10pt;line-height:1.3}.claBrand .party b{font-size:14pt;line-height:1.2;margin-bottom:2px}.claBrand img{width:.95in;height:.95in;border-radius:10px;border:0;box-shadow:0 0 0 1.5px #8dc63f}.claBrand .dv{align-self:stretch}}" +
+      "@media print{.claBrand{break-inside:avoid;border-bottom:1px solid #999}.claBrand .wrap{padding-top:6px;padding-bottom:6px;gap:10px;flex-wrap:nowrap;align-items:flex-start}.claBrand .party{flex:0 1 auto;gap:10px;align-items:flex-start}.claBrand .party.client{flex:1 1 0}.claBrand .party .lines{columns:1}.claBrand .party span{color:#222;font-size:10pt;line-height:1.3}.claBrand .party b{font-size:14pt;line-height:1.2;margin-bottom:2px}.claBrand img{width:.95in;height:.95in;border-radius:10px;border:0;box-shadow:0 0 0 1.5px #99c93f}.claBrand .dv{align-self:stretch}}" +
       ".claHdr{display:inline-flex;align-items:center;gap:9px;color:#fff;text-decoration:none;font-size:13px}.claHdr img{width:30px;height:30px;border-radius:50%;object-fit:cover;box-shadow:0 0 0 2px var(--g)}" +
       ".claSaveNote{flex:0 0 100%;margin:-4px 0 0;font-size:13px;color:var(--mut)}.claSaveNote a{color:var(--gdd);font-weight:600}.claSaveNote.err{color:#b3261e}" +
       "@media print{.claBrand{border:0;border-bottom:1px solid #bbb}.claBrand .claTag{display:none}}";
@@ -60,7 +60,7 @@
     // ---- staff feedback button (admin, super admin, rep only; clients and guests never load it) ----
     // (loads its own file, so it works even if a cached portal-ui.js predates CLA.startFeedback; the widget re-checks the role itself)
     if (me && ["super_admin", "admin", "rep"].includes(me.role) && me.status !== "disabled") {
-      const fv = (CLA.FEEDBACK_V || "20261102l");
+      const fv = (CLA.FEEDBACK_V || "20261102m");
       (CLA.mountFeedback ? Promise.resolve() : load(base + "js/feedback-widget.js?v=" + fv)).then(() => CLA.mountFeedback({ A, me, base, ver: fv })).catch(() => {});   // optional: never break the calculator over it
     }
 

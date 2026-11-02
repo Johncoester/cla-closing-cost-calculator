@@ -4,10 +4,10 @@
 <meta name="theme-color" content="#000000">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="zip-county.js?v=20261102l"></script>
-<script src="fee-snapshot.js?v=20261102l"></script>
+<script src="zip-county.js?v=20261102m"></script>
+<script src="fee-snapshot.js?v=20261102m"></script>
 <style>
-:root{--g:#8dc63f;--gd:#6fa52a;--gdd:#4d7a17;--ink:#111;--mut:#5b6272;--line:#e3e8da;--bg:#f4f7ef;--field:#d5dbca}
+:root{--g:#99c93f;--gd:#7ca233;--gdd:#5b7725;--ink:#111;--mut:#5b6272;--line:#e3e8da;--bg:#f4f7ef;--field:#d5dbca}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 html{-webkit-text-size-adjust:100%}
@@ -21,13 +21,13 @@ header{background:#000;color:#fff;border-bottom:4px solid var(--g)}
 .hr{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .pill{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:#d9d9d9;white-space:nowrap}
 .pill::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--g);flex:none}
-.statusbar{background:#e9f3d8;border-bottom:1px solid #d6e5bb;color:#26370c;font-size:13px}
+.statusbar{background:#e9f3d6;border-bottom:1px solid #d3e7ab;color:#293711;font-size:13px}
 .statusbar .wrap{padding-top:8px;padding-bottom:8px}
 .statuswarn{color:#7a4300}
 /* buttons */
 button{font:inherit}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:var(--g);color:#000;border:1.5px solid var(--g);border-radius:12px;padding:11px 18px;font-weight:700;font-size:14px;line-height:1.2;cursor:pointer;margin:0;text-align:center}
-.btn:hover{background:#9bd34b}
+.btn:hover{background:#a7d05a}
 .btn.o,.btn.sec{background:#fff;color:#111;border-color:#c5ccb8}.btn.o:hover,.btn.sec:hover{background:#f3f6ec}
 header .btn.sec{background:transparent;color:#fff;border-color:#555;padding:8px 14px;font-size:13px;border-radius:10px}
 header .btn.sec:hover{background:#1c1c1c;border-color:#888}
@@ -49,7 +49,7 @@ label{display:block;font-size:12px;font-weight:600;color:#3a3f36;margin:0 0 6px}
 input[type=text],input[type=number],input[type=date],select{width:100%;min-height:44px;padding:10px 13px;border:1.5px solid var(--field);border-radius:11px;font:inherit;font-size:15px;color:var(--ink);background:#fff}
 input::placeholder{color:#8a9080}
 input[type=date]{min-width:0;-webkit-appearance:none;appearance:none;text-align:left}
-input:focus,select:focus{outline:2px solid transparent;border-color:var(--gdd);box-shadow:0 0 0 4px rgba(141,198,63,.35)}
+input:focus,select:focus{outline:2px solid transparent;border-color:var(--gdd);box-shadow:0 0 0 4px rgba(153,201,63,.35)}
 select{appearance:none;-webkit-appearance:none;padding-right:34px;text-overflow:ellipsis;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23555' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 13px center}
 .money{position:relative}.money::before{content:"$";position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--mut);font-size:15px;pointer-events:none}
 .money input{padding-left:26px}
@@ -70,14 +70,14 @@ input[type=checkbox]{width:18px;height:18px;margin:0;accent-color:var(--gd);flex
 .taxpay .tpr{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 10px;padding:6px 0;border-top:1px solid #eef0e7}.taxpay .tpr:first-of-type{border-top:0}
 .taxpay .tpf{margin-top:8px;padding-top:8px;border-top:1px solid #eef0e7;font-size:12.5px}.taxpay .tpn{flex:1 1 150px;font-size:13px;color:#2c3128}.taxpay .tpn .sum{display:block}
 .taxpay .seg{display:inline-flex;border:1px solid #c9d1bb;border-radius:8px;overflow:hidden}.taxpay .seg button{appearance:none;border:0;background:#fff;color:#2c3128;font:inherit;font-size:12.5px;padding:5px 10px;cursor:pointer;border-left:1px solid #c9d1bb}.taxpay .seg button:first-child{border-left:0}
-.taxpay .seg button[aria-pressed=true]{background:#8dc63f;color:#17210a;font-weight:700}.taxpay .seg button:focus-visible{outline:2px solid #3b6b00;outline-offset:-2px}
+.taxpay .seg button[aria-pressed=true]{background:#99c93f;color:#19210a;font-weight:700}.taxpay .seg button:focus-visible{outline:2px solid #4e6720;outline-offset:-2px}
 #ends .chk{padding:8px 0 8px 30px;margin:0;border-bottom:1px solid #f0f2ea}#ends .chk>input{top:9px}
 /* fees */
 .fee{display:grid;grid-template-columns:20px minmax(0,1fr) 96px 64px;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid #f0f2ea;font-size:13px}
 .fee input[type=number]{min-height:38px;padding:6px 10px;font-size:14px;text-align:right}
-.fee input[type=checkbox]:disabled{opacity:1;cursor:default;pointer-events:none;accent-color:#6b9a1f}
+.fee input[type=checkbox]:disabled{opacity:1;cursor:default;pointer-events:none;accent-color:#749830}
 .fee input.locked{background:transparent;border-color:transparent;box-shadow:none;cursor:default;font-weight:600;pointer-events:none;-moz-appearance:textfield;appearance:textfield}.fee input.locked::-webkit-outer-spin-button,.fee input.locked::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
-.tag{font-size:11px;font-weight:700;padding:3px 0;border-radius:99px;text-align:center;background:#e4f2cc;color:#35560b;letter-spacing:.02em}
+.tag{font-size:11px;font-weight:700;padding:3px 0;border-radius:99px;text-align:center;background:#e5f1cf;color:#40531a;letter-spacing:.02em}
 .tag.s{background:#ffefd0;color:#7a4300}
 details{margin-top:6px}
 details summary{cursor:pointer;font-weight:700;font-size:13px;color:var(--ink);padding:8px 0}
@@ -87,7 +87,7 @@ details summary::marker{color:var(--gd)}
 .docs input{width:76px;min-height:38px;padding:6px 10px;text-align:right}
 /* hero */
 .hero{background:#000;color:#fff;border-radius:18px;padding:28px;position:relative;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.25)}
-.hero::after{content:"";position:absolute;right:-60px;top:-60px;width:220px;height:220px;border-radius:50%;background:radial-gradient(circle,rgba(141,198,63,.4),transparent 70%);pointer-events:none}
+.hero::after{content:"";position:absolute;right:-60px;top:-60px;width:220px;height:220px;border-radius:50%;background:radial-gradient(circle,rgba(153,201,63,.4),transparent 70%);pointer-events:none}
 .hero>*{position:relative;z-index:1}
 .hero small{display:block;color:#b4bda6;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
 .big{font-size:clamp(38px,6vw,56px);font-weight:800;letter-spacing:-.03em;color:var(--g);line-height:1.08;margin:6px 0 6px;overflow-wrap:anywhere}
@@ -117,18 +117,18 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 .ledger th.num.s::before{background:#f0b13a}
 .ledger tr.tot td{font-weight:700;background:#f4f9ea;border-top:1px solid var(--line)}
 .ledger td.z{color:#b4baa9}
-.grand{border:0}.grand .ledger tr.tot td{background:#eaf5d3;font-size:15px}
+.grand{border:0}.grand .ledger tr.tot td{background:#ebf4da;font-size:15px}
 .foot{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.foot .btn{flex:1 1 180px;padding:14px}
 #copied{flex:0 0 100%;margin:-4px 0 0}#copied:empty{display:none}
 .disc{max-width:1180px;margin:0 auto;padding:16px 24px 48px;font-size:12px;color:var(--mut)}
 .disc p{margin:0;max-width:760px}
 /* guided tour: header link + first-visit chip (the tour itself is portal/js/tour.js + portal/tour.css, loaded on demand) */
 .modebar .wrap{display:flex;align-items:center;gap:10px 16px;flex-wrap:wrap}
-.claChip{display:inline-flex;align-items:center;gap:4px;margin-left:auto;background:#eef6dd;border:1px solid #cfe3a8;border-radius:99px;padding:3px 4px 3px 14px;font-size:13px;color:#26370c}
+.claChip{display:inline-flex;align-items:center;gap:4px;margin-left:auto;background:#eef6de;border:1px solid #cde4a1;border-radius:99px;padding:3px 4px 3px 14px;font-size:13px;color:#293711}
 .claChip .go{background:transparent;border:0;border-radius:99px;padding:6px 8px;min-height:32px;font-weight:700;font-size:13px;color:var(--gdd);text-decoration:underline;cursor:pointer}
-.claChip .go:hover{color:#26370c}
-.claChip .x{width:30px;height:30px;border:0;border-radius:50%;background:transparent;color:#4d6a2a;font-size:18px;line-height:1;cursor:pointer}
-.claChip .x:hover{background:#dcebbc}
+.claChip .go:hover{color:#293711}
+.claChip .x{width:30px;height:30px;border:0;border-radius:50%;background:transparent;color:#506921;font-size:18px;line-height:1;cursor:pointer}
+.claChip .x:hover{background:#daecba}
 /* seller net sheet */
 .seg.mode{grid-template-columns:repeat(2,1fr);max-width:440px;margin:0;flex:1 1 280px}
 .seg.mode button{font-size:15px;min-height:44px}
@@ -137,7 +137,7 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 .cm{display:grid;grid-template-columns:84px minmax(0,1fr);gap:10px}
 .fh{margin:6px 0 0;font-size:12.5px;color:var(--mut)}.fh:empty{display:none}
 .secnote{margin:0;padding:8px 16px 12px;font-size:12.5px;color:var(--mut)}
-.lnk{background:none;border:0;padding:0;font:inherit;color:#4f7a12;text-decoration:underline;cursor:pointer}
+.lnk{background:none;border:0;padding:0;font:inherit;color:#5b7725;text-decoration:underline;cursor:pointer}
 .mbar-r{margin-left:auto;display:flex;gap:8px;align-items:center}
 .orow{display:grid;grid-template-columns:minmax(0,1fr) 124px;gap:10px;margin-bottom:10px}
 .orow>div{min-width:0}
@@ -189,7 +189,7 @@ table{width:100%;border-collapse:collapse;font-size:14px}
  body{font-size:9.5pt;color:#111;line-height:1.35}
  header,.statusbar,.modebar,.col.in,.foot,.btn,.seg,.noprint,.claChip{display:none!important}
  /* band */
- .pband{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:0 0 6px;margin:0 0 8px;border-bottom:3.5pt solid #8dc63f;box-shadow:0 1.5pt 0 #10140d;break-inside:avoid;break-after:avoid}
+ .pband{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:0 0 6px;margin:0 0 8px;border-bottom:3.5pt solid #99c93f;box-shadow:0 1.5pt 0 #10140d;break-inside:avoid;break-after:avoid}
  .pband img{height:.46in;width:auto;display:block}
  .pband .pttl{text-align:right}
  .pband b{display:block;font-size:15pt;font-weight:800;letter-spacing:-.01em;color:#10140d;line-height:1.15}
@@ -197,9 +197,9 @@ table{width:100%;border-collapse:collapse;font-size:14px}
  .pband .ps{display:none}
  body:has(#mainS:not([hidden])) .pband .ps{display:block}body:has(#mainS:not([hidden])) .pband .pq{display:none}
  /* rep / client card (portal-hook adds #claBrand when signed in) */
- #claBrand{border:1px solid #cfd8c2!important;border-left:4pt solid #8dc63f!important;border-radius:5px;margin:0 0 7px;background:#fff!important;break-inside:avoid}
+ #claBrand{border:1px solid #cfd8c2!important;border-left:4pt solid #99c93f!important;border-radius:5px;margin:0 0 7px;background:#fff!important;break-inside:avoid}
  #claBrand .wrap{padding:5px 10px!important;max-width:none;gap:12px!important;align-items:center!important}
- #claBrand img{width:.62in!important;height:.62in!important;border-radius:6px!important;box-shadow:0 0 0 1.5px #8dc63f!important}
+ #claBrand img{width:.62in!important;height:.62in!important;border-radius:6px!important;box-shadow:0 0 0 1.5px #99c93f!important}
  #claBrand .party b{font-size:11pt!important;margin:0!important}#claBrand .party span{font-size:8pt!important;color:#222!important;line-height:1.25!important}#claBrand .party .lines{columns:2!important;column-gap:14px}
  #claBrand .dv{background:#cfd8c2!important}
  main{display:block;padding:0;max-width:none;margin:0}
@@ -209,14 +209,14 @@ table{width:100%;border-collapse:collapse;font-size:14px}
  .ph h2{display:none}
  .ph p{margin:1px 0;font-size:9pt;color:#111}.ph p:first-of-type{font-weight:700;font-size:10pt}
  /* total box */
- .hero{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"l t" "b t" "s t";align-items:center;column-gap:14px;background:#eef7dd!important;color:#10140d;border:1px solid #b9d68a;border-left:7pt solid #8dc63f;border-radius:6px;padding:7px 12px;margin:0 0 9px;box-shadow:none;break-inside:avoid;overflow:visible}
+ .hero{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"l t" "b t" "s t";align-items:center;column-gap:14px;background:#eff7e1!important;color:#10140d;border:1px solid #b5d875;border-left:7pt solid #99c93f;border-radius:6px;padding:7px 12px;margin:0 0 9px;box-shadow:none;break-inside:avoid;overflow:visible}
  .hero::after,.hero::before{display:none}
- .hero small{grid-area:l;display:block;font-size:8pt;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#33451f}
+ .hero small{grid-area:l;display:block;font-size:8pt;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#344516}
  .hero .big{grid-area:b;font-size:25pt;font-weight:800;letter-spacing:-.02em;color:#10140d;margin:1px 0 1px;line-height:1.05}
- .hero .sum{grid-area:s;font-size:8.5pt;color:#33451f;margin:0}
+ .hero .sum{grid-area:s;font-size:8.5pt;color:#344516;margin:0}
  .hero #sSum{display:none}
  .tiles{grid-area:t;display:flex;gap:6px;margin:0}
- .tile{background:#fff!important;border:1px solid #b9d68a;border-radius:5px;padding:5px 9px;min-width:1.15in}
+ .tile{background:#fff!important;border:1px solid #b5d875;border-radius:5px;padding:5px 9px;min-width:1.15in}
  .tile small{display:block;font-size:7pt;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#4a5242}
  .tile b{display:block;font-size:11.5pt;color:#10140d;margin-top:1px}
  .flag{background:#fff;color:#000;border:1px solid #000}
@@ -225,7 +225,7 @@ table{width:100%;border-collapse:collapse;font-size:14px}
  #ledger,#sLedger{display:block}
  .card,.card.sec{box-shadow:none;border:0;border-radius:0;margin:0 0 7px;padding:0;overflow:visible;break-inside:auto;background:#fff}
  .sh{display:flex;align-items:center;gap:7px;background:#10140d!important;color:#fff;padding:3px 8px;border:0;border-radius:4px 4px 0 0;break-after:avoid;break-inside:avoid}
- .sh .l{width:16px;height:16px;border-radius:4px;background:#8dc63f!important;color:#000;border:0;font-size:8pt;font-weight:800}
+ .sh .l{width:16px;height:16px;border-radius:4px;background:#99c93f!important;color:#000;border:0;font-size:8pt;font-weight:800}
  .sh h3{margin:0;color:#fff;font-size:9.5pt;font-weight:700;text-transform:none;letter-spacing:0}
  .ledger{table-layout:fixed;border:1px solid #dfe6d4;border-top:0}
  .ledger thead{display:table-header-group}
@@ -234,7 +234,7 @@ table{width:100%;border-collapse:collapse;font-size:14px}
  .ledger td{padding:1.9px 8px;font-size:8.5pt;border-top:0;color:#111}
  .ledger tbody tr:nth-child(even):not(.tot) td{background:#f5f8f0!important}
  .ledger td.z{color:#8a9080}
- .ledger tr.tot td{background:#dcebc4!important;border-top:1.2pt solid #10140d;font-weight:800;color:#10140d}
+ .ledger tr.tot td{background:#dbecba!important;border-top:1.2pt solid #10140d;font-weight:800;color:#10140d}
  .ledger th.num,.ledger td.num{width:1.05in}
  .ledger.one th.num,.ledger.one td.num{width:1.3in}
  tr{break-inside:avoid}
@@ -243,7 +243,7 @@ table{width:100%;border-collapse:collapse;font-size:14px}
  .secnote{margin:0;padding:2px 8px 0;font-size:7pt;color:#4a5242;background:#fff}
  .grand,.grand table,.grand tbody{break-inside:avoid;page-break-inside:avoid}.grand{break-before:avoid;page-break-before:avoid}#ledger>section:last-child,#sLedger>section:last-child{break-after:avoid}.grand{margin-top:4px}
  .grand .ledger{border:0}
- .grand .ledger th{background:#10140d!important;color:#cfe8a6;padding:4px 8px}
+ .grand .ledger th{background:#10140d!important;color:#d2e7a9;padding:4px 8px}
  .grand .ledger td{background:#fff!important;border-top:1px solid #dfe6d4}
  .grand .ledger tr.tot td{background:#10140d!important;color:#fff;font-size:11pt;padding:5px 8px;border-top:0}
  .cr{color:#000}
@@ -841,7 +841,7 @@ load(SNAP,"Built-in snapshot","snapshot");$("status").textContent="Loading fees 
 // Guided tour: "Take the tour" (header) and a small first-visit chip. Works for everyone, signed in or not. The engine is portal/js/tour.js + portal/tour.css,
 // downloaded only when someone starts the tour. The chip shows once; dismissing it (x), starting the tour, or finishing it hides it for good (localStorage).
 (function(){
- var V="20261102l",KEY="cla_calc_tour_chip",link=document.getElementById("claCalcTourLink"),chip=document.getElementById("claTourChip"),loading=null;
+ var V="20261102m",KEY="cla_calc_tour_chip",link=document.getElementById("claCalcTourLink"),chip=document.getElementById("claTourChip"),loading=null;
  function seen(){try{return window.localStorage.getItem(KEY)==="1"}catch(e){return true}} // no storage: never show the chip (it could not remember "no thanks")
  function dismiss(){try{window.localStorage.setItem(KEY,"1")}catch(e){}if(chip)chip.hidden=true}
  function add(tag,attrs){return new Promise(function(res){var e=document.createElement(tag);for(var k in attrs)e[k]=attrs[k];e.onload=e.onerror=function(){res()};document.head.appendChild(e)})}
@@ -855,4 +855,4 @@ load(SNAP,"Built-in snapshot","snapshot");$("status").textContent="Loading fees 
   document.getElementById("claTourChipX").onclick=function(){dismiss();if(link)link.focus()}}
 })();
 </script>
-<script src="portal/js/portal-hook.js?v=20261102l" defer></script></body></html>
+<script src="portal/js/portal-hook.js?v=20261102m" defer></script></body></html>

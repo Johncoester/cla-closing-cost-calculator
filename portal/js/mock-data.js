@@ -79,7 +79,7 @@
     photos[id("a1")] = CLA.silhouette("#f1d9e6", "#8a2b5e");
     photos[id("a2")] = CLA.silhouette("#d9e8f1", "#2b5e8a");
     photos[id("a3")] = CLA.silhouette("#e4dcf1", "#5e2b8a");
-    photos[id("b1")] = CLA.silhouette("#cfe6a6", "#4d7a17");
+    photos[id("b1")] = CLA.silhouette("#cfe6a5", "#5b7725");
     photos[id("b2")] = CLA.silhouette("#d6dff0", "#33476b");
     photos[id("c1")] = CLA.silhouette("#f3dcc4", "#8a5a2b");
     // Nina has no account yet (pending); her invitation carries her cell so the rep can see it. Mirrors supabase/seed.sql.

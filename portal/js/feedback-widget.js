@@ -34,7 +34,7 @@
       paths.forEach(([tag, attrs]) => { const n = document.createElementNS(SVGNS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); s.appendChild(n); }); return s; };
     const link = el("button", "claFbFab"); link.type = "button"; link.id = "claFeedbackLink";
     link.setAttribute("aria-haspopup", "dialog"); link.setAttribute("aria-expanded", "false"); link.setAttribute("aria-label", "Send feedback"); link.setAttribute("data-tip", "Feedback"); link.title = "Send feedback to John";
-    link.appendChild(svg("claFbIcoChat", [["path", { d: "M5 4h14a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-6.2l-4.3 3.4c-.6.5-1.5.1-1.5-.7V18H5a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3z", fill: "currentColor" }], ["circle", { cx: "8.5", cy: "11", r: "1.3", fill: "#8dc63f" }], ["circle", { cx: "12.5", cy: "11", r: "1.3", fill: "#8dc63f" }], ["circle", { cx: "16.5", cy: "11", r: "1.3", fill: "#8dc63f" }]]));
+    link.appendChild(svg("claFbIcoChat", [["path", { d: "M5 4h14a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-6.2l-4.3 3.4c-.6.5-1.5.1-1.5-.7V18H5a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3z", fill: "currentColor" }], ["circle", { cx: "8.5", cy: "11", r: "1.3", fill: "#99c93f" }], ["circle", { cx: "12.5", cy: "11", r: "1.3", fill: "#99c93f" }], ["circle", { cx: "16.5", cy: "11", r: "1.3", fill: "#99c93f" }]]));
     link.appendChild(svg("claFbIcoX", [["path", { d: "M6 6l12 12M18 6L6 18", fill: "none", stroke: "currentColor", "stroke-width": "2.6", "stroke-linecap": "round" }]]));
     const dot = el("span", "claFbDot"); dot.id = "claFbDot"; dot.hidden = true; dot.setAttribute("aria-hidden", "true"); link.appendChild(dot);   // unread dot: a decision the sender has not looked at yet
     document.body.appendChild(link);
