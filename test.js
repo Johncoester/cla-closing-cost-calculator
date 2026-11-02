@@ -287,6 +287,10 @@ ok(near(SN({concession:{mode:"flat",val:3000}}).totals.pro,3000)&&SN({other:Arra
  ok(snBs.title.some(t=>/Owner's Title/.test(t.item))&&snBs.title.some(t=>/Title Search.*seller chose title/.test(t.item)),"SN FL Broward, seller pays owner's policy ticked = Seller chose title");
  ok(!snO.title.some(t=>/Title Search/.test(t.item)),"SN FL Orange, box unticked = Buyer chose title: no title search for the seller");
 }
+// ---- Virginia (John 11/02): first-time homebuyer / owner-occupied never change a VA fee or tax (no VA sheet row uses the Owner-Occ / FTHB columns) ----
+{const vt=(c,o)=>{const q=X.calc(R,inp(Object.assign({state:"VA",county:c,price:400000,loan:320000,fees:dflt("VA",o.type||"purchase")},o)));return q.lines.map(l=>l.item+":"+l.b+":"+l.s).join("|")};let bad=[];
+ for(const c of X.allCounties(R,"VA"))for(const ty of["purchase","cash","refi"]){const base={type:ty,loan:ty==="cash"?0:320000,payoff:ty==="refi"?250000:0};const a=vt(c,Object.assign({fthb:false,occ:true},base));for(const v of[{fthb:true,occ:true},{fthb:false,occ:false},{fthb:true,occ:false}])if(vt(c,Object.assign(v,base))!==a)bad.push(c+" "+ty)}
+ ok(!bad.length,"VA: every county and quote type gives the same lines whatever first-time homebuyer / owner-occupied say"+(bad.length?" (differs: "+bad.slice(0,5).join(", ")+")":""));}
 // toggles
 ok(SN({bpst:true,state:"FL",county:"Orange",price:400000,ownerPays:false}).totals.gov===0,"SN: buyer-pays-seller's-deed-tax toggle removes FL deed stamps from the seller");
 ok(SN({fthb:true,price:400000}).gov.some(g=>/State transfer/.test(g.item)&&near(g.amt,1000))&&near(SN({price:400000}).gov.find(g=>/State transfer/.test(g.item)).amt,1000),"SN MD state transfer at $400k: seller pays $1,000 either way (50/50 of $2,000, or all of the first-time $1,000)");
@@ -430,11 +434,15 @@ ok(SN({fees:[]}).totals.title===0&&near(SN({fees:[{name:"Custom",payer:"Seller",
   // Florida: the first-time homebuyer box is hidden (no Florida program) and a ticked box is ignored; it comes back for MD
   {const fb=w.getElementById("fthb");fb.checked=true;fb.dispatchEvent(ev("change"));setv("state","FL");ok(w.getElementById("fthbWrap").hidden&&d.window.CLA_QUOTE_API.snapshot().inputs.fthb===false,"DOM FL: first-time homebuyer box hidden and ignored");
    setv("state","MD");setv("zip","20850");ok(!w.getElementById("fthbWrap").hidden&&d.window.CLA_QUOTE_API.snapshot().inputs.fthb===true,"DOM FL -> MD: the box shows again with its tick");fb.checked=false;fb.dispatchEvent(ev("change"));
-   setv("s_state","FL");ok(w.getElementById("s_fthbWrap").hidden,"DOM seller net FL: first-time homebuyer box hidden");setv("s_state","MD");ok(!w.getElementById("s_fthbWrap").hidden,"DOM seller net MD: box shown");}
+   setv("s_state","FL");ok(w.getElementById("s_fthbWrap").hidden,"DOM seller net FL: first-time homebuyer box hidden");setv("s_state","VA");ok(w.getElementById("s_fthbWrap").hidden,"DOM seller net VA: first-time homebuyer box hidden (John 11/02)");setv("s_state","MD");ok(!w.getElementById("s_fthbWrap").hidden,"DOM seller net MD: box shown");}
   // Florida: the owner-occupied box is hidden too (Caroline 11/02); MD / VA / DC keep it; a hidden box never turns owner-occupied off
   {const oc=w.getElementById("occ");oc.checked=false;oc.dispatchEvent(ev("change"));setv("state","FL");ok(w.getElementById("occWrap").hidden&&w.getElementById("fthbWrap").hidden&&d.window.CLA_QUOTE_API.snapshot().inputs.occ===true,"DOM FL: owner-occupied and first-time homebuyer boxes hidden; FL quotes are treated as owner-occupied");
    ok(!/first-time|owner-occupied|principal residence/i.test(w.getElementById("warns").textContent+" "+w.getElementById("occNote").textContent)&&!/first-time|owner-occupied/i.test(d.window.CLA_QUOTE_API.snapshot().results.text),"DOM FL: no owner-occupied / first-time buyer notes or quote text");
-   for(const st of["VA","DC"]){setv("state",st);ok(!w.getElementById("occWrap").hidden,"DOM "+st+": owner-occupied box shown")}
+   setv("state","DC");ok(!w.getElementById("occWrap").hidden,"DOM DC: owner-occupied box shown");
+   // Virginia (John 11/02): owner-occupied / first-time homebuyer do not change VA transfer or recordation taxes, so both boxes are hidden on every VA quote type; a box ticked earlier is ignored
+   {const fb=w.getElementById("fthb");setv("state","MD");setv("zip","20850");fb.checked=true;fb.dispatchEvent(ev("change"));oc.checked=false;oc.dispatchEvent(ev("change"));setv("state","VA");
+    for(const ty of["purchase","cash","refi"]){w.querySelector(`[data-t=${ty}]`).click();const sn=d.window.CLA_QUOTE_API.snapshot();ok(w.getElementById("occWrap").hidden&&w.getElementById("fthbWrap").hidden&&sn.inputs.occ===true&&sn.inputs.fthb===false&&!/first-time|owner-occupied|principal residence/i.test(sn.results.text+" "+w.getElementById("occNote").textContent),"DOM VA "+ty+": owner-occupied and first-time homebuyer boxes hidden, treated as owner-occupied / not first-time, no notes")}
+    w.querySelector("[data-t=purchase]").click();fb.checked=false;fb.dispatchEvent(ev("change"));}
    setv("state","MD");setv("zip","20850");ok(!w.getElementById("occWrap").hidden&&!w.getElementById("fthbWrap").hidden,"DOM back to MD: both boxes shown");oc.checked=true;oc.dispatchEvent(ev("change"));}
   // Florida: Owner's policy paid by becomes Who chose title with the three AS IS contract 9(c) options; back to Buyer / Seller elsewhere
   {const op=w.getElementById("ownPay");setv("ownPay","Seller");setv("state","FL");setv("county","Broward");
