@@ -271,7 +271,7 @@ The same engine also runs on the public calculator, for **anyone** (guest or sig
 - **Tabs:** the Seller Net Sheet step opens that tab and puts the person's own tab back afterwards (also if they skip or press Esc). The tour never clicks Purchase / Cash / Refinance, because switching those rebuilds the documents and endorsements and would discard edits; it only points at them. No fee or number is changed.
 - **The chip:** shown only to someone who has not dismissed it. The x, starting the tour from the chip or from the header link all store `cla_calc_tour_chip = "1"` in `localStorage`, so it never comes back. If browser storage is blocked the chip is not shown at all. It does not print.
 - **Phones:** the box is a bottom sheet (also for the centred welcome note); on desktop a tall target (the breakdown) gets the box beside it instead of on top of it.
-- **Cache-bust:** `?v=20261102k` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
+- **Cache-bust:** `?v=20261102l` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
 - **Tests:** the "calculator tour" block in `portal/test-portal.js` (link, step counts, targets, skipping, tab restore, chip persistence, phone sheet, versions). Screenshots: `portal/tools/screenshots_calculator_tour.py`.
 
 ## Who pays each transfer / recordation tax (live since 2026-10-28; calculator only, no database change)
@@ -342,7 +342,7 @@ Two pages, both **generated** by `node portal/tools/build-help.js` (do not edit 
 - **Header Help link** (`CLA.helpHref` in `portal-ui.js`; the calculator header link in `portal-hook.js` uses the same function): clients go to `help.html`, reps, admins and super admins to `staff-help.html`. Signed-in users only.
 - **Guards:** both pages use `CLA.boot(null)` (signed-out visitors go to `login.html?next=...`) and stay hidden until then. `staff-help.html` sends a client to `help.html`. **Be honest about what that is:** static pages can be fetched by anyone who knows the URL; the guard decides what a signed-in person sees on screen, it is not access control. Neither page has a key, a secret or customer data (the pictures use made-up sample people).
 - **Pictures:** `python3 portal/tools/screenshots_help.py` (serves this repo on a local port with the mock config forced, hides the demo banner), then `python3 portal/tools/optimize_help_images.py`, which sorts them into `help/client/` (used by the client guide) and `help/staff/` (everything else the staff manual uses) and removes anything unused.
-- Cache-bust letter: `20261102k` (see above).
+- Cache-bust letter: `20261102l` (see above).
 
 ## Florida: owner-occupied / first-time homebuyer boxes removed (branch `fl-no-oo-1102`, 11/02/26)
 
@@ -479,3 +479,4 @@ Janette asked for these by email and video. All are optional and blank by defaul
 - Page breaks: long sections may split (the column heads repeat); sections of 8 rows or fewer (`.keep`) and the grand total stay whole, and the grand total stays with the last section. The typical MD quotes print on 1 page (were 2–3).
 - Saved quote: column headings, section totals (sums of the saved lines) and a grand total from `results.totals`.
 - No calculation changes. Screen only changes: the total's label wording, and the saved quote's new headings / totals.
+- Cache-bust `20261102l`.
