@@ -98,7 +98,8 @@ expect("Q1",q1,[...CLA_BUYER(50),[/Recording fees – Deed$/,"b",60],[/Recording
 ok(!q1.warnings.some(w=>/premium rates for MD/.test(w))&&near(q1.premiums.lenderFull,1232,1)&&near(bs(q1,/Owner's Title/,"b")+bs(q1,/Owner's Title/,"s"),1775,1),"Q1: MD Fidelity premiums loaded from the FNTIC MD manual: lender's 1,232 and TRID owner's H 1,775 match Lodestar");
 // Q3 MD Montgomery refi $360k loan, $300k payoff
 const q3=Q({type:"refi",state:"MD",county:"Montgomery",loan:360000,payoff:300000});
-expect("Q3",q3,[[/CPL/,"b",50],[/E-recording/,"b",10],[/Notary/,"b",150],[/Processing Fee/,"b",450],[/Qualia/,"b",59],[/Settlement Fee/,"b",450],[/Shipping/,"b",35],[/Tax Cert/,"b",10],[/Title Review/,"b",150],[/Title Search/,"b",150],[/Recording fees/,"b",110],[/County recordation/,"b",534]]);
+expect("Q3",q3,[[/CPL/,"b",50],[/E-recording/,"b",10],[/Notary/,"b",150],[/Qualia/,"b",59],[/Settlement Fee/,"b",450],[/Shipping/,"b",35],[/Tax Cert/,"b",10],[/Title Review/,"b",150],[/Title Search/,"b",150],[/Recording fees/,"b",110],[/County recordation/,"b",534]]);
+absent("Q3",q3,/Processing Fee/); // John 11/02/26 "Settlement is 450": the refi Processing Fee rows are Active = N (LodeStar Q3 had listed both)
 ok(q3.seller===0&&!q3.lines.some(l=>/Doc Preparation/.test(l.item)),"Q3: refi bills no seller rows");
 ok(near(bs(q3,/E-recording/,"b"),4.75*2),"Q3: e-recording = $4.75 × 2 recorded docs");
 // Q4 DC purchase $450k/$360k
@@ -128,7 +129,7 @@ for(const[st,co]of[["MD","Montgomery"],["VA","Fairfax"],["DC","District of Colum
 ok(X.calc(R,inp({type:"refi",fees:[{name:"Doc Preparation Fee",payer:"Seller",amt:205},{name:"Notary",payer:"Borrower",amt:150}]})).lines.every(l=>!/Doc Preparation/.test(l.item)),"refi skips Seller-paid fee rows");
 ok(X.claFees(R,"MD","refi").every(f=>f["Paid By"]!=="Seller")&&X.claFees(R,"MD","cash").every(f=>!X.lenderOnly(f)),"fee lists: no seller rows on refi, no lender-only rows on cash");
 // Processing fee re-added on refis in every state
-for(const st of["MD","VA","DC","FL"])ok(X.claFees(R,st,"refi").some(f=>/Processing Fee/.test(f["Fee Name"])&&+f.Amount===450),`${st} refi processing fee $450`);
+for(const st of["MD","VA","DC","FL"])ok(!X.claFees(R,st,"refi").some(f=>/Processing Fee/.test(f["Fee Name"]))&&X.claFees(R,st,"refi").filter(f=>/Settlement Fee/.test(f["Fee Name"])).map(f=>+f.Amount).join()==="450",`${st} refi: only the $450 settlement fee, no processing fee (John 11/02)`);
 // no blank LE Section / Default On
 ok(R.CLA_Fees.every(f=>String(f["LE Section"]).trim()&&/^[YN]$/.test(String(f["Default On"]).trim())),"CLA_Fees: every active row has LE Section and Default On");
 // Lodestar Fidelity premium data points (MD/VA/DC). MD (FNTIC manual eff. 1/7/2026), DC (FNTIC manual eff. 12/6/2023) and VA (FNTIC manual eff. 11/6/2024)
@@ -424,7 +425,7 @@ ok(SN({fees:[]}).totals.title===0&&near(SN({fees:[{name:"Custom",payer:"Seller",
   setv("zip","32801");ok(w.getElementById("state").value==="FL"&&w.querySelectorAll("#fees input[data-special]").length===0&&feeRow("Settlement Fee to CLA Title & Escrow").map(r=>r.children[2].value).join(",")==="1100,950","DOM a Maryland-only override does not touch Florida (1100 / 950)");
   setv("zip","21704");API.setFeeOverrides([{state:"*",transaction:"purchase",paidBy:"buyer",amount:900}]);ok(feeRow("Settlement Fee to CLA Title & Escrow").map(r=>r.children[2].value).join(",")==="900,670","DOM buyer-only override leaves the seller fee standard");
   w.querySelector("[data-t=refi]").click();ok(feeRow("Settlement Fee to CLA Title & Escrow").map(r=>r.children[2].value).join(",")==="450"&&w.querySelectorAll("#fees input[data-special]").length===0,"DOM a purchase override does not touch the refinance fee (450)");
-  API.setFeeOverrides([{state:"*",transaction:"refi",paidBy:"buyer",amount:300}]);ok(feeRow("Settlement Fee to CLA Title & Escrow").map(r=>r.children[2].value).join(",")==="300"&&feeRow("Processing Fee to CLA Title & Escrow").map(r=>r.children[2].value).join(",")==="450","DOM refinance override: settlement 300; the separate Processing Fee stays 450");
+  API.setFeeOverrides([{state:"*",transaction:"refi",paidBy:"buyer",amount:300}]);ok(feeRow("Settlement Fee to CLA Title & Escrow").map(r=>r.children[2].value).join(",")==="300"&&feeRow("Processing Fee to CLA Title & Escrow").length===0,"DOM refinance override: settlement 300; no Processing Fee row (inactive since 11/02)");
   w.querySelector("[data-t=purchase]").click();API.setFeeOverrides([]);ok(tot()===t0&&JSON.stringify(ledger())===JSON.stringify(l0)&&w.querySelectorAll("#fees input[data-special]").length===0,"DOM clearing the overrides restores the exact default quote: "+t0);
   API.setFeeOverrides(null);ok(tot()===t0,"DOM setFeeOverrides(null) = standard");
   // seller tab
