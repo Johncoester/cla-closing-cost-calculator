@@ -1054,6 +1054,10 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
         assert.ok(e && /Lien certificate – Frederick County/.test(e.textContent) && e.querySelector(".secnote") && /Recording fees may change depending on the number of pages\./.test(e.querySelector(".secnote").textContent));
         assert.ok(c && !c.querySelector(".secnote")); assert.strictEqual(QL.errs.length, 0, QL.errs.join()); QL.dom.window.close();
         ok("saved quote (Melissa 11/02): the lien certificate line is listed and the recording section carries the page-count note (only that section)"); }
+      { const hk = fs.readFileSync(path.join(__dirname, "js", "portal-hook.js"), "utf8"), qh = fs.readFileSync(path.join(__dirname, "quote.html"), "utf8"), ix = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+        assert.ok(/addEventListener\("cla:newquote", \(\) => \{ for \(const k of Object\.keys\(ids\)\) ids\[k\] = null;/.test(hk) && /dispatchEvent\(new CustomEvent\("cla:newquote"\)\)/.test(ix));
+        assert.ok(/<a class="btn o" id="newQuote" href="\.\.\/index\.html">New quote<\/a>/.test(qh));
+        ok("New quote (Francis 11/02): the calculator's reset tells the portal hook to save the next change as a NEW quote; the saved quote page has a New quote button to the calculator"); }
       const Q2 = await renderPage("quote.html", "sam.agent@example.com", "#body:not([hidden])", null, (st) => { const u = st.users.find((x) => x.email === "sam.agent@example.com"); Object.assign(u, { phone: null, cellPhone: null, companyPhone: null, companyAddress: null, companyWebsite: null, licenseOrNmls: null }); }, FQ);
       const sp2 = [...Q2.d.getElementById("cobrand").querySelector(".party").querySelectorAll("span")].map((x) => x.textContent); assert.deepStrictEqual(sp2, ["Acme Realty"]); assert.strictEqual(Q2.d.getElementById("cobrand").querySelector(".party").querySelector("a"), null); Q2.dom.window.close();
       const Q3 = await renderPage("quote.html", "sam.agent@example.com", "#body:not([hidden])", null, (st) => { const u = st.users.find((x) => x.email === "sam.agent@example.com"); Object.assign(u, { companyName: "<img src=x onerror=window.__x=1>Evil", companyAddress: '"><script>window.__y=1</script>', companyWebsite: "javascript:window.__z=1" }); }, FQ);
@@ -1299,7 +1303,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
 
     // cache-bust: every ?v= in index.html and TOUR_V agree
     const vs = [...idx.matchAll(/\?v=(\d{8}[a-z])/g)].map((m) => m[1]), pu = fs.readFileSync(path.join(__dirname, "js", "portal-ui.js"), "utf8");
-    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261102h" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261102h");
+    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261102i" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261102i");
     // the new elements are inert in print and add no external requests
     assert.ok(/@media print\{\s*@page\{margin:14mm\}\s*\.claChip\{display:none!important\}/.test(idx) && !/https?:\/\//.test(tj2)); ok("calculator tour: the chip is not printed; tour.js has no external libraries or CDN");
   }

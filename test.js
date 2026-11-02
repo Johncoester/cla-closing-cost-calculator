@@ -535,7 +535,7 @@ ok(SN({fees:[]}).totals.title===0&&near(SN({fees:[{name:"Custom",payer:"Seller",
   {const v=id=>w.getElementById(id);w.querySelector("[data-mode=quote]").click();w.querySelector("[data-t=purchase]").click();setv("state","MD");setv("zip","21701");setv("county","Frederick");setv("price","400000");setv("loan","320000");
    const secE=[...v("ledger").querySelectorAll("section")].find(x=>/Taxes and other government fees/.test(x.textContent));
    ok(secE&&/Recording fees – Deed\$60\.00/.test(secE.textContent.replace(/\s+/g,""))===false&&[...secE.querySelectorAll("tr")].some(r=>/^Recording fees – Deed\s*\$60\.00/.test(r.textContent.trim()))&&[...secE.querySelectorAll("tr")].some(r=>/^Lien certificate – Frederick County\s*\$25\.00/.test(r.textContent.trim())),"DOM Frederick: Section E lists Recording fees – Deed $60.00 and Lien certificate – Frederick County $25.00");
-   ok(secE.querySelector(".secnote")&&secE.querySelector(".secnote").textContent==="Recording fees may change depending on the number of pages.","DOM: Section E carries the recording-fee note");
+   ok(secE.querySelector(".secnote")&&secE.querySelector(".secnote").firstChild.textContent.trim()==="Recording fees may change depending on the number of pages."&&!!secE.querySelector(".secnote button[data-docs]"),"DOM: Section E carries the recording-fee note");
    ok([...v("ledger").querySelectorAll(".secnote")].length===1,"DOM: the note is shown once (Section E only)");
    const sn=d.window.CLA_QUOTE_API.snapshot();ok(sn.results.lines.some(l=>l.item==="Lien certificate – Frederick County"&&l.b===25)&&/Lien certificate – Frederick County: Buyer \$25\.00/.test(sn.results.text)&&/\(Recording fees may change depending on the number of pages\.\)/.test(sn.results.text),"DOM: saved quote lines and copied quote carry the lien certificate line and the note");
    setv("county","Baltimore City");ok(/Lien certificate – Baltimore City/.test(v("ledger").textContent)&&!/Baltimore City County/.test(v("ledger").textContent),"DOM Baltimore City: 'Lien certificate – Baltimore City' (no 'County')");
@@ -545,5 +545,28 @@ ok(SN({fees:[]}).totals.title===0&&near(SN({fees:[{name:"Custom",payer:"Seller",
   // totals identical to the folded version: deed + lien certificate = the old single deed line, for every MD county with a lien row
   for(const[co,add]of[["Frederick",25],["Charles",25],["Howard",50],["Harford",50],["Baltimore",55],["Baltimore City",55],["Carroll",40],["Anne Arundel",0],["Montgomery",0]]){const r=X.calc(R,inp({county:co,price:400000,loan:320000}));
    ok(near(line(r,/^Recording fees – Deed$/)+line(r,/^Lien certificate/),60+add)&&r.lines.filter(l=>/^Lien certificate/.test(l.item)).length===(add?1:0),`MD ${co}: deed $60 + lien line $${add} (same total as before)`)}
+  // Francis Santos 11/02: New quote / Reset, state picked by hand, documents link
+  {const v=id=>w.getElementById(id),txt=id=>v(id).textContent;let asked=0,answer=false;d.window.confirm=()=>{asked++;return answer};let fired=0;d.window.addEventListener("cla:newquote",()=>fired++);
+   w.querySelector("[data-mode=quote]").click();w.querySelector("[data-t=purchase]").click();
+   // state by hand after a ZIP from another state
+   setv("zip","20850");ok(v("state").value==="MD"&&v("county").value==="Montgomery","ZIP 20850 -> MD Montgomery");
+   setv("state","VA");ok(v("zip").value===""&&v("county").value===""&&txt("zipMsg")==="","State changed by hand to VA: the MD ZIP and the same-named county (Montgomery) are cleared, not carried into Virginia");
+   setv("zip","22030");setv("state","VA");ok(v("zip").value==="22030"&&v("county").value==="Fairfax","State re-picked to the ZIP's own state keeps the ZIP and county");
+   setv("county","Fairfax");w.querySelector("[data-mode=seller]").click();setv("s_zip","21701");setv("s_state","FL");ok(v("s_zip").value===""&&v("s_county").value==="","seller tab: same rule");w.querySelector("[data-mode=quote]").click();
+   // documents summary + link
+   ok(/^\(Deed ×1, 3 pages · Deed of Trust ×1, 30 pages\)$/.test(txt("docsSum")),"Documents to record shows the documents and pages while closed: "+txt("docsSum"));
+   v("docsBox").open=false;const lk=v("ledger").querySelector("button[data-docs]");v("docsBox").scrollIntoView=()=>{};lk.click();ok(v("docsBox").open&&w.activeElement===v("docsBox").querySelector("input"),"Section E 'Change documents / pages' opens the box and focuses the first count");
+   const r1=v("docs").querySelector('tr[data-doc="Release"] input');r1.value="1";r1.dispatchEvent(ev("input"));ok(/Release ×1, 3 pages/.test(txt("docsSum"))&&/Recording fees – Release/.test(txt("ledger")),"adding a release updates the summary and Section E");
+   // reset
+   const fresh=JSON.stringify({b:txt("tB"),s:txt("tS")});
+   setv("zip","33950");setv("price","400000");setv("downv","10");setv("bcv","1");setv("badm","495");w.querySelector("[data-t=refi]").click();
+   w.querySelector("[data-mode=seller]").click();setv("s_po1","250000");setv("s_adm","695");w.querySelector("[data-mode=quote]").click();
+   const before=txt("tB");answer=false;v("newQuote").click();ok(asked===1&&txt("tB")===before&&v("zip").value==="33950"&&fired===0,"New quote: asks first when something is filled in; Cancel keeps everything");
+   answer=true;v("newQuote").click();
+   ok(asked===2&&fired===1&&v("zip").value===""&&v("addr").value===""&&v("state").value==="MD"&&v("county").value===""&&v("price").value==="450000"&&v("loan").value==="360000"&&v("downv").value===""&&v("bcv").value===""&&v("badm").value===""&&w.querySelector("[data-t=purchase]").classList.contains("on"),"OK: buyer tab back to defaults (purchase, MD, no ZIP/county, 450k/360k, new fields blank)");
+   ok(v("s_po1").value===""&&v("s_adm").value===""&&v("s_zip").value===""&&v("s_price").value==="450000"&&v("s_bbv").value==="2.5"&&v("s_slv").value==="2.5"&&v("s_close").value===v("s_close").defaultValue&&v("s_close").value!==""&&v("s_other").querySelectorAll(".orow").length===2,"OK: seller tab back to defaults (closing date today, 2.5/2.5, two blank other-cost rows)");
+   ok(!/Recording fees – Release/.test(txt("ledger"))&&/^\(Deed ×1, 3 pages · Deed of Trust ×1, 30 pages\)$/.test(txt("docsSum"))&&!v("docsBox").open,"OK: documents back to the purchase defaults");
+   asked=0;v("newQuote").click();ok(asked===0&&fired===2,"New quote on an untouched page: no question");
+   setv("zip","20850")}
 ok(errs.length===0,"no DOM errors "+errs);
  if(fails){console.error(fails,"FAILED");process.exit(1)}console.log("ALL PASS")})();

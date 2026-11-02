@@ -4,8 +4,8 @@
 <meta name="theme-color" content="#000000">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="zip-county.js?v=20261102h"></script>
-<script src="fee-snapshot.js?v=20261102h"></script>
+<script src="zip-county.js?v=20261102i"></script>
+<script src="fee-snapshot.js?v=20261102i"></script>
 <style>
 :root{--g:#8dc63f;--gd:#6fa52a;--gdd:#4d7a17;--ink:#111;--mut:#5b6272;--line:#e3e8da;--bg:#f4f7ef;--field:#d5dbca}
 *{box-sizing:border-box}
@@ -137,6 +137,8 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 .cm{display:grid;grid-template-columns:84px minmax(0,1fr);gap:10px}
 .fh{margin:6px 0 0;font-size:12.5px;color:var(--mut)}.fh:empty{display:none}
 .secnote{margin:0;padding:8px 16px 12px;font-size:12.5px;color:var(--mut)}
+.lnk{background:none;border:0;padding:0;font:inherit;color:#4f7a12;text-decoration:underline;cursor:pointer}
+.mbar-r{margin-left:auto;display:flex;gap:8px;align-items:center}
 .orow{display:grid;grid-template-columns:minmax(0,1fr) 124px;gap:10px;margin-bottom:10px}
 .orow>div{min-width:0}
 .btn.sm{padding:8px 14px;font-size:13px;border-radius:10px}
@@ -180,7 +182,7 @@ table{width:100%;border-collapse:collapse;font-size:14px}
  .claChip{display:none!important}
  body{background:#fff;font-size:11pt;color:#000}
  header{background:#fff!important;color:#000;border-bottom:3px solid #8dc63f}
- header .hr,.statusbar,.modebar,.col.in,.foot,.btn,.seg{display:none!important}
+ header .hr,.statusbar,.modebar,.col.in,.foot,.btn,.seg,.noprint{display:none!important}
  .logo{background:#fff;border:2px solid #8dc63f}
  .ht,.ht span{color:#000}
  main{display:block;padding:12px 0 0;max-width:none}
@@ -212,6 +214,7 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 </div></header>
 <div class="statusbar"><div class="wrap"><span id="status" role="status">Fees load from the CLA team Google Sheet on every page load.</span></div></div>
 <div class="modebar"><div class="wrap"><div class="seg mode" id="modes" data-tour="k-modes" role="group" aria-label="Calculator"><button type="button" data-mode="quote" class="on" aria-pressed="true">Buyer Quote</button><button type="button" data-mode="seller" aria-pressed="false">Seller Net Sheet</button></div>
+<div class="mbar-r"><button class="btn sec sm" id="newQuote" type="button" title="Clear every input on both tabs back to the defaults">New quote / Reset</button></div>
 <div class="claChip" id="claTourChip" hidden><span>New here?</span><button type="button" class="go" id="claTourChipGo">Take a 1-minute tour</button><button type="button" class="x" id="claTourChipX" aria-label="Dismiss the tour offer" title="Dismiss">&times;</button></div></div></div>
 <main id="mainQ">
 <div class="col in">
@@ -243,7 +246,7 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 <div class="fgrp" style="margin-bottom:0"><label for="badm">Broker admin fee</label><div class="money"><input type="number" id="badm" placeholder="0" min="0" inputmode="decimal"></div></div></div>
 </section>
 <section class="card c2"><h2>Fees &amp; options</h2>
-<details id="docsBox"><summary>Documents to record</summary>
+<details id="docsBox"><summary>Documents to record <span class="sum" id="docsSum"></span></summary>
 <table class="docs"><tr><th>Document</th><th>Count</th><th>Pages each</th></tr><tbody id="docs"></tbody></table></details>
 <h3>Endorsements</h3><div id="ends"></div>
 <h3>CLA fees</h3><div id="fees" data-tour="k-fees"></div>
@@ -628,7 +631,8 @@ function run(){ownPayOpts();const i=inputs();$("assessWrap").hidden=!(i.state===
  for(const l of res.lines){if(!g||l.sec!==g.sec){g={sec:l.sec,rows:"",b:0,s:0,items:[]};groups.push(g)}g.items.push(l);g.b+=l.b||0;g.s+=l.s||0;
   g.rows+=`<tr><td>${l.item}</td><td class="num${l.b?"":" z"}">${l.b?fmt(l.b):"—"}</td><td class="num${l.s?"":" z"}">${l.s?fmt(l.s):"—"}</td></tr>`}
  $("ledger").innerHTML=groups.map(g=>{const m=String(g.sec).match(/^([A-Z])\.\s*(.*)$/),letter=m?m[1]:"•",name=m?m[2]:g.sec;
-  return`<section class="card sec"><div class="sh"><span class="l">${letter}</span><h3>${name}</h3></div><table class="ledger"><thead><tr><th>Item</th><th class="num">${bl}</th><th class="num s">Seller</th></tr></thead><tbody>${g.rows}<tr class="tot"><td>Section ${letter} total</td><td class="num${g.b?"":" z"}">${g.b?fmt(g.b):"—"}</td><td class="num${g.s?"":" z"}">${g.s?fmt(g.s):"—"}</td></tr></tbody></table>${hasRec(g.items)?`<p class="secnote">${REC_NOTE}</p>`:""}</section>`}).join("");
+  return`<section class="card sec"><div class="sh"><span class="l">${letter}</span><h3>${name}</h3></div><table class="ledger"><thead><tr><th>Item</th><th class="num">${bl}</th><th class="num s">Seller</th></tr></thead><tbody>${g.rows}<tr class="tot"><td>Section ${letter} total</td><td class="num${g.b?"":" z"}">${g.b?fmt(g.b):"—"}</td><td class="num${g.s?"":" z"}">${g.s?fmt(g.s):"—"}</td></tr></tbody></table>${hasRec(g.items)?`<p class="secnote">${REC_NOTE} <button type="button" class="lnk noprint" data-docs>Change documents / pages</button></p>`:""}</section>`}).join("");
+ $("docsSum").textContent="("+Object.entries(i.docs).filter(([,[n]])=>n>0).map(([d,[n,pg]])=>`${d} ×${n}, ${pg} page${pg===1?"":"s"}`).join(" · ")+")";
  $("grand").innerHTML=`<tr class="tot"><td>Total</td><td class="num">${fmt(res.buyer)}</td><td class="num">${fmt(res.seller)}</td></tr>`;
  $("warns").innerHTML=res.warnings.length?`<div class="warn"><div><b>Warnings</b><ul>${res.warnings.map(w=>`<li>${w}</li>`).join("")}</ul></div></div>`:""}
 function quote(){const{i,res}=last,b=type==="refi"?"Borrower":"Buyer";let t=`C.L.A. Title & Escrow — Closing Cost Estimate\n${$("addr").value||"(no address)"} ${$("city").value} ${i.state} ${$("zip").value}\n${TN[type]} · ${i.county}, ${i.state} · ${i.uw}\n`;
@@ -640,13 +644,17 @@ $("copy").onclick=()=>{const t=quote();(navigator.clipboard?navigator.clipboard.
 $("tabs").onclick=e=>{if(e.target.dataset.t)setType(e.target.dataset.t)};
 // ZIP is authoritative: handled on input, change (autofill/paste) and from a ZIP typed in the address line.
 const zipHit={"":null,s_:null};
+// State picked by hand (Francis Santos 11/02): a ZIP from another state would stay on the quote and a same-named county in the new state
+// (Montgomery, Frederick, Charles...) would be picked silently, so both are cleared: the person picks the county (or types a ZIP) for the new state
+function stateByHand(p){const z=zipLookup($(p+"zip").value.trim());if(z&&z.state!==$(p+"state").value){$(p+"zip").value="";$(p+"zipMsg").textContent="";zipHit[p]=null}
+ if(!zipHit[p]||zipHit[p].state!==$(p+"state").value)$(p+"county").value=""}
 function applyZip(p=""){const z=$(p+"zip").value.trim(),m=$(p+"zipMsg");zipHit[p]=null;if(z.length<5){m.textContent="";return}
  const r=zipLookup(z);if(!r){m.textContent=/^\d{5}$/.test(z)?"We don't have that ZIP on file (we cover MD, VA, DC and FL) — please pick the state and county below.":"Enter a 5-digit ZIP.";return}
  zipHit[p]=r;const stChanged=$(p+"state").value!==r.state;$(p+"state").value=r.state;counties(p);setCounty(r.county,p);if(stChanged)p?buildSFees():rebuild();m.textContent=(r.approx?`ZIP not in Census ZIP areas; using nearest (${r.via}) — please confirm county. `:"")+(r.also.length?`This ZIP also covers ${r.also.join(", ")}.`:"");p?runS():run()}
 $("zip").oninput=$("zip").onchange=()=>applyZip();
 $("addr").addEventListener("input",()=>{const m=$("addr").value.match(/\b(\d{5})(?:-\d{4})?\s*$/);if(m&&m[1]!==$("zip").value){$("zip").value=m[1];applyZip()}});
 $("city").oninput=()=>{const c=$("city").value.trim();if(!c||zipHit[""])return;const o=[...$("county").options].find(o=>o.value&&eq(o.value,c));if(o){$("county").value=o.value;run()}};
-$("state").onchange=()=>{counties();rebuild();run()};$("uw").onchange=()=>{rebuild();run()};
+$("state").onchange=()=>{stateByHand("");counties();rebuild();run()};$("uw").onchange=()=>{rebuild();run()};
 $("downv").addEventListener("input",syncLoan);$("price").addEventListener("input",syncLoan);$("loan").addEventListener("input",syncDown);
 $("downm").dataset.prev=$("downm").value;$("downm").addEventListener("change",()=>{const m=$("downm"),v=$("downv"),p=+$("price").value||0;   // switching $ <-> % keeps the same down payment
  if(v.value.trim()!==""){const a=downAmt(p,{mode:m.dataset.prev,val:+v.value||0});v.value=String(m.value==="flat"?r2(a):p>0?+(a/p*100).toFixed(3):0)}m.dataset.prev=m.value;syncLoan()});
@@ -697,12 +705,12 @@ function sQuote(){const{i,r}=sLast,cd=pDate(i.closing);let t=`C.L.A. Title & Esc
 $("sCopy").onclick=()=>{const t=sQuote();(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>$("sCopied").textContent="Copied!",()=>{prompt("Copy summary:",t)})};
 $("s_addo").onclick=()=>{if(SC.children.length<5)sOtherRow();sOtherBtn();runS()};
 function pad(n){return String(n).padStart(2,"0")}
-const td=new Date();$("s_close").value=`${td.getFullYear()}-${pad(td.getMonth()+1)}-${pad(td.getDate())}`;sOtherRow();sOtherRow();
+const td=new Date();$("s_close").value=$("s_close").defaultValue=`${td.getFullYear()}-${pad(td.getMonth()+1)}-${pad(td.getDate())}`;sOtherRow();sOtherRow();
 // ZIP / state / county for the seller tab (same lookup as the quote tab)
 $("s_zip").oninput=$("s_zip").onchange=()=>applyZip("s_");
 $("s_addr").addEventListener("input",()=>{const m=$("s_addr").value.match(/\b(\d{5})(?:-\d{4})?\s*$/);if(m&&m[1]!==$("s_zip").value){$("s_zip").value=m[1];applyZip("s_")}});
 $("s_city").oninput=()=>{const c=$("s_city").value.trim();if(!c||zipHit.s_)return;const o=[...$("s_county").options].find(o=>o.value&&eq(o.value,c));if(o){$("s_county").value=o.value;ownTouched=false}};
-$("s_state").onchange=()=>{ownTouched=false;counties("s_");buildSFees();runS()};
+$("s_state").onchange=()=>{ownTouched=false;stateByHand("s_");counties("s_");buildSFees();runS()};
 $("s_county").addEventListener("change",()=>{ownTouched=false});$("s_own").addEventListener("change",()=>{ownTouched=true});
 $("mainS").addEventListener("input",e=>{if(!["s_zip"].includes(e.target.id))runS()});$("mainS").addEventListener("change",e=>{if(!["s_zip","s_state"].includes(e.target.id))runS()});
 // switching tabs carries the shared property fields across
@@ -713,6 +721,20 @@ function setMode(m){if(m===mode)return;copyProps(mode==="seller"?"s_":"",m==="se
  document.querySelectorAll("#modes button").forEach(b=>{b.classList.toggle("on",b.dataset.mode===m);b.setAttribute("aria-pressed",b.dataset.mode===m)});
  if(!s)syncLoan();s?runS():run()}
 $("modes").onclick=e=>{const b=e.target.closest("button");if(b&&b.dataset.mode)setMode(b.dataset.mode)};
+// "Documents to record" link under Section E: opens the box and moves focus to it
+$("ledger").addEventListener("click",e=>{if(!e.target.closest("[data-docs]"))return;const b=$("docsBox");b.open=true;b.scrollIntoView({behavior:"smooth",block:"center"});const f=b.querySelector("input");if(f)f.focus()});
+// New quote / Reset (Francis Santos 11/02): every input on both tabs back to its default, without a reload or signing out.
+// "Filled in" = any field differs from its default (defaultValue / defaultChecked / defaultSelected), so a confirm is asked only then.
+const formEls=()=>[...document.querySelectorAll("#mainQ input,#mainQ select,#mainS input,#mainS select")].filter(e=>e.type!=="file");
+function isDirty(){return formEls().some(e=>e.tagName==="SELECT"?[...e.options].some(o=>o.selected!==o.defaultSelected)&&e.selectedIndex!==Math.max(0,[...e.options].findIndex(o=>o.defaultSelected)):e.type==="checkbox"||e.type==="radio"?e.checked!==e.defaultChecked:e.value!==e.defaultValue)||type!=="purchase"}
+function resetAll(){for(const e of formEls()){if(e.tagName==="SELECT"){const d=[...e.options].findIndex(o=>o.defaultSelected);e.selectedIndex=Math.max(0,d)}else if(e.type==="checkbox"||e.type==="radio")e.checked=e.defaultChecked;else e.value=e.defaultValue}
+ for(const p of["","s_"]){$(p+"zipMsg").textContent="";zipHit[p]=null;$(p+"state").value="MD";counties(p);$(p+"county").value=""}
+ taxQ.key=taxS.key="";taxQ.pay={};taxS.pay={};ownTouched=false;$("downm").dataset.prev=$("downm").value;$("docsBox").open=false;
+ SC.innerHTML="";sOtherRow();sOtherRow();sOtherBtn();$("s_close").value=$("s_close").defaultValue;buildSFees();
+ setType("purchase");runS();
+ window.dispatchEvent(new CustomEvent("cla:newquote"))}   // portal-hook.js: the next change is saved as a NEW quote (the previous one stays as it was)
+$("newQuote").onclick=()=>{if(isDirty()&&!confirm("Start a new quote?\n\nThis clears every field on the Buyer Quote and Seller Net Sheet tabs. A quote you saved to your account stays saved."))return;resetAll();
+ const c=mode==="seller"?$("sCopied"):$("copied");if(c){c.textContent="Cleared: new quote.";setTimeout(()=>{if(c.textContent==="Cleared: new quote.")c.textContent=""},4000)}const f=mode==="seller"?$("s_addr"):$("addr");if(f)f.focus()};
 // Optional portal hook (portal/js/portal-hook.js): read-only snapshot of the current quote. Does nothing unless the portal is configured.
 window.CLA_QUOTE_API={mode:()=>mode,
  // portal-hook.js hands over this person's special settlement fee rows (null / [] = standard fees); the fee lists are rebuilt and the quote re-run
@@ -734,7 +756,7 @@ load(SNAP,"Built-in snapshot","snapshot");$("status").textContent="Loading fees 
 // Guided tour: "Take the tour" (header) and a small first-visit chip. Works for everyone, signed in or not. The engine is portal/js/tour.js + portal/tour.css,
 // downloaded only when someone starts the tour. The chip shows once; dismissing it (x), starting the tour, or finishing it hides it for good (localStorage).
 (function(){
- var V="20261102h",KEY="cla_calc_tour_chip",link=document.getElementById("claCalcTourLink"),chip=document.getElementById("claTourChip"),loading=null;
+ var V="20261102i",KEY="cla_calc_tour_chip",link=document.getElementById("claCalcTourLink"),chip=document.getElementById("claTourChip"),loading=null;
  function seen(){try{return window.localStorage.getItem(KEY)==="1"}catch(e){return true}} // no storage: never show the chip (it could not remember "no thanks")
  function dismiss(){try{window.localStorage.setItem(KEY,"1")}catch(e){}if(chip)chip.hidden=true}
  function add(tag,attrs){return new Promise(function(res){var e=document.createElement(tag);for(var k in attrs)e[k]=attrs[k];e.onload=e.onerror=function(){res()};document.head.appendChild(e)})}
@@ -748,4 +770,4 @@ load(SNAP,"Built-in snapshot","snapshot");$("status").textContent="Loading fees 
   document.getElementById("claTourChipX").onclick=function(){dismiss();if(link)link.focus()}}
 })();
 </script>
-<script src="portal/js/portal-hook.js?v=20261102h" defer></script></body></html>
+<script src="portal/js/portal-hook.js?v=20261102i" defer></script></body></html>

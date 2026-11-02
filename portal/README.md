@@ -271,7 +271,7 @@ The same engine also runs on the public calculator, for **anyone** (guest or sig
 - **Tabs:** the Seller Net Sheet step opens that tab and puts the person's own tab back afterwards (also if they skip or press Esc). The tour never clicks Purchase / Cash / Refinance, because switching those rebuilds the documents and endorsements and would discard edits; it only points at them. No fee or number is changed.
 - **The chip:** shown only to someone who has not dismissed it. The x, starting the tour from the chip or from the header link all store `cla_calc_tour_chip = "1"` in `localStorage`, so it never comes back. If browser storage is blocked the chip is not shown at all. It does not print.
 - **Phones:** the box is a bottom sheet (also for the centred welcome note); on desktop a tall target (the breakdown) gets the box beside it instead of on top of it.
-- **Cache-bust:** `?v=20261102h` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
+- **Cache-bust:** `?v=20261102i` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
 - **Tests:** the "calculator tour" block in `portal/test-portal.js` (link, step counts, targets, skipping, tab restore, chip persistence, phone sheet, versions). Screenshots: `portal/tools/screenshots_calculator_tour.py`.
 
 ## Who pays each transfer / recordation tax (live since 2026-10-28; calculator only, no database change)
@@ -342,7 +342,7 @@ Two pages, both **generated** by `node portal/tools/build-help.js` (do not edit 
 - **Header Help link** (`CLA.helpHref` in `portal-ui.js`; the calculator header link in `portal-hook.js` uses the same function): clients go to `help.html`, reps, admins and super admins to `staff-help.html`. Signed-in users only.
 - **Guards:** both pages use `CLA.boot(null)` (signed-out visitors go to `login.html?next=...`) and stay hidden until then. `staff-help.html` sends a client to `help.html`. **Be honest about what that is:** static pages can be fetched by anyone who knows the URL; the guard decides what a signed-in person sees on screen, it is not access control. Neither page has a key, a secret or customer data (the pictures use made-up sample people).
 - **Pictures:** `python3 portal/tools/screenshots_help.py` (serves this repo on a local port with the mock config forced, hides the demo banner), then `python3 portal/tools/optimize_help_images.py`, which sorts them into `help/client/` (used by the client guide) and `help/staff/` (everything else the staff manual uses) and removes anything unused.
-- Cache-bust letter: `20261102h` (see above).
+- Cache-bust letter: `20261102i` (see above).
 
 ## Florida: owner-occupied / first-time homebuyer boxes removed (branch `fl-no-oo-1102`, 11/02/26)
 
@@ -436,3 +436,20 @@ Janette asked for these by email and video. All are optional and blank by defaul
 - Lodestar regression Q5 (Frederick) now expects deed $60 + lien certificate $25, which is still the 85 Lodestar shows.
 - Not done (waiting on Melissa): Simplifile on purchases, the refi "Tax Cert Fee" question, non-resident withholding.
 - Cache-bust `20261102h`.
+
+## Francis Santos feedback (branch `francis-1102`, 11/02/26)
+
+- **Refinance "duplicate $450":** not a code bug.
+  - The live CLA_Fees sheet has two separate Refi rows in each of MD, VA, DC and FL: "Settlement Fee to CLA Title & Escrow" $450 and "Processing Fee to CLA Title & Escrow" $450.
+  - Each is counted once. The Processing row was re-added on 10/23 to match LodeStar MD refi quote Q3, which shows both; it was copied to VA, DC and FL ("Applied to VA/DC/FL").
+  - If CLA charges only one, set Active = N on the Processing rows (a sheet change for John). The code needs nothing.
+- **New quote / Reset** (`#newQuote` in the mode bar):
+  - `isDirty()` compares every form control with its default (`defaultValue` / `defaultChecked` / `defaultSelected`), plus the transaction type. It asks `confirm()` only when something differs.
+  - `resetAll()` restores both tabs: purchase, MD, no ZIP or county, documents, fees and endorsements rebuilt, tax choices, seller other-cost rows, closing date today.
+  - It then fires `cla:newquote`. `portal-hook.js` drops the saved quote ids, so the next change saves a NEW quote.
+  - `portal/quote.html` has a New quote link back to the calculator.
+- **State picked by hand** (`stateByHand`): when a different state is picked from the list, a ZIP from the old state and the county are cleared (buyer and seller tabs).
+  - Before, ZIP 20850 → VA kept "20850" and silently chose Montgomery County, VA.
+  - A probe found no stale Section E lines, fees, endorsements, documents or tax choices across MD → VA → FL → DC → MD switches. It covered purchase, cash and refi, by ZIP and by dropdown, each compared with a fresh load.
+- **Documents to record:** the summary shows the documents and pages while closed. Section E's recording note has a "Change documents / pages" link (`.noprint`) that opens the box and focuses the first count.
+- Cache-bust `20261102i`.

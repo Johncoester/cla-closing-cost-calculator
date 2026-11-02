@@ -60,7 +60,7 @@
     // ---- staff feedback button (admin, super admin, rep only; clients and guests never load it) ----
     // (loads its own file, so it works even if a cached portal-ui.js predates CLA.startFeedback; the widget re-checks the role itself)
     if (me && ["super_admin", "admin", "rep"].includes(me.role) && me.status !== "disabled") {
-      const fv = (CLA.FEEDBACK_V || "20261102h");
+      const fv = (CLA.FEEDBACK_V || "20261102i");
       (CLA.mountFeedback ? Promise.resolve() : load(base + "js/feedback-widget.js?v=" + fv)).then(() => CLA.mountFeedback({ A, me, base, ver: fv })).catch(() => {});   // optional: never break the calculator over it
     }
 
@@ -112,6 +112,9 @@
       notes[m].className = "claSaveNote";
       notes[m].innerHTML = "Saved to your account · " + (CLA.daysLeft(q.expiresAt) ? "deletes itself " + CLA.date(q.expiresAt) + " (30 days after it was created)" : "expires today") + ' · <a href="' + base + "quote.html?id=" + encodeURIComponent(q.id) + '">View with photos</a> · <a href="' + base + CLA.quotesHome(me) + '">My quotes</a>';
     }
+    // New quote / Reset in the calculator (index.html, Francis Santos 11/02): forget which saved quote each tab was updating,
+    // so the next change saves a NEW quote and the earlier one stays exactly as it was
+    window.addEventListener("cla:newquote", () => { for (const k of Object.keys(ids)) ids[k] = null; for (const k of Object.keys(notes)) { if (notes[k]) { notes[k].className = "claSaveNote"; notes[k].textContent = me ? "New quote: it saves to your account as a new quote when you change something." : notes[k].textContent; } } });
     let busy = false;
     async function persist(m, manual) {
       if (!me || busy) return; busy = true;
