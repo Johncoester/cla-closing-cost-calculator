@@ -4,8 +4,8 @@
 <meta name="theme-color" content="#000000">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="zip-county.js?v=20261102j"></script>
-<script src="fee-snapshot.js?v=20261102j"></script>
+<script src="zip-county.js?v=20261102k"></script>
+<script src="fee-snapshot.js?v=20261102k"></script>
 <style>
 :root{--g:#8dc63f;--gd:#6fa52a;--gdd:#4d7a17;--ink:#111;--mut:#5b6272;--line:#e3e8da;--bg:#f4f7ef;--field:#d5dbca}
 *{box-sizing:border-box}
@@ -276,6 +276,11 @@ table{width:100%;border-collapse:collapse;font-size:14px}
 <div class="sum hint" id="s_cntyNote"></div>
 <div class="row"><div><label for="s_price">Selling price</label><div class="money"><input type="number" id="s_price" value="450000" inputmode="decimal"></div></div>
 <div><label for="s_close">Closing date</label><input type="date" id="s_close"></div></div>
+<div id="s_nrWrap" hidden><label class="chk"><input type="checkbox" id="s_nr"><span>Seller is not a Maryland resident <span class="sum">(Maryland withholds part of a non-resident seller's proceeds at closing as a prepayment of their Maryland income tax; the seller claims it on their Maryland return)</span></span></label>
+<div id="s_nrOpts" hidden><div class="row"><div><label for="s_nrt">Seller is</label><select id="s_nrt"><option value="individual">An individual, estate or trust (8.75%)</option><option value="entity">A business entity (8.25%)</option></select></div>
+<div><label for="s_nrown">Seller's ownership share</label><div class="pctw"><input type="number" id="s_nrown" placeholder="100" min="0" max="100" step="any" inputmode="decimal"></div></div></div>
+<div class="row one"><div><label for="s_nrc">Exemption certificate amount <span class="sum">(optional: from a Comptroller certificate of full or partial exemption; 0 = fully exempt)</span></label><div class="money"><input type="number" id="s_nrc" placeholder="Leave blank to calculate" min="0" inputmode="decimal"></div></div></div>
+<div class="fh" id="s_nrh"></div></div></div>
 <div class="row one" id="s_assessWrap" hidden><div><label for="s_assessed">Assessed value <span class="sum">(optional)</span></label><div class="money"><input type="number" id="s_assessed" placeholder="Same as price" inputmode="decimal" aria-describedby="s_assessHint"></div><div class="fh" id="s_assessHint">Virginia deed taxes use the selling price or the assessed value, whichever is higher.</div></div></div>
 </section>
 <section class="card s2"><h2>Commissions</h2>
@@ -339,7 +344,10 @@ const LIEN_CERT=/lien certificate/i,lienPlace=c=>{c=String(c||"").trim();return/
 // note shown under Section E (and the seller's government fees card) whenever a recording fee line is listed (Melissa Gamble 11/02)
 const hasRec=rows=>(rows||[]).some(l=>/^Recording fees/.test(l.item));
 const REC_NOTE="Recording fees may change depending on the number of pages.";
-const MD_BIG_INSTR={"Deed":115,"Deed of Trust":115}; // Maryland clerk fee incl. $40 surcharge for an instrument of 10+ pages not solely a principal residence
+// Maryland (RP 3-601): $115 (incl. $40 surcharge) for an instrument that is not solely a principal residence. Melissa Gamble 11/02/26: CLA defaults
+// the DEED OF TRUST to $115 whenever the property is not a principal residence (any page count; a deed of trust is normally 10+ pages), and the deed
+// stays $60 ("deed over $60 is rare"). Before 11/02 both documents went to $115 only at 10+ pages (default deed 3 pages, so only the deed of trust moved).
+const MD_BIG_INSTR={"Deed of Trust":115};
 const SEC={B:"B. Services you cannot shop for",C:"C. Services you can shop for",E:"E. Taxes and other government fees",H:"H. Other"};
 
 // ---------- parsing ----------
@@ -361,6 +369,9 @@ const txOK=(t,type)=>{t=String(t||"Both").trim().toLowerCase();if(t==="both"||t=
 // lender-only CLA fees (never on a cash purchase): Transaction "Financed" or a fee name marked "(Lender)"
 const lenderOnly=f=>eq(f.tx??f.Transaction,"Financed")||/\(lender\)/i.test(f.name??f["Fee Name"]??"");
 const perDoc=f=>/e-?recording/i.test(f.name??f["Fee Name"]??""); // charged once per recorded document
+// which recorded documents a per-document fee counts (Melissa Gamble 11/02/26): on a sale the buyer pays for the deed, deed of trust and other loan /
+// buyer documents (power of attorney, assignment of leases and rents...), the seller for each release; on a refinance the borrower pays for all of them
+const perDocCount=(docs,payer,refi)=>docs.filter(([d])=>refi?true:String(payer||"").trim().toLowerCase()==="seller"?d==="Release":d!=="Release").reduce((a,[,[n]])=>a+n,0);
 // county-specific rows override statewide ("All") rows with the same key
 function pick(rows,st,co,type,key,txCol="Transaction"){const m=rows.filter(r=>eq(r.State,st)&&inCounty(r,co)&&(!txCol||txOK(r[txCol],type)));
  const spec=new Set(m.filter(r=>!isAll(r["County/City"])).map(key));return m.filter(r=>!isAll(r["County/City"])||!spec.has(key(r)))}
@@ -437,7 +448,8 @@ function calc(R,i){const L=[],W=[],refi=i.type==="refi";
   const amt=String(e.Pricing).includes("%")?r2(base*(num(e.Amount)||0)/100):num(e.Amount)||0;add(SEC.C,`Title – Endorsement ${e.Code} ${e.Name}`,amt,0)}
  // CLA fees (amounts may be edited in the UI)
  for(const f of i.fees||[]){if(refi&&eq(f.payer,"Seller"))continue;if(cash&&lenderOnly(f))continue; // refi: no seller rows; cash: no lender-only fees
-  const per=perDoc(f),amt=per?f.amt*nDocs:f.amt,nm=(NOT_TITLE.test(f.name)?"":"Title – ")+f.name+(per&&nDocs>1?` (${nDocs} docs × ${fmt(f.amt)})`:""),sc=SEC[String(f.sec||"C").toUpperCase()]||SEC.C;
+  const per=perDoc(f),cnt=per?perDocCount(docs,f.payer,refi):0,amt=per?f.amt*cnt:f.amt,sc=SEC[String(f.sec||"C").toUpperCase()]||SEC.C,
+   nm=per?`E-recording fee (Simplifile) – ${cnt} doc${cnt===1?"":"s"} × ${fmt(f.amt)}`:(NOT_TITLE.test(f.name)?"":"Title – ")+f.name;
   if(flt&&FL_SEARCH.test(f.name)&&!eq(f.payer,"Seller")){const capped=FL_CAPPED.test(f.name),sAmt=flt==="seller"?amt:flt==="mdb"?(capped?Math.min(amt,FL_SEARCH_CAP):amt):0;
    add(sc,nm+(flt==="seller"?" (seller chose title)":flt==="cha"?" (Charlotte custom: buyer pays)":flt==="mdb"?(capped?` (Miami-Dade/Broward custom: seller pays up to ${fmt(FL_SEARCH_CAP)})`:" (Miami-Dade/Broward custom: seller pays)"):""),amt-sAmt,sAmt);continue}
   add(sc,nm,...split(f.payer,amt))}
@@ -449,8 +461,8 @@ function calc(R,i){const L=[],W=[],refi=i.type==="refi";
   const lienRows=rows.filter(r=>LIEN_CERT.test(r["Fee Name"])),recRows=rows.filter(r=>!LIEN_CERT.test(r["Fee Name"]));
   let amt=0,payer=(recRows[0]||rows[0])["Paid By"];for(const r of recRows){const inc=num(r["Pages Included"]);amt+=(num(r["Flat Fee ($)"])||0)+(inc!=null?Math.max(0,pg-inc)*(num(r["Per Add'l Page ($)"])||0):0)}
   // Maryland (RP 3-601(a)(2)(iv)): an instrument of 10+ pages that does not solely involve a principal residence records for $115 (instead of $60); occ is the "principal residence" answer
-  let big=false;if(i.state==="MD"&&i.occ===false&&MD_BIG_INSTR[d]&&pg>=10){const base=rows.filter(r=>/^Recording fee/i.test(r["Fee Name"])).reduce((a,r)=>a+(num(r["Flat Fee ($)"])||0),0);if(base>0){amt+=MD_BIG_INSTR[d]-base;big=true}}
-  if(recRows.length)add(SEC.E,`Recording fees – ${d}${n>1?" ×"+n:""}${big?" (10+ pages, not a principal residence)":""}`,...split(payer,amt*n));
+  let big=false;if(i.state==="MD"&&i.occ===false&&MD_BIG_INSTR[d]){const base=rows.filter(r=>/^Recording fee/i.test(r["Fee Name"])).reduce((a,r)=>a+(num(r["Flat Fee ($)"])||0),0);if(base>0){amt+=MD_BIG_INSTR[d]-base;big=true}}
+  if(recRows.length)add(SEC.E,`Recording fees – ${d}${n>1?" ×"+n:""}${big?" (not a principal residence)":""}`,...split(payer,amt*n));
   for(const r of lienRows)add(SEC.E,`Lien certificate – ${lienPlace(i.county)}`,...split(r["Paid By"],(num(r["Flat Fee ($)"])||0)*n))}
  // transfer and recordation taxes
  const taxes=pick(R.Transfer_Taxes,i.state,i.county,i.type,r=>r["Tax Name"]+"|"+r.Transaction);let anyTax=false;const agg={};
@@ -554,7 +566,21 @@ function sellerNet(R,i){const price=+i.price||0,W=[],sum=a=>r2(a.reduce((t,x)=>t
  (i.other||[]).slice(0,5).forEach(x=>o((x.label||"").trim()||"Other seller cost",x.amt));
  const T={commissions:sum(commissions),gov:sum(gov),title:sum(title),pro:sum(pro),other:sum(other),payoffs:sum(payoffs)};
  const totalCosts=r2(T.commissions+T.gov+T.title+T.pro+T.other);
- return{price,commissions,gov,title,payoffs,prorations:pro,other,totals:T,totalCosts,payoffTotal:T.payoffs,net:r2(price-totalCosts-T.payoffs),warnings:W,proration:pr,calc:q,sellerColumn:q.seller}}
+ const wh=mdWithholding(i,{price,commissions,gov,title,other,pro,payoffs:T.payoffs});
+ return{price,commissions,gov,title,payoffs,prorations:pro,other,totals:T,totalCosts,payoffTotal:T.payoffs,withholding:wh,net:r2(price-totalCosts-T.payoffs-(wh?wh.amount:0)),warnings:W,proration:pr,calc:q,sellerColumn:q.seller}}
+// Maryland non-resident seller withholding (Tax-General 10-912; Form MW506NRS line 8; Melissa Gamble 11/02/26). Only for MD property, only when ticked.
+// Line 8: a total sales price - b selling expenses (commission and any other expenses due from the seller in connection with the sale) = c net sales
+// price - d mortgages / other liens on the property = e total payment; x f ownership % = g seller's share; x h rate = i withholding.
+// A Certificate of Partial / Full Exemption (MW506AE / MW506E) replaces lines a-h with its amount. Adjustments in the seller's favor (credits to the
+// seller, e.g. a tax proration the buyer pays back) are not selling expenses, so only positive costs are deducted.
+// Rates (Comptroller Tax Alert, sales after 6/30/2025): individual / estate / trust 8.75% (the 2024 form Melissa sent still says 8.0%), entity 8.25%.
+const MD_NRW_RATE={individual:8.75,entity:8.25};
+function mdWithholding(i,x){if(i.state!=="MD"||!i.nonRes)return null;const pos=a=>a.reduce((t,r)=>t+Math.max(0,+r.amt||0),0);
+ const expenses=r2(pos(x.commissions)+pos(x.gov)+pos(x.title)+pos(x.other)+pos(x.pro)),netSales=r2(x.price-expenses),total=r2(Math.max(0,netSales-x.payoffs));
+ const own=i.nonResOwn==null||i.nonResOwn===""?100:Math.min(100,Math.max(0,+i.nonResOwn)),share=r2(total*own/100),kind=i.nonResType==="entity"?"entity":"individual",rate=MD_NRW_RATE[kind];
+ const cert=i.nonResCert!=null&&i.nonResCert!==""&&isFinite(+i.nonResCert)?Math.max(0,r2(+i.nonResCert)):null,amount=cert!=null?cert:r2(share*rate/100);
+ return{kind,rate,price:r2(x.price),expenses,netSales,payoffs:r2(x.payoffs),total,own,share,cert,amount,
+  item:cert!=null?"Maryland non-resident withholding (exemption certificate amount)":`Maryland non-resident withholding (${kind==="entity"?"entity":"individual / estate / trust"} ${rate}% of ${own<100?own+"% of ":""}${fmt(total)} total payment)`}}
 
 // ---------- county list + ZIP lookup (data: zip-county.js, Census 2020) ----------
 const _C=typeof CLA_COUNTIES!=="undefined"?CLA_COUNTIES:{},_Z=typeof CLA_ZIPS!=="undefined"?CLA_ZIPS:{};
@@ -570,7 +596,7 @@ const SNAP=typeof CLA_FEES_SNAPSHOT!=="undefined"?CLA_FEES_SNAPSHOT:{};
 async function fetchSheet(fetchFn){const raw={};await Promise.all(TABS.map(async t=>{const r=await fetchFn(sheetCsvUrl(t),{cache:"no-store"});
  if(!r.ok)throw Error(`${t}: HTTP ${r.status}`);const rows=parseCSV(await r.text());if(!validTab(rows)){if(REQUIRED.includes(t))throw Error(`${t}: unexpected content (is the sheet shared "anyone with the link"?)`);return}raw[t]=rows}));return raw}
 async function loadFees(fetchFn){try{const raw=await fetchSheet(fetchFn);return{raw,source:"sheet",at:new Date()}}catch(e){return{raw:SNAP,source:"snapshot",error:String(e.message||e)}}}
-if(typeof module!=="undefined")module.exports={lenderOnly,perDoc,parseCSV,normalize,calc,premiums,taxAmount,DOC_DEFAULTS,allCounties,usesDefaults,zipLookup,loadFees,fetchSheet,claFees,SNAP,SHEET_ID,sheetCsvUrl,TABS,sellerNet,prorateTaxes,defaultPaidThrough,sellerFeeRows,sellerFeeInputs,commission,downAmt,loanFromDown,ownerPayDefault,isSettlementFee,repFeeOverride,applyRepFees,halves};
+if(typeof module!=="undefined")module.exports={lenderOnly,perDoc,parseCSV,normalize,calc,premiums,taxAmount,DOC_DEFAULTS,allCounties,usesDefaults,zipLookup,loadFees,fetchSheet,claFees,SNAP,SHEET_ID,sheetCsvUrl,TABS,sellerNet,mdWithholding,MD_NRW_RATE,perDocCount,prorateTaxes,defaultPaidThrough,sellerFeeRows,sellerFeeInputs,commission,downAmt,loanFromDown,ownerPayDefault,isSettlementFee,repFeeOverride,applyRepFees,halves};
 
 // ---------- UI ----------
 if(typeof document!=="undefined"){
@@ -624,7 +650,7 @@ function downHints(i){const flat=$("downm").value==="flat";$("downw").className=
 // keep the loan amount in sync: down payment typed (or price changed with one entered) -> loan = price - down; loan typed with a down payment entered -> the down payment follows
 function syncLoan(){if(type!=="purchase"||$("downv").value.trim()==="")return;const l=loanFromDown(+$("price").value||0,{mode:$("downm").value,val:+$("downv").value||0});if(l!=null)$("loan").value=String(l)}
 function syncDown(){if(type!=="purchase"||$("downv").value.trim()==="")return;const p=+$("price").value||0,d=Math.max(0,p-(+$("loan").value||0));$("downv").value=String($("downm").value==="flat"?r2(d):p>0?+(d/p*100).toFixed(3):0)}
-function run(){ownPayOpts();const i=inputs();$("assessWrap").hidden=!(i.state==="VA"&&type!=="refi");$("fthbWrap").hidden=type==="refi"||NO_OO.test(i.state);$("occWrap").hidden=NO_OO.test(i.state);/* nor the owner-occupied box (FL: Caroline 11/02; VA: John 11/02, neither changes VA transfer / recordation taxes): it only matters for MD / DC rules *//* Florida has no first-time buyer transfer-tax program: the box is hidden there */$("occNote").textContent=i.state==="MD"&&!i.occ?"Maryland: if this is not a principal residence, a deed or deed of trust of 10 or more pages records for $115 instead of $60 (RP 3-601).":"";$("cntyNote").textContent=!i.county?"Enter a ZIP or choose a county to include county taxes.":usesDefaults(R,i.state,i.county)?"Using state default rates for this county":"";const res=calc(R,i);last={i,res};renderTaxPay($("taxPay"),res.taxes,taxQ,run,type==="refi"?"Borrower":"Buyer");
+function run(){ownPayOpts();const i=inputs();$("assessWrap").hidden=!(i.state==="VA"&&type!=="refi");$("fthbWrap").hidden=type==="refi"||NO_OO.test(i.state);$("occWrap").hidden=NO_OO.test(i.state);/* nor the owner-occupied box (FL: Caroline 11/02; VA: John 11/02, neither changes VA transfer / recordation taxes): it only matters for MD / DC rules *//* Florida has no first-time buyer transfer-tax program: the box is hidden there */$("occNote").textContent=i.state==="MD"&&!i.occ?"Maryland: not a principal residence, so the deed of trust records for $115 instead of $60 (RP 3-601). The deed stays $60.":"";$("cntyNote").textContent=!i.county?"Enter a ZIP or choose a county to include county taxes.":usesDefaults(R,i.state,i.county)?"Using state default rates for this county":"";const res=calc(R,i);last={i,res};renderTaxPay($("taxPay"),res.taxes,taxQ,run,type==="refi"?"Borrower":"Buyer");
  downHints(i);
  $("summary").innerHTML=`${TN[type]} · ${i.county||"(no county)"}, ${i.state} · ${i.uw}${esc(assessedNote(i)+downNote(i))} ${src==="snapshot"?'<span class="flag">BUILT-IN SNAPSHOT</span>':""}`;
  $("tB").textContent=fmt(res.buyer);$("tS").textContent=fmt(res.seller);$("tA").textContent=fmt(res.total);const bl=type==="refi"?"Borrower":"Buyer",groups=[];let g=null;
@@ -675,7 +701,7 @@ function buildSFees(){$("s_fees").innerHTML=sellerFeeRows(R,$("s_state").value).
 function syncOwn(){const st=$("s_state").value,co=$("s_county").value,c=ownerPayDefault(R,st,co);if(!ownTouched)$("s_own").checked=c==="Seller";
  $("s_ownNote").textContent=co?`(local custom in ${co}: ${st==="FL"&&FL_MDB.test(co)?"Miami-Dade/Broward custom, buyer pays the owner's policy and the seller pays the title search":st==="FL"&&FL_CHA.test(co)?"Charlotte custom, seller pays the owner's policy and the buyer pays the title search":c.toLowerCase()+" pays"}${ownTouched&&$("s_own").checked!==(c==="Seller")?" — overridden":""})`:""}
 function sinputs(){const n=id=>+$(id).value||0;return{state:$("s_state").value,county:$("s_county").value,uw:$("uw").value,price:n("s_price"),assessed:$("s_state").value==="VA"?n("s_assessed"):0,closing:$("s_close").value,
- buyerComm:{mode:$("s_bbm").value,val:n("s_bbv")},sellerComm:{mode:$("s_slm").value,val:n("s_slv")},brokerAdminFee:n("s_adm"),payoff1:n("s_po1"),payoff2:n("s_po2"),annualTax:n("s_tax"),paidThrough:$("s_ptd").value,
+ buyerComm:{mode:$("s_bbm").value,val:n("s_bbv")},sellerComm:{mode:$("s_slm").value,val:n("s_slv")},brokerAdminFee:n("s_adm"),nonRes:$("s_state").value==="MD"&&$("s_nr").checked,nonResType:$("s_nrt").value,nonResOwn:$("s_nrown").value.trim()===""?100:+$("s_nrown").value,nonResCert:$("s_nrc").value.trim()===""?null:+$("s_nrc").value,payoff1:n("s_po1"),payoff2:n("s_po2"),annualTax:n("s_tax"),paidThrough:$("s_ptd").value,
  hoaDues:n("s_hoa"),hoaTransfer:n("s_hoat"),special:n("s_spec"),concession:{mode:$("s_cm").value,val:n("s_cv")},warranty:n("s_war"),termination:n("s_term"),
  other:[...SC.querySelectorAll(".orow")].map(r=>({label:r.querySelector("input[type=text]").value,amt:+r.querySelector("input[type=number]").value||0})),
  ownerPays:$("s_own").checked,fthb:$("s_fthb").checked&&!NO_OO.test($("s_state").value),bpst:$("s_bpst").checked,taxPayers:taxChoices(taxS,$("s_state").value+"|"+$("s_county").value),
@@ -683,7 +709,7 @@ function sinputs(){const n=id=>+$(id).value||0;return{state:$("s_state").value,c
 const sgn=x=>x<0?`<span class="cr">−${fmt(-x)}</span>`:fmt(x);
 function sCard(n,title,rows,total,tl){return`<section class="card sec"><div class="sh"><span class="l">${n}</span><h3>${title}</h3></div><table class="ledger one"><thead><tr><th>Item</th><th class="num">Amount</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.item)}</td><td class="num">${sgn(r.amt)}</td></tr>`).join("")||'<tr><td class="z">None</td><td class="num z">—</td></tr>'}<tr class="tot"><td>${tl}</td><td class="num">${sgn(total)}</td></tr></tbody></table>${hasRec(rows)?`<p class="secnote">${REC_NOTE}</p>`:""}</section>`}
 const fullAddr=i=>[[$("s_addr").value.trim(),$("s_city").value.trim()].filter(Boolean).join(", "),[i.state,$("s_zip").value.trim()].filter(Boolean).join(" ")].filter(Boolean).join(", ");
-function runS(){syncOwn();$("s_assessWrap").hidden=$("s_state").value!=="VA";$("s_fthbWrap").hidden=NO_OO.test($("s_state").value);const i=sinputs(),r=sellerNet(R,i),T=r.totals,cd=pDate(i.closing);sLast={i,r};renderTaxPay($("s_taxPay"),r.calc.taxes,taxS,runS,"Buyer");
+function runS(){syncOwn();$("s_assessWrap").hidden=$("s_state").value!=="VA";$("s_nrWrap").hidden=$("s_state").value!=="MD";$("s_nrOpts").hidden=$("s_nrWrap").hidden||!$("s_nr").checked;$("s_fthbWrap").hidden=NO_OO.test($("s_state").value);const i=sinputs(),r=sellerNet(R,i),T=r.totals,cd=pDate(i.closing);sLast={i,r};renderTaxPay($("s_taxPay"),r.calc.taxes,taxS,runS,"Buyer");
  $("s_cntyNote").textContent=!i.county?"Enter a ZIP or choose a county to include county taxes.":usesDefaults(R,i.state,i.county)?"Using state default rates for this county":"";
  for(const[k,c,h]of[["bb",i.buyerComm,"s_bbh"],["sl",i.sellerComm,"s_slh"]]){$("s_"+k+"w").className=c.mode==="flat"?"money":"";$(h).textContent=`= ${fmt(commission(i.price,c))}${c.mode==="flat"&&i.price>0?` (${(commission(i.price,c)/i.price*100).toFixed(2)}% of price)`:""}`}
  $("s_cw").className=i.concession.mode==="flat"?"money":"";$("s_ch").textContent=i.concession.val?`= ${fmt(commission(i.price,i.concession))}`:"";
@@ -695,12 +721,15 @@ function runS(){syncOwn();$("s_assessWrap").hidden=$("s_state").value!=="VA";$("
  $("s_phAddr").textContent=(addr||"(no address)")+(i.county?` · ${i.county}, ${i.state}`:"");$("s_phLine").textContent=`Selling price ${fmt(r.price)} · Closing date ${cd?longDate(cd):"—"}`;
  let n=0;const cards=[[ "Commissions",r.commissions,T.commissions,"Total commissions",true],["Government tax &amp; recording fees",r.gov,T.gov,"Total government tax &amp; fees",true],["Title &amp; settlement fees",r.title,T.title,"Total title &amp; settlement",true],
   ["Mortgage payoffs",r.payoffs,T.payoffs,"Total payoffs",r.payoffs.length>0],["Prorations &amp; credits",r.prorations,T.pro,"Total prorations &amp; credits",r.prorations.length>0],["Other costs",r.other,T.other,"Total other costs",r.other.length>0]];
+ if(r.withholding)cards.push(["Maryland non-resident withholding",[{item:r.withholding.item,amt:r.withholding.amount}],r.withholding.amount,"Total withheld (paid to the Clerk with Form MW506NRS)",true]);
  $("sLedger").innerHTML=cards.filter(c=>c[4]).map(c=>sCard(++n,c[0],c[1],c[2],c[3])).join("");
- $("sGrand").innerHTML=`<tr><td>Selling price</td><td class="num">${fmt(r.price)}</td></tr><tr><td>Less: total seller costs</td><td class="num">${r.totalCosts<0?sgn(-r.totalCosts).replace("−",""):"−"+fmt(r.totalCosts)}</td></tr>${r.payoffTotal?`<tr><td>Less: mortgage payoffs</td><td class="num">−${fmt(r.payoffTotal)}</td></tr>`:""}<tr class="tot"><td>Net seller proceeds</td><td class="num">${fmt(r.net)}</td></tr>`;
+ {const w=r.withholding;$("s_nrh").textContent=!w?"":w.cert!=null?`Using the exemption certificate amount: ${fmt(w.cert)} withheld.`:`Form MW506NRS line 8: price ${fmt(w.price)} − selling expenses ${fmt(w.expenses)} = ${fmt(w.netSales)}; − mortgage payoffs ${fmt(w.payoffs)} = total payment ${fmt(w.total)}${w.own<100?`; × ${w.own}% ownership = ${fmt(w.share)}`:""}; × ${w.rate}% = ${fmt(w.amount)} withheld.`}
+ $("sGrand").innerHTML=`<tr><td>Selling price</td><td class="num">${fmt(r.price)}</td></tr><tr><td>Less: total seller costs</td><td class="num">${r.totalCosts<0?sgn(-r.totalCosts).replace("−",""):"−"+fmt(r.totalCosts)}</td></tr>${r.payoffTotal?`<tr><td>Less: mortgage payoffs</td><td class="num">−${fmt(r.payoffTotal)}</td></tr>`:""}${r.withholding?`<tr><td>Less: Maryland non-resident withholding</td><td class="num">−${fmt(r.withholding.amount)}</td></tr>`:""}<tr class="tot"><td>Net seller proceeds</td><td class="num">${fmt(r.net)}</td></tr>`;
  $("sWarns").innerHTML=r.warnings.length?`<div class="warn"><div><b>Heads up</b><ul>${r.warnings.map(w=>`<li>${esc(w)}</li>`).join("")}</ul></div></div>`:""}
 function sQuote(){const{i,r}=sLast,cd=pDate(i.closing);let t=`C.L.A. Title & Escrow — Seller's Net Sheet (estimate)\n${fullAddr(i)||"(no address)"}\n${i.county?i.county+", ":""}${i.state}${cd?" · Closing "+longDate(cd):""}\nSelling price: ${fmt(r.price)}${assessedOn(Object.assign({type:"cash"},i))?`\nAssessed value: ${fmt(i.assessed)} (Virginia deed taxes use the higher value)`:""}\n`;
  for(const[name,rows,tot]of[["Commissions",r.commissions,r.totals.commissions],["Government tax & recording fees",r.gov,r.totals.gov],["Title & settlement fees",r.title,r.totals.title],["Prorations & credits",r.prorations,r.totals.pro],["Other costs",r.other,r.totals.other]]){if(!rows.length)continue;t+=`\n${name.toUpperCase()}\n`;for(const x of rows)t+=`  ${x.item}: ${x.amt<0?"-"+fmt(-x.amt):fmt(x.amt)}\n`;t+=`  Subtotal: ${tot<0?"-"+fmt(-tot):fmt(tot)}\n`;if(hasRec(rows))t+=`  (${REC_NOTE})\n`}
  t+=`\nTotal seller costs: ${fmt(r.totalCosts)}\n`;if(r.payoffs.length){t+=`\nMORTGAGE PAYOFFS\n`;for(const x of r.payoffs)t+=`  ${x.item}: ${fmt(x.amt)}\n`;t+=`  Total payoffs: ${fmt(r.payoffTotal)}\n`}
+ if(r.withholding)t+=`\nMARYLAND NON-RESIDENT WITHHOLDING\n  ${r.withholding.item}: ${fmt(r.withholding.amount)}\n`;
  return t+`\nNET SELLER PROCEEDS: ${fmt(r.net)}\n\nEstimate only. Not a settlement statement. Actual proceeds depend on final payoff, prorations and charges at closing.`}
 $("sCopy").onclick=()=>{const t=sQuote();(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>$("sCopied").textContent="Copied!",()=>{prompt("Copy summary:",t)})};
 $("s_addo").onclick=()=>{if(SC.children.length<5)sOtherRow();sOtherBtn();runS()};
@@ -743,8 +772,8 @@ window.CLA_QUOTE_API={mode:()=>mode,
   if(mode==="seller"){if(!sLast)runS();const{i,r}=sLast,T=r.totals,addr=fullAddr(i);
    const sec=(n,rows)=>(rows||[]).map(x=>({sec:n,item:x.item,amt:x.amt}));
    return{quoteType:"seller_net",state:i.state,county:i.county,propertyAddress:addr||"",price:i.price||null,label:"Seller net, "+(addr||"no address"),feeVersion:src+" "+new Date().toISOString().slice(0,10),inputs:cp(i),
-    results:{headline:{label:"Net seller proceeds",value:r.net},totals:{price:r.price,costs:r.totalCosts,payoffs:r.payoffTotal,net:r.net},
-     lines:[].concat(sec("Commissions",r.commissions),sec("Government tax & recording fees",r.gov),sec("Title & settlement fees",r.title),sec("Mortgage payoffs",r.payoffs),sec("Prorations & credits",r.prorations),sec("Other costs",r.other)),
+    results:{headline:{label:"Net seller proceeds",value:r.net},totals:Object.assign({price:r.price,costs:r.totalCosts,payoffs:r.payoffTotal,net:r.net},r.withholding?{withholding:r.withholding.amount}:{}),
+     lines:[].concat(sec("Commissions",r.commissions),sec("Government tax & recording fees",r.gov),sec("Title & settlement fees",r.title),sec("Mortgage payoffs",r.payoffs),sec("Prorations & credits",r.prorations),sec("Other costs",r.other),r.withholding?[{sec:"Maryland non-resident withholding",item:r.withholding.item,amt:r.withholding.amount}]:[]),
      warnings:cp(r.warnings||[]),text:sQuote()}}}
   if(!last)run();const{i,res}=last,addr=[$("addr").value.trim(),$("city").value.trim(),[i.state,$("zip").value.trim()].filter(Boolean).join(" ")].filter(Boolean).join(", ");
   return{quoteType:"buyer",state:i.state,county:i.county,propertyAddress:addr,price:i.price||null,label:(type==="refi"?"Refinance":"Buyer quote")+", "+(addr||"no address"),feeVersion:src+" "+new Date().toISOString().slice(0,10),inputs:cp(i),
@@ -756,7 +785,7 @@ load(SNAP,"Built-in snapshot","snapshot");$("status").textContent="Loading fees 
 // Guided tour: "Take the tour" (header) and a small first-visit chip. Works for everyone, signed in or not. The engine is portal/js/tour.js + portal/tour.css,
 // downloaded only when someone starts the tour. The chip shows once; dismissing it (x), starting the tour, or finishing it hides it for good (localStorage).
 (function(){
- var V="20261102j",KEY="cla_calc_tour_chip",link=document.getElementById("claCalcTourLink"),chip=document.getElementById("claTourChip"),loading=null;
+ var V="20261102k",KEY="cla_calc_tour_chip",link=document.getElementById("claCalcTourLink"),chip=document.getElementById("claTourChip"),loading=null;
  function seen(){try{return window.localStorage.getItem(KEY)==="1"}catch(e){return true}} // no storage: never show the chip (it could not remember "no thanks")
  function dismiss(){try{window.localStorage.setItem(KEY,"1")}catch(e){}if(chip)chip.hidden=true}
  function add(tag,attrs){return new Promise(function(res){var e=document.createElement(tag);for(var k in attrs)e[k]=attrs[k];e.onload=e.onerror=function(){res()};document.head.appendChild(e)})}
@@ -770,4 +799,4 @@ load(SNAP,"Built-in snapshot","snapshot");$("status").textContent="Loading fees 
   document.getElementById("claTourChipX").onclick=function(){dismiss();if(link)link.focus()}}
 })();
 </script>
-<script src="portal/js/portal-hook.js?v=20261102j" defer></script></body></html>
+<script src="portal/js/portal-hook.js?v=20261102k" defer></script></body></html>

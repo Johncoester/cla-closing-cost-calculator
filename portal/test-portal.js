@@ -1237,7 +1237,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
       st.value = "MD"; fire(st, "change"); await tick2(80);
       assert.ok(occ.checked && note.textContent === "" && !/not a principal residence/.test(vis()), "MD default: principal residence, no hint, no $115 label");
       occ.checked = false; fire(occ, "change"); await tick2(80);
-      assert.ok(/\$115 instead of \$60/.test(note.textContent) && /Recording fees – Deed of Trust \(10\+ pages, not a principal residence\)/.test(vis()), "MD unchecked: hint + labelled $115 deed of trust line");
+      assert.ok(/\$115 instead of \$60/.test(note.textContent) && /Recording fees – Deed of Trust \(not a principal residence\)/.test(vis()), "MD unchecked: hint + labelled $115 deed of trust line");
       st.value = "VA"; fire(st, "change"); await tick2(80);
       assert.ok(note.textContent === "" && !/not a principal residence\)/.test(vis()), "VA: Maryland rule and hint not shown");
       ok("calculator: MD principal-residence checkbox -> $115 recording for 10+ pages (hint + labelled line); not shown for VA"); }
@@ -1303,7 +1303,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
 
     // cache-bust: every ?v= in index.html and TOUR_V agree
     const vs = [...idx.matchAll(/\?v=(\d{8}[a-z])/g)].map((m) => m[1]), pu = fs.readFileSync(path.join(__dirname, "js", "portal-ui.js"), "utf8");
-    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261102j" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261102j");
+    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261102k" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261102k");
     // the new elements are inert in print and add no external requests
     assert.ok(/@media print\{\s*@page\{margin:14mm\}\s*\.claChip\{display:none!important\}/.test(idx) && !/https?:\/\//.test(tj2)); ok("calculator tour: the chip is not printed; tour.js has no external libraries or CDN");
   }

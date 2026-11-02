@@ -271,7 +271,7 @@ The same engine also runs on the public calculator, for **anyone** (guest or sig
 - **Tabs:** the Seller Net Sheet step opens that tab and puts the person's own tab back afterwards (also if they skip or press Esc). The tour never clicks Purchase / Cash / Refinance, because switching those rebuilds the documents and endorsements and would discard edits; it only points at them. No fee or number is changed.
 - **The chip:** shown only to someone who has not dismissed it. The x, starting the tour from the chip or from the header link all store `cla_calc_tour_chip = "1"` in `localStorage`, so it never comes back. If browser storage is blocked the chip is not shown at all. It does not print.
 - **Phones:** the box is a bottom sheet (also for the centred welcome note); on desktop a tall target (the breakdown) gets the box beside it instead of on top of it.
-- **Cache-bust:** `?v=20261102j` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
+- **Cache-bust:** `?v=20261102k` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
 - **Tests:** the "calculator tour" block in `portal/test-portal.js` (link, step counts, targets, skipping, tab restore, chip persistence, phone sheet, versions). Screenshots: `portal/tools/screenshots_calculator_tour.py`.
 
 ## Who pays each transfer / recordation tax (live since 2026-10-28; calculator only, no database change)
@@ -342,7 +342,7 @@ Two pages, both **generated** by `node portal/tools/build-help.js` (do not edit 
 - **Header Help link** (`CLA.helpHref` in `portal-ui.js`; the calculator header link in `portal-hook.js` uses the same function): clients go to `help.html`, reps, admins and super admins to `staff-help.html`. Signed-in users only.
 - **Guards:** both pages use `CLA.boot(null)` (signed-out visitors go to `login.html?next=...`) and stay hidden until then. `staff-help.html` sends a client to `help.html`. **Be honest about what that is:** static pages can be fetched by anyone who knows the URL; the guard decides what a signed-in person sees on screen, it is not access control. Neither page has a key, a secret or customer data (the pictures use made-up sample people).
 - **Pictures:** `python3 portal/tools/screenshots_help.py` (serves this repo on a local port with the mock config forced, hides the demo banner), then `python3 portal/tools/optimize_help_images.py`, which sorts them into `help/client/` (used by the client guide) and `help/staff/` (everything else the staff manual uses) and removes anything unused.
-- Cache-bust letter: `20261102j` (see above).
+- Cache-bust letter: `20261102k` (see above).
 
 ## Florida: owner-occupied / first-time homebuyer boxes removed (branch `fl-no-oo-1102`, 11/02/26)
 
@@ -459,3 +459,15 @@ Janette asked for these by email and video. All are optional and blank by defaul
 - The four Refi rows "Processing Fee to CLA Title & Escrow" $450 (MD, VA, DC, FL) are Active = N on the live CLA_Fees sheet (rows 75–78) and in `fee-snapshot.js`. A refinance now shows only the $450 Settlement Fee. Purchases are unaffected.
 - `test.js`: LodeStar Q3 no longer expects the processing line. The per-state refi check now asserts settlement $450 only.
 - Cache-bust `20261102j`.
+
+## Melissa Gamble round 2 (branch `melissa-r2-1102`, 11/02/26)
+
+- **MD recording, not a principal residence:** the deed of trust records for $115 whenever the Owner-occupied box is off, at any page count, labelled "Recording fees – Deed of Trust (not a principal residence)". The deed stays $60. Before: both the deed and the deed of trust went to $115 only when not a principal residence AND 10+ pages (with the default 3-page deed only the 30-page deed of trust moved). `MD_BIG_INSTR = {"Deed of Trust":115}`.
+- **Simplifile on purchases:** $4.75 per recorded document ("E-recording fee (Simplifile) – N docs × $4.75"), MD/VA/DC/FL.
+  - `perDocCount(docs, payer, refi)`: on a purchase the Buyer row counts every document except releases (deed, deed of trust, POA, assignment of leases and rents) and the Seller row counts releases; a refinance counts every document for the borrower (unchanged). Zero documents = no line.
+  - Cash purchase: deed only (1 doc). Seller Net Sheet: one per payoff release, listed in the government and recording fees card.
+  - Sheet rows (CLA_Fees, appended): `Y | MD/VA/DC/FL | E-recording Fee to Simplifile | Purchase | 4.75 | Buyer | C | Y` and the same with `Seller` (8 rows), mirrored in `fee-snapshot.js`.
+- **Carroll lien certificate** $40 → $45 (Recording_Fees, mirrored in `fee-snapshot.js`).
+- **MD non-resident seller withholding** (Seller Net Sheet, MD only): `#s_nr` checkbox, `#s_nrt` type, `#s_nrown` ownership %, `#s_nrc` exemption certificate amount. `mdWithholding()` follows MW506NRS line 8: (price − selling expenses − mortgages/liens paid) × ownership % × rate; a certificate amount (MW506E) replaces it. `sellerNet().withholding` and `net` reduced by it. Saved as `inputs.nonRes / nonResType / nonResOwn / nonResCert`, results sec "Maryland non-resident withholding", `totals.withholding`.
+  - Rates: individual / estate / trust **8.75%** (Comptroller Tax Alert, sales after 6/30/2025), entity **8.25%**. Melissa's PDF is the 2024 MW506NRS, which still prints 8.0% for individuals.
+- Cache-bust `20261102k`.

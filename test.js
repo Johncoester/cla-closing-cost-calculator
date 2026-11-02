@@ -60,7 +60,7 @@ ok(!X.calc(R,inp({state:"VA",county:"Fairfax"})).warnings.some(w=>/premium rates
 // ---------- Melissa Gamble (CLA) 2026-10-26: MD lien certificates, VA paper-filing and open-space fees, MD principal residence ----------
 {const rf=(o,re)=>line(X.calc(R,inp(Object.assign({fees:[]},o))),re);
  // MD lien/tax certificate (county treasurer; paid at recording, shown in the deed's recording line): only these counties charge; Anne Arundel is not ordered by CLA
- for(const[co,add]of[["Frederick",25],["Charles",25],["Howard",50],["Harford",50],["Baltimore",55],["Baltimore City",55],["Carroll",40],["Anne Arundel",0],["Montgomery",0],["Prince George's",0],["Calvert",0],["Washington",0]])
+ for(const[co,add]of[["Frederick",25],["Charles",25],["Howard",50],["Harford",50],["Baltimore",55],["Baltimore City",55],["Carroll",45],["Anne Arundel",0],["Montgomery",0],["Prince George's",0],["Calvert",0],["Washington",0]])
   ok(near(rf({county:co},/Recording fees – Deed$/),60)&&near(rf({county:co},new RegExp("^Lien certificate – "+co+(/City$/.test(co)?"":" County")+"$")),add),`MD ${co}: deed recording $60, lien certificate $${add} on its own line (Melissa 11/02)`);
  // VA $5 clerk paper-filing fee only in the paper-filing localities; $3 open-space fee in the localities she listed (and, for now, everywhere else in the sheet)
  const vaD=co=>rf({state:"VA",county:co},/Recording fees – Deed$/),vaT=co=>rf({state:"VA",county:co},/Recording fees – Deed of Trust/);
@@ -72,11 +72,12 @@ ok(!X.calc(R,inp({state:"VA",county:"Fairfax"})).warnings.some(w=>/premium rates
  const D=(dp,tp)=>({Deed:[1,dp],"Deed of Trust":[1,tp],Release:[0,3],"Power of Attorney":[0,3]});
  const md=(o)=>X.calc(R,inp(Object.assign({fees:[]},o)));
  let r=md({docs:D(3,30)});ok(near(line(r,/Recording fees – Deed$/),60)&&near(line(r,/Recording fees – Deed of Trust/),60),"MD principal residence (default): deed $60, deed of trust (30 pp) $60");
- r=md({occ:false,docs:D(3,30)});ok(near(line(r,/Recording fees – Deed$/),60)&&near(line(r,/Recording fees – Deed of Trust/),115)&&r.lines.some(l=>/10\+ pages, not a principal residence/.test(l.item)),"MD not a principal residence: 3-page deed stays $60; 30-page deed of trust $115, labelled");
- r=md({occ:false,docs:D(9,9)});ok(near(line(r,/Recording fees – Deed$/),60)&&near(line(r,/Recording fees – Deed of Trust/),60),"MD not a principal residence, 9 pages: $60 (the $115 starts at 10 pages)");
- r=md({occ:false,docs:D(10,10)});ok(near(line(r,/Recording fees – Deed( \(|$)/),115)&&near(line(r,/Recording fees – Deed of Trust/),115),"MD not a principal residence, 10 pages: deed $115 and deed of trust $115");
+ r=md({occ:false,docs:D(3,30)});ok(near(line(r,/Recording fees – Deed$/),60)&&near(line(r,/Recording fees – Deed of Trust/),115)&&r.lines.some(l=>l.item==="Recording fees – Deed of Trust (not a principal residence)"),"MD not a principal residence: deed stays $60; deed of trust $115, labelled (Melissa 11/02)");
+ r=md({occ:false,docs:D(9,9)});ok(near(line(r,/Recording fees – Deed$/),60)&&near(line(r,/Recording fees – Deed of Trust/),115),"MD not a principal residence, 9 pages: deed $60, deed of trust still $115 (Melissa 11/02: any page count)");
+ r=md({occ:false,docs:D(10,10)});ok(near(line(r,/Recording fees – Deed$/),60)&&near(line(r,/Recording fees – Deed of Trust/),115),"MD not a principal residence, 10-page deed: deed stays $60 (Melissa 11/02), deed of trust $115");
+ r=md({occ:true,docs:D(12,30)});ok(near(line(r,/Recording fees – Deed$/),60)&&near(line(r,/Recording fees – Deed of Trust$/),60),"MD principal residence (default): deed $60, deed of trust $60 at any page count");
  r=md({occ:true,docs:D(12,40)});ok(near(line(r,/Recording fees – Deed$/),60)&&near(line(r,/Recording fees – Deed of Trust/),60),"MD principal residence stays $60 at any length");
- r=md({county:"Frederick",occ:false,docs:D(12,30)});ok(near(line(r,/Recording fees – Deed( \(|$)/),115)&&near(line(r,/^Lien certificate – Frederick County$/),25),"MD Frederick not a principal residence, 12-page deed: $115, plus the $25 lien certificate on its own line");
+ r=md({county:"Frederick",occ:false,docs:D(12,30)});ok(near(line(r,/Recording fees – Deed$/),60)&&near(line(r,/Recording fees – Deed of Trust/),115)&&near(line(r,/^Lien certificate – Frederick County$/),25),"MD Frederick not a principal residence: deed $60, deed of trust $115, $25 lien certificate on its own line");
  r=md({type:"refi",occ:false,docs:X.DOC_DEFAULTS.refi});ok(near(line(r,/Recording fees – Deed of Trust/),115)&&near(line(r,/Recording fees – Release/),50),"MD refinance not a principal residence: deed of trust $115; release unchanged $50");
  r=md({type:"refi",docs:X.DOC_DEFAULTS.refi});ok(near(line(r,/Recording fees – Deed of Trust/),60),"MD refinance of a principal residence: deed of trust $60");
  r=md({occ:false,docs:D(12,30),state:"VA",county:"Fairfax"});ok(!r.lines.some(l=>/not a principal residence/.test(l.item)),"principal-residence rule is Maryland only (VA unchanged)");
@@ -170,8 +171,8 @@ ok(snMD.totalCosts===snMD.sellerColumn+snMD.totals.commissions&&snMD.net===snMD.
 // release recording on payoff: $50 each in MD (seller-paid row), one per mortgage
 const p1=SN({payoff1:300000}),p2=SN({payoff1:300000,payoff2:50000});
 ok(near(p1.gov.find(g=>/Release/.test(g.item)).amt,50)&&near(p2.gov.find(g=>/Release/.test(g.item)).amt,100),"SN MD release recording $50 per payoff ($100 with a 2nd mortgage)");
-ok(near(p1.net,469091-50-300000)&&near(p2.net,469091-100-350000)&&p2.payoffs.length===2&&near(p2.payoffTotal,350000),"SN net = price − costs − payoffs (payoffs not counted as costs)");
-ok(near(p1.totalCosts,30959),"SN total seller costs exclude the payoff itself (30,909 + $50 release)");
+ok(near(p1.net,469091-50-4.75-300000)&&near(p2.net,469091-100-9.5-350000)&&p2.payoffs.length===2&&near(p2.payoffTotal,350000),"SN net = price − costs − payoffs (payoffs not counted as costs)");
+ok(near(p1.totalCosts,30963.75),"SN total seller costs exclude the payoff itself (30,909 + $50 release + $4.75 Simplifile on the release)");
 // commissions: % vs flat
 const cf=SN({buyerComm:{mode:"flat",val:10000},sellerComm:{mode:"pct",val:3}}),cf2=SN({buyerComm:{mode:"flat",val:12500},sellerComm:{mode:"flat",val:12500}});
 ok(cf.totals.commissions===25000&&cf.commissions[0].amt===10000&&cf.commissions[1].amt===15000,"SN commissions: $10,000 flat + 3% of $500k = 25,000");
@@ -191,7 +192,7 @@ for(const[d,state,pt]of[["2026-07-15","MD","2026-06-30"],["2026-12-31","MD","202
  ok(X.defaultPaidThrough(state,new Date(d+"T00:00:00Z")).toISOString().slice(0,10)===pt,`default paid-through ${state} closing ${d} → ${pt}`);
 // the proration flows into the sheet: $4,800 annual taxes, MD Frederick, $300k payoff, closing Oct 23 2026
 const sp=SN({payoff1:300000,annualTax:4800});
-ok(sp.prorations.length===1&&near(sp.totals.pro,-4800*70/365)&&near(sp.net,469091-50-300000+4800*70/365,0.02),`SN taxes $4,800 MD: credit to seller ${sp.totals.pro} → net ${sp.net}`);
+ok(sp.prorations.length===1&&near(sp.totals.pro,-4800*70/365)&&near(sp.net,469091-50-4.75-300000+4800*70/365,0.02),`SN taxes $4,800 MD: credit to seller ${sp.totals.pro} → net ${sp.net}`);
 const sp2=SN({state:"DC",county:"District of Columbia",annualTax:5000});ok(near(sp2.totals.pro,301.37)&&sp2.prorations[0].amt>0,"SN DC taxes: debit to seller $301.37");
 // credits / other costs / HOA / warranty
 const oc=SN({concession:{mode:"pct",val:2},hoaDues:150,hoaTransfer:300,special:1000,warranty:500,termination:75,other:[{label:"Roof repair",amt:2500},{label:"",amt:100},{label:"x",amt:0}]});
@@ -499,7 +500,7 @@ ok(SN({fees:[]}).totals.title===0&&near(SN({fees:[{name:"Custom",payer:"Seller",
   // Janette Fiallo 11/02: down payment ($ or %), commission paid by buyer, broker admin fee (buyer quote); broker admin fee (seller net sheet)
   {const v=id=>w.getElementById(id),txt=id=>v(id).textContent,tot=()=>["tB","tS","tA"].map(txt).join("|");
    w.querySelector("[data-mode=quote]").click();w.querySelector("[data-t=purchase]").click();setv("state","FL");setv("county","Charlotte");setv("ownPay","");setv("price","400000");setv("loan","320000");
-   ok(v("downv").value===""&&v("bcv").value===""&&v("badm").value===""&&txt("tB")==="$6,212.50"&&txt("tS")==="$4,434.00","new fields default blank; Charlotte $400k unchanged (buyer $6,212.50 / seller $4,434.00)");
+   ok(v("downv").value===""&&v("bcv").value===""&&v("badm").value===""&&txt("tB")==="$6,222.00"&&txt("tS")==="$4,434.00","new fields default blank; Charlotte $400k unchanged (buyer $6,222.00 / seller $4,434.00)");
    const s0=d.window.CLA_QUOTE_API.snapshot();ok(s0.inputs.down===null&&s0.inputs.brokerAdminFee===0&&s0.inputs.buyerPaidComm.val===0&&!s0.results.lines.some(l=>/Commission paid by buyer|Broker admin/.test(l.item)),"blank fields: no lines, saved inputs carry empty values");
    ok(/Now: \$80,000\.00 \(20% of the price\)/.test(txt("downh")),"down payment hint shows the implied down payment from price and loan");
    setv("downm","pct");setv("downv","10");ok(v("loan").value==="360000"&&/= \$40,000\.00 · loan \$360,000\.00/.test(txt("downh")),"10% down on $400k sets the loan to $360,000");
@@ -512,14 +513,14 @@ ok(SN({fees:[]}).totals.title===0&&near(SN({fees:[{name:"Custom",payer:"Seller",
    setv("downm","pct");ok(v("downv").value==="20"&&v("loan").value==="400000","switching $ -> % shows 20%");
    setv("downv","120");ok(v("loan").value==="0","down payment is capped at the price (loan never below 0)");
    setv("downv","");setv("loan","320000");setv("price","400000");ok(v("loan").value==="320000"&&d.window.CLA_QUOTE_API.snapshot().inputs.down===null,"cleared down payment: loan typed directly, price changes leave it alone");
-   ok(txt("tB")==="$6,212.50"&&txt("tS")==="$4,434.00","Charlotte back to $6,212.50 / $4,434.00");
-   setv("bcm","pct");setv("bcv","1");ok(/= \$4,000\.00/.test(txt("bch"))&&/Commission paid by buyer \(1% of price\)/.test(txt("ledger"))&&txt("tB")==="$10,212.50"&&txt("tS")==="$4,434.00","1% commission paid by buyer: H. Other buyer line $4,000, buyer total +$4,000, seller unchanged");
-   setv("bcm","flat");setv("bcv","2500");ok(/= \$2,500\.00 \(0\.63% of price\)/.test(txt("bch"))&&txt("tB")==="$8,712.50","flat $2,500 commission paid by buyer");
-   setv("badm","495");ok(/Broker admin fee \(buyer's broker\)/.test(txt("ledger"))&&txt("tB")==="$9,207.50"&&txt("tS")==="$4,434.00","buyer broker admin fee $495 adds a buyer line");
+   ok(txt("tB")==="$6,222.00"&&txt("tS")==="$4,434.00","Charlotte back to $6,222.00 / $4,434.00");
+   setv("bcm","pct");setv("bcv","1");ok(/= \$4,000\.00/.test(txt("bch"))&&/Commission paid by buyer \(1% of price\)/.test(txt("ledger"))&&txt("tB")==="$10,222.00"&&txt("tS")==="$4,434.00","1% commission paid by buyer: H. Other buyer line $4,000, buyer total +$4,000, seller unchanged");
+   setv("bcm","flat");setv("bcv","2500");ok(/= \$2,500\.00 \(0\.63% of price\)/.test(txt("bch"))&&txt("tB")==="$8,722.00","flat $2,500 commission paid by buyer");
+   setv("badm","495");ok(/Broker admin fee \(buyer's broker\)/.test(txt("ledger"))&&txt("tB")==="$9,217.00"&&txt("tS")==="$4,434.00","buyer broker admin fee $495 adds a buyer line");
    {const sn=d.window.CLA_QUOTE_API.snapshot();ok(sn.inputs.brokerAdminFee===495&&JSON.stringify(sn.inputs.buyerPaidComm)===JSON.stringify({mode:"flat",val:2500})&&sn.results.lines.filter(l=>/Commission paid by buyer|Broker admin fee/.test(l.item)).every(l=>l.sec==="H. Other"&&l.s===0)&&/Broker admin fee \(buyer's broker\): Buyer \$495\.00/.test(sn.results.text),"saved quote and copied text include both lines (buyer column, H. Other)")}
    w.querySelector("[data-t=cash]").click();ok(v("downWrap").hidden&&!v("bAgentWrap").hidden&&/Broker admin fee/.test(txt("ledger"))&&!/Down payment/.test(txt("summary")),"cash: no down payment; agent costs still apply");
    w.querySelector("[data-t=refi]").click();ok(v("downWrap").hidden&&v("bAgentWrap").hidden&&!/Commission paid by buyer|Broker admin/.test(txt("ledger")),"refinance: fields hidden, no lines");
-   w.querySelector("[data-t=purchase]").click();setv("bcv","");setv("badm","");ok(tot()==="$6,212.50|$4,434.00|$10,646.50","cleared: Charlotte totals unchanged");
+   w.querySelector("[data-t=purchase]").click();setv("bcv","");setv("badm","");ok(tot()==="$6,222.00|$4,434.00|$10,656.00","cleared: Charlotte totals unchanged");
    // seller net sheet
    w.querySelector("[data-mode=seller]").click();const n0=txt("sNet"),c0=txt("sCosts");ok(v("s_adm").value===""&&!/Broker admin fee/.test(txt("sLedger")),"seller: broker admin fee blank by default, no line");
    setv("s_adm","695");const toN=x=>+x.replace(/[$,]/g,"");ok(/Broker admin fee/.test(txt("sLedger"))&&near(toN(n0)-toN(txt("sNet")),695)&&near(toN(txt("sCosts"))-toN(c0),695),"seller: $695 broker admin fee in Commissions, net down by $695");
@@ -544,7 +545,7 @@ ok(SN({fees:[]}).totals.title===0&&near(SN({fees:[{name:"Custom",payer:"Seller",
    w.querySelector("[data-mode=seller]").click();setv("s_po1","200000");ok(/Recording fees may change depending on the number of pages\./.test(v("sLedger").textContent)&&/Recording fees may change/.test(d.window.CLA_QUOTE_API.snapshot().results.text),"seller net: the government fees card and summary carry the note");
    setv("s_po1","");w.querySelector("[data-mode=quote]").click();setv("zip","20850")}
   // totals identical to the folded version: deed + lien certificate = the old single deed line, for every MD county with a lien row
-  for(const[co,add]of[["Frederick",25],["Charles",25],["Howard",50],["Harford",50],["Baltimore",55],["Baltimore City",55],["Carroll",40],["Anne Arundel",0],["Montgomery",0]]){const r=X.calc(R,inp({county:co,price:400000,loan:320000}));
+  for(const[co,add]of[["Frederick",25],["Charles",25],["Howard",50],["Harford",50],["Baltimore",55],["Baltimore City",55],["Carroll",45],["Anne Arundel",0],["Montgomery",0]]){const r=X.calc(R,inp({county:co,price:400000,loan:320000}));
    ok(near(line(r,/^Recording fees – Deed$/)+line(r,/^Lien certificate/),60+add)&&r.lines.filter(l=>/^Lien certificate/.test(l.item)).length===(add?1:0),`MD ${co}: deed $60 + lien line $${add} (same total as before)`)}
   // Francis Santos 11/02: New quote / Reset, state picked by hand, documents link
   {const v=id=>w.getElementById(id),txt=id=>v(id).textContent;let asked=0,answer=false;d.window.confirm=()=>{asked++;return answer};let fired=0;d.window.addEventListener("cla:newquote",()=>fired++);
@@ -569,5 +570,34 @@ ok(SN({fees:[]}).totals.title===0&&near(SN({fees:[{name:"Custom",payer:"Seller",
    ok(!/Recording fees – Release/.test(txt("ledger"))&&/^\(Deed ×1, 3 pages · Deed of Trust ×1, 30 pages\)$/.test(txt("docsSum"))&&!v("docsBox").open,"OK: documents back to the purchase defaults");
    asked=0;v("newQuote").click();ok(asked===0&&fired===2,"New quote on an untouched page: no question");
    setv("zip","20850")}
+  // Melissa Gamble round 2 (11/02): Simplifile per document by payer, MD withholding on the seller net sheet
+  {const sim=(r,who)=>r.lines.filter(l=>/^E-recording fee \(Simplifile\)/.test(l.item)).reduce((a,l)=>a+(who==="b"?l.b:l.s),0),lab=r=>r.lines.filter(l=>/^E-recording/.test(l.item)).map(l=>l.item);
+   for(const st of["MD","VA","DC","FL"]){const co={MD:"Montgomery",VA:"Fairfax",DC:"District of Columbia",FL:"Charlotte"}[st];
+    const p=X.calc(R,inp({state:st,county:co,price:400000,loan:320000}));ok(near(sim(p,"b"),9.5)&&sim(p,"s")===0&&lab(p).includes("E-recording fee (Simplifile) – 2 docs × $4.75"),`${st} purchase: buyer Simplifile 2 docs (deed + deed of trust) × $4.75; no seller line without a release`);
+    const c=X.calc(R,inp({type:"cash",state:st,county:co,price:400000,loan:0}));ok(near(sim(c,"b"),4.75)&&lab(c).includes("E-recording fee (Simplifile) – 1 doc × $4.75"),`${st} cash: deed only, 1 doc`);
+    const d=X.calc(R,inp({state:st,county:co,price:400000,loan:320000,docs:{"Deed":[1,3],"Deed of Trust":[1,30],"Release":[2,3],"Power of Attorney":[1,3]}}));ok(near(sim(d,"b"),14.25)&&near(sim(d,"s"),9.5),`${st} purchase + POA + 2 releases: buyer 3 docs $14.25, seller 2 releases $9.50`);
+    const f=X.calc(R,inp({type:"refi",state:st,county:co,loan:360000,payoff:300000}));ok(near(sim(f,"b"),9.5)&&sim(f,"s")===0,`${st} refinance unchanged: borrower 2 docs (deed of trust + release) $9.50`);
+    const n=X.sellerNet(R,{state:st,county:co,uw:"Fidelity National Title",price:400000,payoff1:200000,payoff2:50000,closing:"2026-11-20"});ok(n.gov.some(x=>x.item==="E-recording fee (Simplifile) – 2 docs × $4.75"&&near(x.amt,9.5)),`${st} seller net: Simplifile on each release (2 payoffs = 2 docs)`)}
+   const n0=X.sellerNet(R,{state:"MD",county:"Montgomery",uw:"Fidelity National Title",price:400000,closing:"2026-11-20"});ok(![...n0.gov,...n0.title].some(x=>/Simplifile/.test(x.item)),"seller net without a payoff: no Simplifile line (the buyer records the deed)");
+   // withholding (MW506NRS line 8)
+   const base={state:"MD",county:"Montgomery",uw:"Fidelity National Title",price:500000,payoff1:200000,closing:"2026-11-20"},A=X.sellerNet(R,base);
+   ok(A.withholding===null&&X.sellerNet(R,Object.assign({},base,{state:"VA",county:"Fairfax",nonRes:true})).withholding===null,"withholding: off by default; never outside Maryland");
+   const B=X.sellerNet(R,Object.assign({},base,{nonRes:true})),w=B.withholding,exp=A.totalCosts;
+   ok(near(w.expenses,exp)&&near(w.total,500000-exp-200000)&&w.rate===8.75&&near(w.amount,Math.round((500000-exp-200000)*8.75)/100)&&near(B.net,A.net-w.amount),`withholding individual: (price − selling expenses − payoffs) × 8.75% = ${w.amount}; net reduced by it`);
+   const C=X.sellerNet(R,Object.assign({},base,{nonRes:true,nonResType:"entity",nonResOwn:50}));ok(C.withholding.rate===8.25&&near(C.withholding.share,w.total/2)&&near(C.withholding.amount,Math.round(w.total/2*8.25)/100),"withholding entity 8.25% on a 50% ownership share");
+   const D=X.sellerNet(R,Object.assign({},base,{nonRes:true,nonResCert:1234.5}));ok(D.withholding.amount===1234.5&&/exemption certificate/.test(D.withholding.item),"withholding: an exemption certificate amount replaces the calculation");
+   const E=X.sellerNet(R,Object.assign({},base,{nonRes:true,nonResCert:0}));ok(E.withholding.amount===0&&near(E.net,A.net),"withholding: certificate of full exemption (0) withholds nothing");
+   const F=X.sellerNet(R,Object.assign({},base,{nonRes:true,payoff1:600000}));ok(F.withholding.total===0&&F.withholding.amount===0,"withholding: no total payment (payoffs above net) -> 0");
+   const G=X.sellerNet(R,Object.assign({},base,{nonRes:true,annualTax:4800,paidThrough:"2026-12-31"}));ok(near(G.withholding.expenses,G.totalCosts-G.totals.pro)&&G.totals.pro<0,"withholding: a proration credit to the seller is not a selling expense");
+   ok(X.MD_NRW_RATE.individual===8.75&&X.MD_NRW_RATE.entity===8.25,"withholding rates 8.75% / 8.25%");
+  }
+  {const v=id=>w.getElementById(id),txt=id=>v(id).textContent;w.querySelector("[data-mode=seller]").click();setv("s_zip","20850");setv("s_price","500000");setv("s_po1","200000");
+   ok(!v("s_nrWrap").hidden&&!v("s_nr").checked&&v("s_nrOpts").hidden&&!/withholding/i.test(txt("sLedger")),"DOM seller MD: non-resident box shown, off, no withholding");
+   const n0=txt("sNet");v("s_nr").checked=true;v("s_nr").dispatchEvent(ev("change"));const sn=d.window.CLA_QUOTE_API.snapshot();
+   ok(!v("s_nrOpts").hidden&&/Maryland non-resident withholding \(individual \/ estate \/ trust 8\.75% of/.test(txt("sLedger"))&&/Less: Maryland non-resident withholding/.test(txt("sGrand"))&&txt("sNet")!==n0&&/Form MW506NRS line 8/.test(txt("s_nrh")),"DOM: ticking it shows the options, the withholding card, the grand-total line and the worksheet hint");
+   ok(sn.results.lines.some(l=>l.sec==="Maryland non-resident withholding")&&sn.results.totals.withholding>0&&/MARYLAND NON-RESIDENT WITHHOLDING/.test(sn.results.text)&&sn.inputs.nonRes===true,"DOM: saved quote / copied summary carry the withholding");
+   setv("s_nrt","entity");ok(/entity 8\.25%/.test(txt("sLedger")),"DOM: entity 8.25%");setv("s_nrc","0");ok(txt("sNet")===n0,"DOM: certificate 0 -> net back to no withholding");setv("s_nrc","");
+   setv("s_zip","22030");ok(v("s_nrWrap").hidden&&!/withholding/i.test(txt("sLedger"))&&d.window.CLA_QUOTE_API.snapshot().inputs.nonRes===false,"DOM: Virginia hides it and nothing is withheld");
+   setv("s_zip","20850");v("s_nr").checked=false;v("s_nr").dispatchEvent(ev("change"));setv("s_po1","");w.querySelector("[data-mode=quote]").click();setv("zip","20850")}
 ok(errs.length===0,"no DOM errors "+errs);
  if(fails){console.error(fails,"FAILED");process.exit(1)}console.log("ALL PASS")})();

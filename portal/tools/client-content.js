@@ -87,6 +87,7 @@ sec("getting-an-estimate", 3, "Getting an estimate, step by step", "Open the cal
     "Payoffs and property taxes: first mortgage payoff, second mortgage or HELOC, yearly property taxes and the date they are paid through. Taxes are shared by days: the seller owns every day up to the day before closing, using a 365-day year.",
     "Credits and other costs: seller concession, HOA dues owed, HOA transfer fee, HOA special assessment, home warranty, other costs, and up to five lines of your own, such as repairs.",
     "Title and settlement: who pays the owner's policy, whether the buyer is a first-time homebuyer, whether the buyer pays the seller's transfer tax, and who pays each transfer or recordation tax (seller, buyer or split).",
+    "Maryland only: tick Seller is not a Maryland resident when that applies. Maryland asks the settlement agent to hold back part of a non-resident seller's proceeds at closing as an advance on Maryland income tax. The page works it out from the state's worksheet, shows it as its own line and lowers the net. Choose whether the seller is a person (or estate or trust) or a business, and the share of the property the seller owns. If the seller has a state certificate for a smaller amount or a full exemption, type its amount instead.",
     "Result: net proceeds are the selling price minus the seller's total costs minus the mortgage payoffs.",
   ] },
   { t: "img", f: "calc-seller.png", cap: "The Seller Net Sheet. Example amounts shown here are for illustration only.", alt: "Seller net sheet" },
