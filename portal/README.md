@@ -271,7 +271,7 @@ The same engine also runs on the public calculator, for **anyone** (guest or sig
 - **Tabs:** the Seller Net Sheet step opens that tab and puts the person's own tab back afterwards (also if they skip or press Esc). The tour never clicks Purchase / Cash / Refinance, because switching those rebuilds the documents and endorsements and would discard edits; it only points at them. No fee or number is changed.
 - **The chip:** shown only to someone who has not dismissed it. The x, starting the tour from the chip or from the header link all store `cla_calc_tour_chip = "1"` in `localStorage`, so it never comes back. If browser storage is blocked the chip is not shown at all. It does not print.
 - **Phones:** the box is a bottom sheet (also for the centred welcome note); on desktop a tall target (the breakdown) gets the box beside it instead of on top of it.
-- **Cache-bust:** `?v=20261102c` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
+- **Cache-bust:** `?v=20261102d` on `zip-county.js`, `fee-snapshot.js`, `portal-hook.js` and the tour loader, and `CLA.TOUR_V` in `portal-ui.js` (the feedback widget keeps `20261025g`).
 - **Tests:** the "calculator tour" block in `portal/test-portal.js` (link, step counts, targets, skipping, tab restore, chip persistence, phone sheet, versions). Screenshots: `portal/tools/screenshots_calculator_tour.py`.
 
 ## Who pays each transfer / recordation tax (live since 2026-10-28; calculator only, no database change)
@@ -342,7 +342,7 @@ Two pages, both **generated** by `node portal/tools/build-help.js` (do not edit 
 - **Header Help link** (`CLA.helpHref` in `portal-ui.js`; the calculator header link in `portal-hook.js` uses the same function): clients go to `help.html`, reps, admins and super admins to `staff-help.html`. Signed-in users only.
 - **Guards:** both pages use `CLA.boot(null)` (signed-out visitors go to `login.html?next=...`) and stay hidden until then. `staff-help.html` sends a client to `help.html`. **Be honest about what that is:** static pages can be fetched by anyone who knows the URL; the guard decides what a signed-in person sees on screen, it is not access control. Neither page has a key, a secret or customer data (the pictures use made-up sample people).
 - **Pictures:** `python3 portal/tools/screenshots_help.py` (serves this repo on a local port with the mock config forced, hides the demo banner), then `python3 portal/tools/optimize_help_images.py`, which sorts them into `help/client/` (used by the client guide) and `help/staff/` (everything else the staff manual uses) and removes anything unused.
-- Cache-bust letter: `20261102c` (see above).
+- Cache-bust letter: `20261102d` (see above).
 
 ## Florida: owner-occupied / first-time homebuyer boxes removed (branch `fl-no-oo-1102`, 11/02/26)
 
@@ -353,4 +353,18 @@ Two pages, both **generated** by `node portal/tools/build-help.js` (do not edit 
 
 - John: "in VA it doesn't matter if you're FTHB or OO, it doesn't affect transfer/rec taxes". `NO_OO=/^(FL|VA)$/` in index.html hides `occWrap`, `fthbWrap` and the seller net `s_fthbWrap`, forces `occ` true and `fthb` false. MD and DC are unchanged.
 - Checked: no VA row in the snapshot or the live Transfer_Taxes tab (9 VA rows, read 11/02) has Owner-Occ / FTHB data. test.js checks that every VA county and quote type gives identical lines for all four box combinations.
-- Cache-bust `20261102c`.
+- Cache-bust `20261102d`.
+
+## Florida survey and lien search estimates (branch `fl-estimates-1102`, 11/02/26)
+
+- New CLA_Fees rows, **added to the live sheet 11/02/26 (rows 80-81, appended)** and to the end of `fee-snapshot.js` in the same order. Transaction Purchase covers purchase and cash, like the other FL purchase rows, so no Cash row is needed:
+
+  | Active | State | Fee Name | Transaction | Amount | Paid By | LE Section | Default On | Notes |
+  |---|---|---|---|---|---|---|---|---|
+  | Y | FL | Lien Search Fee Estimate | Purchase | 200 | Buyer | C | Y | $200 estimate, always a buyer charge (John 11/02/26) |
+  | Y | FL | Survey Estimate | Purchase | 500 | Buyer | C | Y | $500 estimate, buyer charge |
+
+- Lien search: John decided 11/02/26 it is **always buyer-paid**, whatever Who chose title says. "lien search" was taken out of `FL_SEARCH`, so the row never moves and is not on the seller net sheet. The Who chose title hint says the lien search estimate stays with the buyer.
+- Survey (`NOT_TITLE`, buyer charge confirmed by John 11/02/26) has no "Title –" prefix and always stays on the buyer. It is not on the seller net sheet.
+- Transaction Purchase = purchase and cash quotes; refinances get neither line.
+- Cache-bust `20261102d`.

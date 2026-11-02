@@ -157,7 +157,7 @@ lode("SN VA Fairfax $500k",snVA,[25000,1500,1159,27659,472341]);
 lode("SN FL Orange $400k (owner's policy not seller-paid)",snFLo,[20000,2800,1209,24009,375991],0.01);
 // FL: our local custom for Orange is seller-paid owner's policy ($2,075 promulgated), which Lodestar's unchecked box omits
 ok(X.ownerPayDefault(R,"FL","Orange")==="Seller"&&X.ownerPayDefault(R,"MD","Frederick")==="Buyer"&&X.ownerPayDefault(R,"VA","Fairfax")==="Buyer","owner's policy local custom: FL Orange seller; MD Frederick, VA Fairfax buyer");
-ok(near(snFL.totals.title-snFLo.totals.title,2275)&&near(snFL.totalCosts,26284)&&near(snFL.net,373716)&&snFL.title.some(t=>/Owner's Title/.test(t.item))&&snFL.title.some(t=>/Title Search and Abstract \(seller chose title\)/.test(t.item)&&t.amt===200),"SN FL Orange default (local custom = Seller chose title) adds the seller-paid owner's policy $2,075 and title search $200 → costs 26,284, net 373,716");
+ok(near(snFL.totals.title-snFLo.totals.title,2275)&&near(snFL.totalCosts,26284)&&near(snFL.net,373716)&&!snFL.title.some(t=>/Lien Search/.test(t.item))&&snFL.title.some(t=>/Owner's Title/.test(t.item))&&snFL.title.some(t=>/Title Search and Abstract \(seller chose title\)/.test(t.item)&&t.amt===200),"SN FL Orange default (local custom = Seller chose title) adds the seller-paid owner's policy $2,075, title search $200 (the lien search estimate is the buyer's) → costs 26,284, net 373,716");
 ok(near(snFLo.title.find(t=>/Settlement/.test(t.item)).amt,950)&&snFLo.gov.length===1&&/Doc stamps on deed/.test(snFLo.gov[0].item),"SN FL gov't = deed stamps only; title = notary 200 + Qualia 59 + settlement 950");
 ok(near(snMD.gov.reduce((a,x)=>a+x.amt,0),4750)&&snMD.gov.length===2,"SN MD Frederick gov't lines = state transfer 1,250 + county recordation 3,500");
 // seller costs equal the quote's seller column for the same inputs (same X.calc)
@@ -291,6 +291,22 @@ ok(near(SN({concession:{mode:"flat",val:3000}}).totals.pro,3000)&&SN({other:Arra
 {const vt=(c,o)=>{const q=X.calc(R,inp(Object.assign({state:"VA",county:c,price:400000,loan:320000,fees:dflt("VA",o.type||"purchase")},o)));return q.lines.map(l=>l.item+":"+l.b+":"+l.s).join("|")};let bad=[];
  for(const c of X.allCounties(R,"VA"))for(const ty of["purchase","cash","refi"]){const base={type:ty,loan:ty==="cash"?0:320000,payoff:ty==="refi"?250000:0};const a=vt(c,Object.assign({fthb:false,occ:true},base));for(const v of[{fthb:true,occ:true},{fthb:false,occ:false},{fthb:true,occ:false}])if(vt(c,Object.assign(v,base))!==a)bad.push(c+" "+ty)}
  ok(!bad.length,"VA: every county and quote type gives the same lines whatever first-time homebuyer / owner-occupied say"+(bad.length?" (differs: "+bad.slice(0,5).join(", ")+")":""));}
+// ---- Florida estimates (John 11/02): Survey Estimate $500 and Lien Search Fee Estimate $200, both always buyer charges ----
+{const fl=(co,o)=>X.calc(R,inp(Object.assign({state:"FL",county:co,price:400000,loan:320000,fees:dflt("FL","purchase"),ends:[],pres:"actual"},o))),L=(r,re)=>r.lines.filter(l=>re.test(l.item));
+ const sv=r=>L(r,/^Survey Estimate$/)[0],ln=r=>L(r,/Lien Search Fee Estimate/)[0];
+ for(const[co,op]of[["Broward",""],["Broward","Seller"],["Broward","Buyer"],["Broward","MDB"],["Orange",""],["Collier",""]]){const q=fl(co,{ownPay:op});ok(sv(q)&&sv(q).b===500&&sv(q).s===0&&sv(q).sec===L(q,/Title Search and Abstract/)[0].sec,`FL ${co} ${op||"local custom"}: Survey Estimate $500 on the buyer, no "Title –" prefix, same section as the title search`)}
+ const bm=fl("Broward",{}),bs_=fl("Broward",{ownPay:"Seller"}),bb=fl("Broward",{ownPay:"Buyer"}),or=fl("Orange",{}),co=fl("Collier",{});
+ for(const[q,nm]of[[bm,"Broward local custom (9(c)(iii))"],[bs_,"Broward Seller chose title"],[bb,"Broward Buyer chose title"],[or,"Orange local custom (seller chose title)"],[co,"Collier local custom"]])ok(ln(q).b===200&&ln(q).s===0&&ln(q).item==="Title – Lien Search Fee Estimate","FL "+nm+": lien search estimate $200 always on the buyer, plain label (John 11/02)");
+ const big=fl("Broward",{ownPay:"Seller",fees:dflt("FL","purchase").map(f=>/Lien Search/.test(f.name)?Object.assign({},f,{amt:350}):f)});ok(ln(big).b===350&&ln(big).s===0,"FL: an edited $350 lien search stays all buyer under Seller chose title");
+ ok(L(bm,/Title Search and Abstract/)[0].s===200&&L(bs_,/Title Search and Abstract/)[0].s===200&&L(bb,/Title Search and Abstract/)[0].b===200,"FL: the title search still moves with Who chose title");
+ const cash=fl("Broward",{type:"cash",loan:0});ok(sv(cash).b===500&&ln(cash).b===200&&ln(cash).s===0,"FL cash purchase: survey and lien search estimates included");
+ const rf=X.calc(R,inp({type:"refi",state:"FL",county:"Broward",loan:320000,payoff:250000,fees:dflt("FL","refi")}));ok(!L(rf,/Survey|Lien Search/).length,"FL refinance: no survey or lien search estimate (purchase-only rows)");
+ const md=X.calc(R,inp({fees:dflt("MD","purchase")}));ok(!L(md,/Survey|Lien Search/).length,"MD purchase: no FL estimates");
+ const tot=r=>r.lines.reduce((a,l)=>a+l.b+l.s,0),bm0=fl("Broward",{fees:dflt("FL","purchase").filter(f=>!/Survey|Lien Search/.test(f.name))});ok(Math.abs(tot(bm)-tot(bm0)-700)<0.005,"FL: the two estimates add $700 to the total");
+ const snB=SN({state:"FL",county:"Broward",price:400000}),snO=SN({state:"FL",county:"Orange",price:400000,ownerPays:false});
+ ok(![...snB.title,...snB.gov].some(t=>/Survey|Lien Search/.test(t.item))&&snB.title.some(t=>/Title Search and Abstract/.test(t.item)),"SN FL Broward: survey and lien search estimates (buyer charges) are not on the seller net sheet; the seller's title search still is");
+ ok(![...snO.title,...snO.gov].some(t=>/Survey|Lien Search/.test(t.item)),"SN FL Orange, seller not paying title (buyer chose title): no survey or lien search for the seller");
+}
 // toggles
 ok(SN({bpst:true,state:"FL",county:"Orange",price:400000,ownerPays:false}).totals.gov===0,"SN: buyer-pays-seller's-deed-tax toggle removes FL deed stamps from the seller");
 ok(SN({fthb:true,price:400000}).gov.some(g=>/State transfer/.test(g.item)&&near(g.amt,1000))&&near(SN({price:400000}).gov.find(g=>/State transfer/.test(g.item)).amt,1000),"SN MD state transfer at $400k: seller pays $1,000 either way (50/50 of $2,000, or all of the first-time $1,000)");
