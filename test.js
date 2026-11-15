@@ -6,6 +6,13 @@ const near=(a,b,t=0.01)=>Math.abs(a-b)<=t;const X_fmt=x=>"$"+(+x).toLocaleString
 const fees=(st,type)=>X.claFees(R,st,type).map(f=>({name:f["Fee Name"],payer:f["Paid By"],sec:f["LE Section"],amt:+f.Amount}));
 const inp=o=>Object.assign({type:"purchase",state:"MD",county:"Montgomery",uw:"Fidelity National Title",price:450000,loan:360000,payoff:300000,pol:"enhanced",rate:"basic",fthb:false,occ:true,ownPay:"",pres:"trid",ends:[],docs:X.DOC_DEFAULTS[o.type||"purchase"]},o,{fees:o.fees||fees(o.state||"MD",o.type||"purchase")});
 const line=(r,re)=>r.lines.filter(l=>re.test(l.item)).reduce((a,l)=>a+l.b+l.s,0);
+// refinance that pays nothing off = new loan (John, Nov 15 2026, Lodestar test VA-24)
+{const va=p=>X.calc(R,inp({type:"refi",state:"VA",county:"Arlington",loan:350000,payoff:p}));
+ ok(near(line(va(0),/recordation/i),875+291.67),"VA refi with no payoff: full $0.25 state + $0.0833 local on the loan ($1,166.67)");
+ ok(near(line(va(300000),/recordation/i),630+210),"VA refi with a payoff keeps the $0.18 refinance rate ($840)");
+ ok(!va(0).lines.some(l=>/refinance DOT/.test(l.item))&&va(0).lines.some(l=>/^State recordation tax \(deed of trust\)/.test(l.item)),"VA refi with no payoff shows the deed-of-trust rows, not the refinance rows");
+ const fl=p=>line(X.calc(R,inp({type:"refi",state:"FL",county:"Broward",loan:275000,payoff:p})),/stamps|intangible/i);ok(near(fl(0),fl(200000))&&near(fl(0),962.5+550),"FL refi taxes are the same with or without a payoff ($1,512.50)");
+ ok(near(line(X.calc(R,inp({type:"refi",state:"MD",county:"Montgomery",loan:350000,payoff:0})),/recordation/i),3115),"MD refi with no payoff: county recordation on the whole loan as new money ($3,115)")}
 // counties / ZIP
 for(const[st,n]of[["MD",24],["VA",133],["DC",1],["FL",67]]){const l=X.allCounties(R,st);ok(l.length===n,`${st} has ${n} counties (got ${l.length})`)}
 for(const[z,st,co]of[["20850","MD","Montgomery"],["21201","MD","Baltimore City"],["22030","VA","Fairfax"],["20001","DC","District of Columbia"],["33101","FL","Miami-Dade"],["32801","FL","Orange"],["21704","MD","Frederick"],["21740","MD","Washington"],["20646","MD","Charles"],["22601","VA","Winchester City"],["34102","FL","Collier"]]){const r=X.zipLookup(z);ok(r&&r.state===st&&r.county===co,`ZIP ${z} -> ${co}, ${st}`)}
