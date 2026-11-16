@@ -16,6 +16,19 @@ const line=(r,re)=>r.lines.filter(l=>re.test(l.item)).reduce((a,l)=>a+l.b+l.s,0)
  const om=w=>w.some(x=>/original mortgagor affidavit/.test(x));
  ok(om(X.calc(R,inp({type:"refi",state:"MD",county:"Montgomery",loan:500000,payoff:350000})).warnings),"MD refi with a payoff notes the original mortgagor affidavit");
  ok(!om(X.calc(R,inp({type:"refi",state:"MD",county:"Montgomery",loan:350000,payoff:0})).warnings)&&!om(X.calc(R,inp({})).warnings)&&!om(va(300000).warnings),"no affidavit note on an MD refi with no payoff, an MD purchase, or a VA refi")}
+// John, Nov 16 2026 (Melissa Gamble; closed files MD-26-32159, MD-26-32155): Maryland loan bigger than the price
+{const ln=(q,re)=>q.lines.filter(l=>re.test(l.item)).reduce((a,l)=>a+l.b+l.s,0),by=(q,re)=>q.lines.filter(l=>re.test(l.item)).reduce((a,l)=>a+l.b,0);
+ const pg1=X.calc(R,inp({county:"Prince George's",price:525000,loan:536287}));
+ ok(Math.abs(ln(pg1,/recordation tax on loan above price/i)-63.25)<0.01&&Math.abs(ln(pg1,/transfer tax on loan above price/i)-158.02)<0.01,"MD-26-32159: PG $525,000 / $536,287 loan: recordation $63.25 + county transfer $158.02 on the $11,287 above the price");
+ ok(Math.abs(by(pg1,/on loan above price/i)-221.27)<0.01,"the tax on the loan above the price is the buyer's");
+ const pg2=X.calc(R,inp({county:"Prince George's",price:270000,loan:372000,occ:false}));
+ ok(Math.abs(ln(pg2,/recordation tax on loan above price/i)-561)<0.01&&Math.abs(ln(pg2,/transfer tax on loan above price/i)-1428)<0.01,"MD-26-32155: PG $270,000 / $372,000 loan: recordation $561 + county transfer $1,428 (assignment fee not in the price)");
+ const fr=X.calc(R,inp({county:"Frederick",price:400000,loan:412000}));
+ ok(ln(fr,/recordation tax on loan above price/i)>0&&ln(fr,/transfer tax on loan above price/i)===0,"outside Prince George's only recordation is charged on the loan above the price");
+ ok(ln(X.calc(R,inp({county:"Prince George's",price:525000,loan:420000})),/on loan above price/i)===0&&ln(X.calc(R,inp({county:"Prince George's",price:525000,loan:525000})),/on loan above price/i)===0,"no extra tax when the loan is at or below the price");
+ ok(ln(X.calc(R,inp({state:"VA",county:"Fairfax",price:400000,loan:412000})),/on loan above price/i)===0,"Virginia already taxes the whole deed of trust: no extra line");
+ const mo=X.calc(R,inp({county:"Montgomery",price:480000,loan:530000}));
+ ok(Math.abs(ln(mo,/recordation tax on loan above price/i)-(40*4.45+60*6.75))<0.01,"Montgomery: the loan above the price is taxed in the bands it reaches ($480k-$500k at $4.45, $500k-$530k at $6.75 per $500)")}
 // counties / ZIP
 for(const[st,n]of[["MD",24],["VA",133],["DC",1],["FL",67]]){const l=X.allCounties(R,st);ok(l.length===n,`${st} has ${n} counties (got ${l.length})`)}
 for(const[z,st,co]of[["20850","MD","Montgomery"],["21201","MD","Baltimore City"],["22030","VA","Fairfax"],["20001","DC","District of Columbia"],["33101","FL","Miami-Dade"],["32801","FL","Orange"],["21704","MD","Frederick"],["21740","MD","Washington"],["20646","MD","Charles"],["22601","VA","Winchester City"],["34102","FL","Collier"]]){const r=X.zipLookup(z);ok(r&&r.state===st&&r.county===co,`ZIP ${z} -> ${co}, ${st}`)}
