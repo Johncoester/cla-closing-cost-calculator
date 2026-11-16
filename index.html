@@ -5,7 +5,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="zip-county.js?v=20261102m"></script>
-<script src="fee-snapshot.js?v=20261115a"></script>
+<script src="fee-snapshot.js?v=20261116a"></script>
 <style>
 :root{--g:#99c93f;--gd:#7ca233;--gdd:#5b7725;--ink:#111;--mut:#5b6272;--line:#e3e8da;--bg:#f4f7ef;--field:#d5dbca}
 *{box-sizing:border-box}
@@ -535,6 +535,8 @@ function calc(R,i){const L=[],W=[],refi=i.type==="refi";
   TX.push({name:k,label,amt:r2(v.amt),def,payer:eff,adjustable,fixed:v.fixed,fthb:v.fthb,fthbPayer:v.fthbPayer,onAssessed:v.onAssessed})}
  if(i.fthb&&i.occ===false&&!refi)W.push("First-time homebuyer programs need an owner-occupied principal residence: the first-time buyer treatment is not applied.");
  if(!anyTax&&!refi&&i.price>0)W.push(`No transfer/recordation taxes found for ${i.county||"(county)"}, ${i.state}.`);
+ // John, Nov 16 2026 (Melissa: refinance borrowers are "not always" the original borrower): the new-money-only tax needs the original mortgagor (Tax-Property 12-108(g)).
+ if(refi&&i.state==="MD"&&+i.payoff>0)W.push("Maryland refinance: recordation tax is figured on the new money only. That assumes the borrower signs the original mortgagor affidavit (Tax-Property 12-108(g)). If not, recordation tax is due on the whole loan.");
  // buyer's agent costs (Janette Fiallo 11/02): optional, buyer column, H. Other; blank / 0 = no line. Not on a refinance.
  if(!refi){const bpc=commission(+i.price||0,i.buyerPaidComm);if(bpc>0)add(SEC.H,"Commission paid by buyer"+(i.buyerPaidComm.mode==="flat"?"":` (${+i.buyerPaidComm.val||0}% of price)`),bpc,0);
   if(+i.brokerAdminFee>0)add(SEC.H,"Broker admin fee (buyer's broker)",+i.brokerAdminFee,0)}
