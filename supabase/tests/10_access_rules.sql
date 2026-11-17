@@ -2021,7 +2021,48 @@ select tests.is('invite status: signed_in and the latest of the invite and the r
   tests.v(tests.id('b1'), $q$select string_agg(signed_in::text || ':' || (invite_last_sent_at > now() - interval '5 minutes')::text, ',' order by user_id) from public.list_invite_status() where user_id in (tests.id('91'), tests.id('94'))$q$), 'false:true,true:false');
 select tests.is('resend bookkeeping is not reachable through the API (private schema)', tests.q(tests.id('a1'), 'select * from private.invite_resends'), 'ERR:42501');
 
+
+-- ---------------- migration 21: invitation names + bulk preview / hourly cap ----------------
+select tests.is('there is still exactly one create_invitation (no stale overloads after the name arguments were added)',
+  (select count(*)::text from pg_proc where proname = 'create_invitation' and pronamespace = 'public'::regnamespace), '1');
+select tests.is('a client cannot preview a bulk upload', tests.q(tests.id('c1'), $$select public.admin_preview_bulk_clients('[]'::jsonb)$$), 'ERR:42501');
+select tests.is('a rep cannot preview a bulk upload', tests.q(tests.id('b1'), $$select public.admin_preview_bulk_clients('[]'::jsonb)$$), 'ERR:42501');
+select tests.is('a client cannot read the bulk-invite remaining cap', tests.q(tests.id('c1'), 'select public.admin_bulk_invite_remaining()'), 'ERR:42501');
+select tests.is('bulk-invite sends are not reachable through the API (private schema)', tests.q(tests.id('a1'), 'select * from private.bulk_invite_sends'), 'ERR:42501');
+
+select tests.is('create_invitation stores first, last and company (and still accepts a 6-argument call)',
+  tests.xv(tests.id('a1'),
+    $$select public.create_invitation('named.client@example.com', 'client', '$$ || tests.id('b1') || $$', '(240) 555-0142', false, false, 'Maya', 'Chen', 'Chen Realty')$$,
+    $q$select first_name || '/' || last_name || '/' || company_name || '/' || cell_phone from public.invitations where email = 'named.client@example.com' and accepted_at is null$q$),
+  'ok:1/Maya/Chen/Chen Realty/+12405550142');
+
+do $$ declare u uuid := gen_random_uuid(); begin
+  insert into auth.users (id, email) values (u, 'named.client@example.com');
+  perform tests.is('handle_new_user copies invitation name, company and cell onto the new profile',
+    (select first_name || '/' || last_name || '/' || company_name || '/' || cell_phone from public.profiles where id = u),
+    'Maya/Chen/Chen Realty/+12405550142');
+end $$;
+
+select tests.is('admin preview: invite / skip existing / reject blank or unknown or non-rep emails',
+  tests.v(tests.id('a1'), $q$
+    select string_agg(x->>'status' || ':' || coalesce(x->>'reason',''), ',' order by (x->>'index')::int)
+      from jsonb_array_elements(public.admin_preview_bulk_clients('[
+        {"first_name":"New","last_name":"Person","email":"bulk.new@example.com","rep_email":"sample.rep.jane@clatitle.com"},
+        {"email":"sam.agent@example.com","rep_email":"sample.rep.jane@clatitle.com"},
+        {"email":"blank.rep@example.com","rep_email":""},
+        {"email":"unknown.rep@example.com","rep_email":"nobody@clatitle.com"},
+        {"email":"not.a.rep@example.com","rep_email":"sample.robin.admin@clatitle.com"}
+      ]'::jsonb)) x
+  $q$),
+  'invite:,skip:This email already has an account.,reject:A sales rep email is required.,reject:No sales rep has that email.,reject:That email is not a sales rep.');
+
+select tests.is('an admin starts with a remaining bulk-invite quota of 50',
+  tests.rpc(tests.id('a1'), 'public.admin_bulk_invite_remaining()'), '50');
+select tests.is('recording a send lowers the remaining cap',
+  tests.rpc(tests.id('a1'), $$public.admin_bulk_invite_record('bulk.new@example.com')$$), '49');
+
 -- ---------------- summary ----------------
+
 do $$ declare f int; t int; begin
   select count(*) filter (where not ok), count(*) into f, t from tests.results;
   raise notice '% checks, % failed', t, f;

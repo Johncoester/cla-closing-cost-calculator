@@ -3,10 +3,10 @@
 <title>Admin — C.L.A. Quote Portal</title>
 <meta name="theme-color" content="#000000"><meta name="robots" content="noindex">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="portal.css">
+<link rel="stylesheet" href="portal.css?v=20261117a">
 <script src="config.js"></script>
-<script src="../fee-snapshot.js?v=20261102m"></script>
-<script src="js/mock-data.js"></script><script src="js/mock-adapter.js"></script><script src="js/supabase-adapter.js"></script><script src="js/auth-adapter.js"></script><script src="js/portal-ui.js"></script>
+<script src="../fee-snapshot.js?v=20261117a"></script>
+<script src="js/mock-data.js?v=20261117a"></script><script src="js/mock-adapter.js?v=20261117a"></script><script src="js/supabase-adapter.js?v=20261117a"></script><script src="js/auth-adapter.js?v=20261117a"></script><script src="js/portal-ui.js?v=20261117a"></script><script src="js/bulk-invite.js?v=20261117a"></script>
 <style>
 .repbox{position:relative;display:inline-block;vertical-align:middle;width:230px}
 .repbox input[type=text]{min-height:34px;padding:4px 10px;font-size:13px;width:100%}
@@ -24,7 +24,10 @@
 <main class="pg">
 <div style="display:flex;gap:16px;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;margin-bottom:20px">
  <div data-tour="a-welcome"><h1 class="pt">Admin</h1><p class="sub" style="margin:0">All reps, clients and saved quotes. Everything you do here is written to the audit log.</p><p class="sum" id="roleNote" style="margin:6px 0 0"></p></div>
- <button class="btn" id="showInv" data-tour="a-invite-btn" type="button">Invite user</button>
+ <div style="display:flex;gap:10px;flex-wrap:wrap">
+  <button class="btn" id="showInv" data-tour="a-invite-btn" type="button">Invite user</button>
+  <button class="btn o" id="showUp" data-tour="a-upload-btn" type="button">Upload clients</button>
+ </div>
 </div>
 <section class="card" id="invCard" data-tour="a-invite" hidden style="margin-bottom:24px">
  <h2>Invite a user</h2>
@@ -37,6 +40,26 @@
   <div class="row" id="iRepRow" hidden><div><label for="iRep">Assign to rep (optional)</label><select id="iRep"></select></div><div></div></div>
   <div style="display:flex;gap:10px"><button class="btn" type="submit">Send invite</button><button class="btn o" id="invCancel" type="button">Cancel</button></div>
  </form>
+</section>
+<section class="card" id="upCard" data-tour="a-upload" hidden style="margin-bottom:24px">
+ <h2>Upload clients</h2>
+ <p class="sub" style="margin-top:0">Invite up to 50 clients at once and assign each one to a sales rep. Download the template, fill it in, then choose the file. You'll preview the list before any invites go out.</p>
+ <div id="upErr" class="msg err" role="alert"></div><div id="upOk" class="msg ok" role="status"></div>
+ <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+  <button class="btn o" id="upTpl" type="button">Download template (CSV)</button>
+  <label class="btn o" for="upFile" style="margin:0;cursor:pointer">Choose file</label>
+  <input type="file" id="upFile" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
+  <span class="sum" id="upFileName"></span>
+  <button class="btn o" id="upCancel" type="button">Cancel</button>
+ </div>
+ <div id="upPreview" hidden>
+  <p class="sum" id="upSummary" style="margin:0 0 10px"></p>
+  <div class="tablewrap"><table><thead><tr><th>Name</th><th>Email</th><th>Cell</th><th>Company</th><th>Rep</th><th>Status</th></tr></thead><tbody id="upRows"></tbody></table></div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
+   <button class="btn" id="upSend" type="button">Send invites</button>
+  </div>
+ </div>
+ <div id="upResults" hidden></div>
 </section>
 <div class="seg" id="tabs" role="tablist"></div>
 
@@ -525,6 +548,68 @@
 
   $("showInv").onclick = () => { $("invCard").hidden = false; $("iEmail").focus(); };
   $("invCancel").onclick = () => { $("invCard").hidden = true; };
+  const upClear = () => { $("upErr").textContent = ""; $("upOk").textContent = ""; };
+  const upHide = () => { $("upCard").hidden = true; $("upPreview").hidden = true; $("upResults").hidden = true; $("upResults").innerHTML = ""; $("upFile").value = ""; $("upFileName").textContent = ""; $("upRows").innerHTML = ""; $("upSummary").textContent = ""; $("upSend").disabled = false; $("upSend").textContent = "Send invites"; upClear(); };
+  $("showUp").onclick = () => { $("upCard").hidden = false; upClear(); };
+  $("upCancel").onclick = upHide;
+  $("upTpl").onclick = () => CLA.downloadClientUploadTemplate();
+  const upBadge = (r) => r.status === "invite" ? '<span class="badge">Ready</span>'
+    : r.status === "skip" ? '<span class="badge off">Will be skipped</span>'
+    : r.status === "invited" ? '<span class="badge">Invited</span>'
+    : r.status === "held" ? '<span class="badge warn">Held</span>'
+    : r.status === "failed" ? '<span class="badge off" style="background:#f8d7d4;color:#8a1f16">Failed</span>'
+    : '<span class="badge warn">Needs fixing</span>';
+  const upName = (r) => [r.firstName, r.lastName].filter(Boolean).join(" ") || "—";
+  const paintPreview = (preview) => {
+    $("upPreview").hidden = false; $("upResults").hidden = true; $("upResults").innerHTML = "";
+    const c = preview.counts;
+    $("upSummary").textContent = c.total + " row" + (c.total === 1 ? "" : "s") + ": " + c.invite + " ready to invite"
+      + (c.skip ? ", " + c.skip + " will be skipped (already have an account)" : "")
+      + (c.reject ? ", " + c.reject + " need fixing" : "") + ".";
+    $("upRows").innerHTML = preview.rows.map((r) => "<tr><td>" + esc(upName(r)) + "</td><td>" + esc(r.email || "—") + "</td><td>"
+      + esc(r.cellRaw || (r.cellPhone ? CLA.displayPhone(r.cellPhone) : "—")) + "</td><td>" + esc(r.company || "—") + "</td><td>"
+      + esc(r.rep ? CLA.fullName(r.rep) : (r.repEmail || "—")) + "</td><td>" + upBadge(r)
+      + (r.reason ? "<div class='sum'>" + esc(r.reason) + "</div>" : "") + "</td></tr>").join("");
+    $("upSend").disabled = !c.invite; $("upSend").textContent = c.invite ? ("Send " + c.invite + " invite" + (c.invite === 1 ? "" : "s")) : "Send invites";
+    window._upPreview = preview;
+  };
+  $("upFile").onchange = async (e) => {
+    upClear(); $("upPreview").hidden = true; $("upResults").hidden = true; const f = e.target.files && e.target.files[0];
+    $("upFileName").textContent = f ? f.name : ""; if (!f) return;
+    try {
+      const parsed = await CLA.parseClientUploadFile(f);
+      const preview = CLA.classifyClientUpload(parsed, users);
+      if (preview.error) { $("upErr").textContent = preview.error; return; }
+      if (!preview.rows.length) { $("upErr").textContent = "This file has a header but no client rows."; return; }
+      paintPreview(preview);
+    } catch (ex) { $("upErr").textContent = ex.message; }
+  };
+  $("upSend").onclick = async () => {
+    const preview = window._upPreview; upClear();
+    if (!preview || !preview.counts.invite) { $("upErr").textContent = "There are no rows ready to invite."; return; }
+    $("upSend").disabled = true; $("upSend").textContent = "Sending…";
+    try {
+      const payload = preview.rows.map((r) => ({ first_name: r.firstName, last_name: r.lastName, email: r.email, cell_phone: r.cellRaw || r.cellPhone || "", company: r.company, rep_email: r.repEmail }));
+      const r = await A.adminInviteClients(payload);
+      const rows = r.rows || [];
+      const line = (r.invited ? r.invited + " invited" : "None invited")
+        + (r.skipped ? ", " + r.skipped + " skipped" : "")
+        + (r.rejected ? ", " + r.rejected + " rejected" : "")
+        + (r.held ? ", " + r.held + " held (email limit)" : "")
+        + (r.failed ? ", " + r.failed + " failed" : "") + ".";
+      $("upOk").textContent = line + ((r && r.mockNote) ? " " + r.mockNote : (r.invited ? " They will get an email shortly." : ""))
+        + (r.stoppedReason === "auth_rate_limit" ? " The email service reached its limit after " + r.invited + " invite" + (r.invited === 1 ? "" : "s") + ". Try the rest later, or use Resend invite for anyone already recorded." : "")
+        + (r.stoppedReason === "hourly_cap" ? " The hourly cap of 50 invites was reached. Wait before sending more." : "");
+      $("upPreview").hidden = true;
+      $("upResults").hidden = false;
+      $("upResults").innerHTML = "<p class='sum' style='margin:0 0 10px'>" + esc(line) + "</p><div class='tablewrap'><table><thead><tr><th>Name</th><th>Email</th><th>Rep</th><th>Result</th></tr></thead><tbody>"
+        + rows.map((x) => "<tr><td>" + esc(upName(x)) + "</td><td>" + esc(x.email || "—") + "</td><td>" + esc(x.repEmail || "—") + "</td><td>" + upBadge(x)
+          + (x.reason ? "<div class='sum'>" + esc(x.reason) + "</div>" : "") + "</td></tr>").join("")
+        + "</tbody></table></div><div style='margin-top:16px'><button class='btn o' id='upAgain' type='button'>Upload another file</button></div>";
+      $("upAgain").onclick = () => { $("upFile").value = ""; $("upFileName").textContent = ""; $("upResults").hidden = true; $("upResults").innerHTML = ""; $("upPreview").hidden = true; $("upSend").disabled = false; $("upSend").textContent = "Send invites"; upClear(); };
+      await loadUsers(); await loadAsg();
+    } catch (ex) { $("upErr").textContent = ex.message; $("upSend").disabled = false; $("upSend").textContent = preview.counts.invite ? ("Send " + preview.counts.invite + " invite" + (preview.counts.invite === 1 ? "" : "s")) : "Send invites"; }
+  };
   $("iRole").onchange = () => { $("iRepRow").hidden = $("iRole").value !== "client"; $("iAlsoRow").hidden = !adminRole($("iRole").value); if (!adminRole($("iRole").value)) $("iAlso").checked = false; };
   CLA.bindPhoneInput($("iCell"), $("iCellErr"));
   $("inv").onsubmit = async (e) => { e.preventDefault(); $("iErr").textContent = ""; $("iOk").textContent = "";

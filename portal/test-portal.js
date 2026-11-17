@@ -7,7 +7,7 @@ const dir = path.join(__dirname, "js");
 function boot() {
   const dom = new JSDOM("<!doctype html><body></body>", { url: "http://localhost/portal/", runScripts: "outside-only" });
   const w = dom.window; w.crypto.randomUUID = require("crypto").randomUUID;
-  for (const f of ["mock-data", "mock-adapter", "supabase-adapter", "auth-adapter", "portal-ui"]) w.eval(fs.readFileSync(path.join(dir, f + ".js"), "utf8"));
+  for (const f of ["mock-data", "mock-adapter", "supabase-adapter", "auth-adapter", "portal-ui", "bulk-invite"]) w.eval(fs.readFileSync(path.join(dir, f + ".js"), "utf8"));
   return w;
 }
 let pass = 0; const ok = (n) => { pass++; console.log("ok " + n); };
@@ -270,7 +270,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     const html = fs.readFileSync(path.join(pdir, "admin.html"), "utf8")
       .replace(/<link[^>]*fonts\.googleapis[^>]*>/, "").replace(/<script src="config\.js"><\/script>/, "<script>window.CLA_PORTAL_CONFIG={mode:'mock'}</script>")
         .replace(/<script src="\.\.\/fee-snapshot\.js[^"]*"><\/script>/, () => "<script>" + fs.readFileSync(path.join(pdir, "..", "fee-snapshot.js"), "utf8") + "</script>")
-      .replace(/<script src="(js\/[\w-]+\.js)"><\/script>/g, (m, f) => "<script>" + fs.readFileSync(path.join(pdir, f), "utf8") + "</script>" + (f === "js/portal-ui.js" ? WIDGET + TOURJS : ""));
+      .replace(/<script src="(js\/[\w-]+\.js)(?:\?v=[^"]*)?"><\/script>/g, (m, f) => "<script>" + fs.readFileSync(path.join(pdir, f), "utf8") + "</script>" + (f === "js/portal-ui.js" ? WIDGET + TOURJS : ""));
     const errs = [];
     const dom = new JSDOM(html, { url: "http://localhost/portal/admin.html", runScripts: "dangerously", pretendToBeVisual: true, virtualConsole: new VirtualConsole(),
       beforeParse(win) { win.crypto.randomUUID = require("crypto").randomUUID; win.confirm = () => true; win.addEventListener("error", (e) => errs.push(e.message));
@@ -426,7 +426,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
       if (mod) { const st = JSON.parse(store.cla_portal_mock_v1); mod(st); store.cla_portal_mock_v1 = JSON.stringify(st); }
       const html = fs.readFileSync(path.join(pdir, file), "utf8").replace(/<link[^>]*fonts\.googleapis[^>]*>/, "").replace(/<script src="config\.js"><\/script>/, "<script>window.CLA_PORTAL_CONFIG={mode:'mock'}</script>")
         .replace(/<script src="\.\.\/fee-snapshot\.js[^"]*"><\/script>/, () => "<script>" + fs.readFileSync(path.join(pdir, "..", "fee-snapshot.js"), "utf8") + "</script>")
-        .replace(/<script src="(js\/[\w-]+\.js)"><\/script>/g, (m, f) => "<script>" + fs.readFileSync(path.join(pdir, f), "utf8") + "</script>" + (f === "js/portal-ui.js" ? WIDGET + TOURJS : ""));
+        .replace(/<script src="(js\/[\w-]+\.js)(?:\?v=[^"]*)?"><\/script>/g, (m, f) => "<script>" + fs.readFileSync(path.join(pdir, f), "utf8") + "</script>" + (f === "js/portal-ui.js" ? WIDGET + TOURJS : ""));
       const errs = [], dom = new JSDOM(html, { url: "http://localhost/portal/" + file + (qs || "?secret=1") + "#frag", runScripts: "dangerously", pretendToBeVisual: true, virtualConsole: new VirtualConsole(),
         beforeParse(win) { win.crypto.randomUUID = require("crypto").randomUUID; win.confirm = () => true; win.addEventListener("error", (e) => errs.push(e.message)); for (const k in store) win.localStorage.setItem(k, store[k]); } });
       for (let i = 0; i < 60 && !dom.window.document.querySelector(waitFor); i++) await tick(20);
@@ -900,7 +900,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     const wt = boot(); wt.eval(fs.readFileSync(path.join(__dirname, "js", "tour.js"), "utf8")); const R_steps = (kind, me) => wt.CLA.tourSteps(kind, me);
     const meOf = (role) => ({ role, isRep: false });
     const counts = { super: R_steps("admin", meOf("super_admin")).length, admin: R_steps("admin", meOf("admin")).length, rep: R_steps("rep", meOf("rep")).length, repAdmin: R_steps("rep", { role: "admin", isRep: true }).length, client: R_steps("client", meOf("client")).length };
-    assert.deepStrictEqual(counts, { super: 7, admin: 6, rep: 6, repAdmin: 7, client: 7 }); ok("tour: 4-7 steps per role (super admin 7, admin 6, rep 6, admin who reps 7, client 7)");
+    assert.deepStrictEqual(counts, { super: 8, admin: 7, rep: 6, repAdmin: 7, client: 7 }); ok("tour: 4-8 steps per role (super admin 8, admin 7, rep 6, admin who reps 7, client 7)");
     const all = [].concat(R_steps("admin", meOf("super_admin")), R_steps("rep", { role: "admin", isRep: true }), R_steps("client", meOf("client")));
     assert.ok(all.every((s) => s.title && s.text.length < 330 && s.title.length < 45)); assert.ok(!/<|&lt;/.test(JSON.stringify(all))); ok("tour: every step has a short title and short plain text");
     assert.ok(/Only a super admin can approve or dismiss/.test(R_steps("admin", meOf("admin")).pop().text) && /approve or dismiss each item/.test(R_steps("admin", meOf("super_admin")).pop().text) && /Only a super admin can invite admins/.test(R_steps("admin", meOf("admin")).find((s) => s.target === '[data-tour="a-invite"]').text) && /admins or super admins/.test(R_steps("admin", meOf("super_admin")).find((s) => s.target === '[data-tour="a-invite"]').text)); ok("tour: admins read feedback and cannot invite admins; super admins approve / dismiss and can invite anyone (wording)");
@@ -949,12 +949,12 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     const P2 = await renderPage("rep.html", "sample.rep.jane@clatitle.com", "#claTourLink"); assert.ok(!P2.d.getElementById("claTour")); ok("tour: not for a rep who has seen it"); P2.dom.window.close();
     const P3 = await renderPage("rep.html", "sample.admin@clatitle.com", "#claTourLink", null, null, "?tour=1"); await tick(100); assert.strictEqual(boxCount(P3.d), "Step 1 of 7"); await nextN(P3, 6); assert.strictEqual(boxTitle(P3.d), "You are also an admin"); ok("tour: an admin who also reps gets the rep tour (7 steps) with a step about the two dashboards"); P3.dom.window.close();
     // ADMIN pages
-    const SA = await renderPage("admin.html", "sample.admin@clatitle.com", "#claTour", null, newUser(id("a1"))), sd = SA.d; assert.strictEqual(SA.errs.length, 0, SA.errs.join()); assert.strictEqual(boxCount(sd), "Step 1 of 7"); assert.strictEqual(boxTitle(sd), "Welcome to the admin dashboard"); ok("tour: starts by itself for a new super admin (Step 1 of 7)");
+    const SA = await renderPage("admin.html", "sample.admin@clatitle.com", "#claTour", null, newUser(id("a1"))), sd = SA.d; assert.strictEqual(SA.errs.length, 0, SA.errs.join()); assert.strictEqual(boxCount(sd), "Step 1 of 8"); assert.strictEqual(boxTitle(sd), "Welcome to the admin dashboard"); ok("tour: starts by itself for a new super admin (Step 1 of 8)");
     await nextN(SA, 2); assert.strictEqual(boxTitle(sd), "Change a role"); await nextN(SA, 1); assert.strictEqual(boxTitle(sd), "Also works as a rep"); assert.ok(sd.querySelector('[data-tour="u-also"]')); await nextN(SA, 1);
-    assert.strictEqual(boxTitle(sd), "Invite someone"); assert.ok(!sd.getElementById("invCard").hidden); await nextN(SA, 1); assert.ok(sd.getElementById("invCard").hidden); assert.strictEqual(boxTitle(sd), "Assignments"); assert.ok(!sd.getElementById("pAssign").hidden && sd.getElementById("pUsers").hidden);
+    assert.strictEqual(boxTitle(sd), "Invite someone"); assert.ok(!sd.getElementById("invCard").hidden); await nextN(SA, 1); assert.ok(sd.getElementById("invCard").hidden); assert.strictEqual(boxTitle(sd), "Upload a list of clients"); assert.ok(!sd.getElementById("upCard").hidden); await nextN(SA, 1); assert.ok(sd.getElementById("upCard").hidden); assert.strictEqual(boxTitle(sd), "Assignments"); assert.ok(!sd.getElementById("pAssign").hidden && sd.getElementById("pUsers").hidden);
     await nextN(SA, 1); assert.strictEqual(boxTitle(sd), "Staff feedback"); assert.ok(!sd.getElementById("pFeedback").hidden && sd.getElementById("pAssign").hidden); assert.match(sd.getElementById("claTourText").textContent, /approve or dismiss/);
-    sd.getElementById("claTourNext").click(); await tick(60); assert.ok(!sd.getElementById("claTour") && !sd.getElementById("pUsers").hidden && sd.getElementById("pFeedback").hidden && seenOf(SA, id("a1"))); ok("tour: super admin steps (roles, also-a-rep, invite form, assignments, feedback) open and close what they show; Done puts the Users tab back"); SA.dom.window.close();
-    const AD = await renderPage("admin.html", "sample.robin.admin@clatitle.com", "#claTour", null, newUser(id("a2"))); assert.strictEqual(boxCount(AD.d), "Step 1 of 6"); const adTitles = []; for (let k = 0; k < 6; k++) { adTitles.push(boxTitle(AD.d)); await nextN(AD, 1); } assert.ok(!adTitles.includes("Also works as a rep") && adTitles.includes("Invite someone")); ok("tour: a new Admin gets 6 steps (no 'also works as a rep' switch: it is for super admins)"); AD.dom.window.close();
+    sd.getElementById("claTourNext").click(); await tick(60); assert.ok(!sd.getElementById("claTour") && !sd.getElementById("pUsers").hidden && sd.getElementById("pFeedback").hidden && seenOf(SA, id("a1"))); ok("tour: super admin steps (roles, also-a-rep, invite form, upload, assignments, feedback) open and close what they show; Done puts the Users tab back"); SA.dom.window.close();
+    const AD = await renderPage("admin.html", "sample.robin.admin@clatitle.com", "#claTour", null, newUser(id("a2"))); assert.strictEqual(boxCount(AD.d), "Step 1 of 7"); const adTitles = []; for (let k = 0; k < 7; k++) { adTitles.push(boxTitle(AD.d)); await nextN(AD, 1); } assert.ok(!adTitles.includes("Also works as a rep") && adTitles.includes("Invite someone") && adTitles.includes("Upload a list of clients")); ok("tour: a new Admin gets 7 steps (no 'also works as a rep' switch: it is for super admins; includes upload)"); AD.dom.window.close();
     // header link placement: Feedback, then Take the tour, then the profile chip (no collision); none for guests
     const H = await renderPage("rep.html", "sample.rep.jane@clatitle.com", "#claFeedbackLink"); const kids = [...H.d.querySelector("header .hr").children].map((c) => c.id || c.className.split(" ")[0]);
     assert.ok(H.d.querySelector("body > #claFeedbackLink") && kids.indexOf("claFeedbackLink") === -1 && kids.indexOf("claTourLink") > -1 && kids.indexOf("chip") > kids.indexOf("claTourLink")); ok("tour: the 'Take the tour' link sits before the profile chip in the header, and the Feedback bubble floats in the body without colliding"); H.dom.window.close();
@@ -1134,6 +1134,9 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
   assert.ok(calls.some((c) => c[0] === "rpc" && c[1] === "get_my_rep_contact")); ok("supabase: get_my_rep_contact RPC maps (incl. cell)");
   await S.deleteQuote("q1"); assert.ok(calls.some((c) => c[0] === "rpc" && c[1] === "delete_my_quote")); ok("supabase: delete goes through delete_my_quote RPC");
   await S.adminInvite({ email: "a@b.com", role: "client", repId: "r" }); assert.ok(calls.some((c) => c[0] === "fn" && c[1] === "invite-user")); ok("supabase: invites go through the Edge Function (no service key in the browser)");
+  calls.length = 0; await S.adminInviteClients([{ email: "maya@example.com", rep_email: "jane@clatitle.com" }]);
+  const bulk = calls.find((c) => c[0] === "fn" && c[1] === "invite-clients-bulk");
+  assert.ok(bulk && bulk[2].body.rows[0].email === "maya@example.com" && /set-password.html\?invite=1$/.test(bulk[2].body.redirectTo)); ok("supabase: bulk invites go through invite-clients-bulk (no service key in the browser)");
   calls.length = 0;
   await S.adminInvite({ email: "a@b.com", role: "client", repId: "r", cellPhone: "(240) 555-0142" });
   assert.strictEqual(calls.find((c) => c[0] === "fn" && c[1] === "invite-user")[2].body.cellPhone, "+12405550142"); ok("supabase: admin invite sends the cell normalized to the Edge Function");
@@ -1303,7 +1306,8 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
 
     // cache-bust: every ?v= in index.html and TOUR_V agree
     const vs = [...idx.matchAll(/\?v=(\d{8}[a-z])/g)].map((m) => m[1]), pu = fs.readFileSync(path.join(__dirname, "js", "portal-ui.js"), "utf8");
-    assert.ok(vs.length === 3 && new Set(vs).size === 1 && vs[0] === "20261102m" && new RegExp('CLA.TOUR_V = "' + vs[0] + '"').test(pu) && idx.includes('var V="' + vs[0] + '"')); ok("calculator tour: the index.html ?v= values (zip-county, fee-snapshot, portal-hook), the tour loader's version and CLA.TOUR_V are all 20261102m");
+    assert.deepStrictEqual(vs, ["20261102m", "20261116a", "20261102m"]);
+    assert.ok(new RegExp('CLA.TOUR_V = "20261102m"').test(pu) && idx.includes('var V="20261102m"')); ok("calculator tour: zip-county, portal-hook, the tour loader and CLA.TOUR_V are 20261102m; fee-snapshot is cache-busted separately (20261116a)");
     // the new elements are inert in print and add no external requests
     assert.ok(/@media print\{[\s\S]*?\.claChip\{display:none!important\}/.test(idx) && !/https?:\/\//.test(tj2)); ok("calculator tour: the chip is not printed; tour.js has no external libraries or CDN");
   }
@@ -1352,7 +1356,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
       const store = { cla_portal_mock_v1: w0.localStorage.getItem("cla_portal_mock_v1"), cla_portal_mock_session: w0.localStorage.getItem("cla_portal_mock_session") };
       if (mutate) store.cla_portal_mock_v1 = mutate(store.cla_portal_mock_v1);
       const html = fs.readFileSync(path.join(pdir, "rep.html"), "utf8").replace(/<link[^>]*fonts\.googleapis[^>]*>/, "").replace(/<script src="config\.js"><\/script>/, "<script>window.CLA_PORTAL_CONFIG={mode:'mock'}</script>")
-        .replace(/<script src="(js\/[\w-]+\.js)"><\/script>/g, (m, f) => "<script>" + fs.readFileSync(path.join(pdir, f), "utf8") + "</script>");
+        .replace(/<script src="(js\/[\w-]+\.js)(?:\?v=[^"]*)?"><\/script>/g, (m, f) => "<script>" + fs.readFileSync(path.join(pdir, f), "utf8") + "</script>");
       const errs = [], dom = new JSDOM(html, { url: "http://localhost/portal/rep.html", runScripts: "dangerously", pretendToBeVisual: true, virtualConsole: new VirtualConsole(),
         beforeParse(win) { win.crypto.randomUUID = require("crypto").randomUUID; win.confirm = () => true; win.addEventListener("error", (e) => errs.push(e.message)); for (const k in store) win.localStorage.setItem(k, store[k]); } });
       for (let i = 0; i < 100 && !dom.window.document.querySelector("#clients tr"); i++) await tick(20);
@@ -1370,5 +1374,112 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     { const out = require("child_process").execFileSync(process.execPath, [path.join(__dirname, "..", "supabase", "functions", "resend-invite", "test-handler.mjs")], { encoding: "utf8" }); assert.match(out, /ALL PASS \(\d+ checks\)/); ok("resend-invite Edge Function handler: local tests pass (" + out.match(/ALL PASS \((\d+)/)[1] + " checks)"); }
     const K = await renderRep("sample.rep.marcus@clatitle.com", assignC7); assert.ok(!K.row("sample.new.client@example.com") && ![...K.d.querySelectorAll("button[data-resend]")].length); ok("rep.html: another rep never sees (or gets a button for) Jane's client"); K.dom.window.close();
   }
-  console.log("\nALL PASS (" + pass + " checks)");
+  
+  // ---- Upload clients (migration 21 + invite-clients-bulk; admins only, send now, skip existing, reject blank rep) ----
+  {
+    const w = boot(), CLA = w.CLA, id = (k) => "00000000-0000-4000-8000-0000000000" + k;
+    const A = w.CLA.createMockAdapter({}), as = async (email) => { w.localStorage.removeItem("cla_portal_mock_session"); await A.signIn(email, "x"); };
+    const reject = async (p, re, name) => { try { await p; assert.fail("should have thrown: " + name); } catch (e) { assert.ok(re.test(e.message), name + " -> " + e.message); ok(name); } };
+    const csv = CLA.clientUploadTemplateCsv();
+    assert.ok(csv.startsWith("first_name,last_name,email,cell_phone,company,rep_email\n")); ok("upload: the downloadable template has the expected header");
+    const parsed = CLA.rowsFromGrid(CLA.parseCsv(csv));
+    assert.strictEqual(parsed[0].email, "maya.chen@example.com"); assert.strictEqual(parsed[0].rep_email, "sample.rep.jane@clatitle.com"); ok("upload: the template row parses");
+    const quoted = CLA.parseCsv("email,rep_email,company\n\"a@b.com\",\"sample.rep.jane@clatitle.com\",\"Chen, Inc.\"\n");
+    assert.strictEqual(CLA.rowsFromGrid(quoted)[0].company, "Chen, Inc."); ok("upload: CSV quoted commas are kept");
+
+    await as("sample.admin@clatitle.com");
+    const users = await A.adminListUsers();
+    const mixed = CLA.classifyClientUpload([
+      { first_name: "Maya", last_name: "Chen", email: "maya.chen@example.com", cell_phone: "(240) 555-0142", company: "Chen Realty", rep_email: "sample.rep.jane@clatitle.com" },
+      { first_name: "Sam", last_name: "Again", email: "sam.agent@example.com", rep_email: "sample.rep.jane@clatitle.com" },
+      { first_name: "No", last_name: "Rep", email: "norep@example.com", rep_email: "" },
+      { first_name: "Bad", last_name: "Rep", email: "badrep@example.com", rep_email: "nobody@clatitle.com" },
+      { first_name: "Not", last_name: "Arep", email: "notarep@example.com", rep_email: "sample.robin.admin@clatitle.com" },
+      { first_name: "Bad", last_name: "Mail", email: "not-an-email", rep_email: "sample.rep.jane@clatitle.com" },
+      { first_name: "Dup", last_name: "One", email: "dup@example.com", rep_email: "sample.rep.jane@clatitle.com" },
+      { first_name: "Dup", last_name: "Two", email: "dup@example.com", rep_email: "sample.rep.jane@clatitle.com" },
+      { first_name: "Alex", last_name: "Client", email: "alex.client@example.com", rep_email: "sample.admin@clatitle.com" },
+    ], users);
+    assert.strictEqual(mixed.counts.invite, 3); assert.strictEqual(mixed.counts.skip, 1); assert.strictEqual(mixed.counts.reject, 5);
+    assert.strictEqual(mixed.rows[0].status, "invite"); assert.strictEqual(mixed.rows[1].status, "skip");
+    assert.strictEqual(mixed.rows[2].reason, "A sales rep email is required.");
+    assert.strictEqual(mixed.rows[3].reason, "No sales rep has that email.");
+    assert.strictEqual(mixed.rows[4].reason, "That email is not a sales rep.");
+    assert.match(mixed.rows[5].reason, /valid email/);
+    assert.strictEqual(mixed.rows[7].reason, "Duplicate email in this file.");
+    assert.strictEqual(mixed.rows[8].repId, id("a1")); ok("upload: preview flags existing accounts, bad / blank / non-rep emails, duplicates; a super admin who also reps is a valid assignee");
+    assert.match(CLA.classifyClientUpload(Array.from({ length: 51 }, (_, i) => ({ email: "a" + i + "@example.com", rep_email: "sample.rep.jane@clatitle.com" })), users).error, /at most 50/); ok("upload: more than 50 rows is refused before sending");
+
+    await as("sample.rep.jane@clatitle.com");
+    await reject(A.adminInviteClients([{ email: "x@y.com", rep_email: "sample.rep.jane@clatitle.com" }]), /Admins only/, "upload (mock): a rep cannot upload");
+    await as("sam.agent@example.com");
+    await reject(A.adminInviteClients([{ email: "x@y.com", rep_email: "sample.rep.jane@clatitle.com" }]), /Admins only/, "upload (mock): a client cannot upload");
+    await as("sample.robin.admin@clatitle.com");
+    const sent = await A.adminInviteClients([
+      { first_name: "Maya", last_name: "Chen", email: "maya.chen@example.com", cell_phone: "(240) 555-0142", company: "Chen Realty", rep_email: "sample.rep.jane@clatitle.com" },
+      { email: "sam.agent@example.com", first_name: "Sam", rep_email: "sample.rep.jane@clatitle.com" },
+      { email: "needs.rep@example.com", first_name: "Needs", last_name: "Rep", rep_email: "" },
+    ]);
+    assert.strictEqual(sent.invited, 1); assert.strictEqual(sent.skipped, 1); assert.strictEqual(sent.rejected, 1);
+    assert.ok(/no email is sent/.test(sent.mockNote)); ok("upload (mock): an admin invites the ready row, skips existing accounts, rejects a blank rep (demo: no email)");
+    const maya = (await A.adminListAssignments()).find((a) => a.clientEmail === "maya.chen@example.com" && a.active);
+    assert.ok(maya && maya.repId === id("b1")); ok("upload (mock): Maya is assigned to Jane");
+    await as("sample.rep.jane@clatitle.com");
+    const pending = (await A.listMyClients()).find((c) => c.email === "maya.chen@example.com");
+    assert.ok(pending && pending.pending && pending.firstName === "Maya" && pending.companyName === "Chen Realty" && pending.cellPhone === "+12405550142"); ok("upload (mock): the invitation keeps name, company and cell for the pending client");
+
+    await as("sample.admin@clatitle.com");
+    const st = JSON.parse(w.localStorage.getItem("cla_portal_mock_v1"));
+    st.bulkInviteSends = Array.from({ length: 50 }, (_, i) => ({ at: new Date().toISOString(), email: "cap" + i + "@example.com", by: id("a1") }));
+    w.localStorage.setItem("cla_portal_mock_v1", JSON.stringify(st));
+    const held = await A.adminInviteClients([{ email: "after.cap@example.com", first_name: "After", last_name: "Cap", rep_email: "sample.rep.jane@clatitle.com" }]);
+    assert.strictEqual(held.held, 1); assert.strictEqual(held.invited, 0); assert.strictEqual(held.stoppedReason, "hourly_cap"); ok("upload (mock): the hourly cap holds a ready row and sends nothing");
+
+    const R = await renderAdmin("sample.admin@clatitle.com");
+    assert.strictEqual(R.errs.length, 0, R.errs.join());
+    assert.ok(R.d.getElementById("showUp") && R.d.getElementById("upCard").hidden); ok("admin.html: Upload clients button is on the page and the card starts hidden");
+    R.d.getElementById("showUp").click();
+    assert.ok(!R.d.getElementById("upCard").hidden); ok("admin.html: Upload clients opens the card");
+    const file = new R.dom.window.File([
+      "first_name,last_name,email,cell_phone,company,rep_email\n" +
+      "Maya,Chen,maya2.chen@example.com,(240) 555-0142,Chen Realty,sample.rep.jane@clatitle.com\n" +
+      "Sam,Agent,sam.agent@example.com,,Acme Realty,sample.rep.jane@clatitle.com\n" +
+      "No,Rep,norep2@example.com,,,\n" +
+      "Bad,Mail,not-an-email,,x,sample.rep.jane@clatitle.com\n"
+    ], "clients.csv", { type: "text/csv" });
+    const input = R.d.getElementById("upFile");
+    Object.defineProperty(input, "files", { configurable: true, value: [file] });
+    input.dispatchEvent(new R.dom.window.Event("change", { bubbles: true }));
+    for (let i = 0; i < 40 && R.d.getElementById("upPreview").hidden; i++) await new Promise((r) => setTimeout(r, 20));
+    assert.ok(!R.d.getElementById("upPreview").hidden, "preview should be visible");
+    assert.match(R.d.getElementById("upSummary").textContent, /4 rows: 1 ready to invite, 1 will be skipped.*2 need fixing/);
+    const previewText = R.d.getElementById("upRows").textContent;
+    assert.ok(/Ready/.test(previewText) && /Will be skipped/.test(previewText) && /Needs fixing/.test(previewText) && /already has an account/.test(previewText) && /A sales rep email is required/.test(previewText)); ok("admin.html: the preview table shows a mix of ready, skipped and flagged rows");
+    assert.ok(!R.d.getElementById("upSend").disabled && /Send 1 invite/.test(R.d.getElementById("upSend").textContent));
+    R.d.getElementById("upSend").click();
+    for (let i = 0; i < 40 && R.d.getElementById("upResults").hidden; i++) await new Promise((r) => setTimeout(r, 20));
+    assert.ok(!R.d.getElementById("upResults").hidden);
+    assert.match(R.d.getElementById("upOk").textContent, /1 invited, 1 skipped, 2 rejected/);
+    assert.match(R.d.getElementById("upOk").textContent, /no email is sent/);
+    assert.ok(/Invited/.test(R.d.getElementById("upResults").textContent) && /Will be skipped/.test(R.d.getElementById("upResults").textContent)); ok("admin.html: sending shows a results summary (invited, skipped, rejected) and does not email in mock mode");
+    R.dom.window.close();
+
+    { const sa = fs.readFileSync(path.join(__dirname, "js", "supabase-adapter.js"), "utf8");
+      assert.ok(sa.includes('fn("invite-clients-bulk", { rows, redirectTo: redirectBase() + "?invite=1" })')); ok("supabase adapter: Upload clients goes through the invite-clients-bulk Edge Function with the set-password redirect"); }
+    { const out = require("child_process").execFileSync(process.execPath, [path.join(__dirname, "..", "supabase", "functions", "invite-clients-bulk", "test-handler.mjs")], { encoding: "utf8" });
+      assert.match(out, /ALL PASS \(\d+ checks\)/); ok("invite-clients-bulk Edge Function handler: local tests pass (" + out.match(/ALL PASS \((\d+)/)[1] + " checks)"); }
+
+    const XLSX = require("xlsx");
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+      ["first_name", "last_name", "email", "cell_phone", "company", "rep_email"],
+      ["Maya", "Chen", "xlsx.maya@example.com", "(240) 555-0142", "Chen Realty", "sample.rep.jane@clatitle.com"],
+    ]), "Clients");
+    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+    const grid = await CLA.parseXlsx(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+    const xrows = CLA.rowsFromGrid(grid);
+    assert.strictEqual(xrows[0].email, "xlsx.maya@example.com"); assert.strictEqual(xrows[0].company, "Chen Realty"); ok("upload: an .xlsx first sheet is read (name, email, company, rep)");
+  }
+
+console.log("\nALL PASS (" + pass + " checks)");
 })().catch((e) => { console.error("FAIL", e); process.exit(1); });

@@ -162,4 +162,17 @@ for f in "$ROOT"/migrations/*.sql; do
 done
 runu -f "$ROOT/seed.sql" >/dev/null 2>&1
 runu -v migration20="$M20" -f "$HERE/97_upgrade_from_19.sql" 2>&1 | grep -E "PASS|FAIL|checks,|ERROR|WARNING" | sed 's/^psql:[^ ]* //'
+[ "${PIPESTATUS[0]}" -eq 0 ] || exit "${PIPESTATUS[0]}"
+
+# Upgrade check 11: the LIVE state (migrations 1-20 with the seed data) gets migration 21 (bulk client invites) on top.
+echo "upgrade check: migrations 1-20 + data, then migration 21 (bulk client invites)"
+"${P[@]}" -d postgres -c "drop database cla_test with (force)" -c "create database cla_test"
+runu -f "$HERE/00_supabase_shim.sql"
+M21="$(ls "$ROOT"/migrations/*bulk_client_invites.sql)"
+for f in "$ROOT"/migrations/*.sql; do
+  case "$f" in *bulk_client_invites.sql) continue;; esac
+  runu --single-transaction -f "$f" >/dev/null 2>&1
+done
+runu -f "$ROOT/seed.sql" >/dev/null 2>&1
+runu -v migration21="$M21" -f "$HERE/98_upgrade_from_20.sql" 2>&1 | grep -E "PASS|FAIL|checks,|ERROR|WARNING" | sed 's/^psql:[^ ]* //'
 exit ${PIPESTATUS[0]}

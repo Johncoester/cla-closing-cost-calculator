@@ -56,9 +56,15 @@
  *                                            clients; nobody twice within 60 seconds. The server decides; the email address comes from the database.
  *   adminListUsers() rows and listMyClients() rows also carry inviteSentAt (ISO, when an invite last went out); listMyClients rows carry
  *                                            signedIn (true / false; undefined = unknown, migration 20 not applied)
- *   adminInvite({email, role, repId, cellPhone, isRep})   role: "rep" | "client" for an admin; also "admin" | "super_admin" for a SUPER ADMIN only.
- *                                            (repId, cellPhone, isRep optional; isRep only with role "admin" / "super_admin": the new admin also works as a rep, CLA email required)
+ *   adminInvite({email, role, repId, cellPhone, isRep, firstName, lastName, companyName})
+ *                                            role: "rep" | "client" for an admin; also "admin" | "super_admin" for a SUPER ADMIN only.
+ *                                            (repId, cellPhone, isRep, firstName, lastName, companyName optional; isRep only with role "admin" / "super_admin": the new admin also works as a rep, CLA email required)
  *                                            repId may be any rep OR an admin who also works as a rep
+ *   adminInviteClients(rows)              -> { ok, invited, skipped, rejected, held, failed, remainingHour, stoppedReason, rows[] }
+ *                                            (migration 21 + invite-clients-bulk Edge Function). Admins / super admins only.
+ *                                            rows: [{first_name, last_name, email, cell_phone, company, rep_email}]. Cap 50.
+ *                                            Existing accounts are skipped; blank / unknown rep emails are rejected; invite emails go out right away.
+ *                                            stoppedReason is "hourly_cap" or "auth_rate_limit" when a limit stopped the rest.
  *   adminSetStatus(userId, "active"|"disabled")   admin: reps and clients only. super admin: anyone but themselves.
  *                                            Never leaves zero ACTIVE super admins (rejected by the database)
  *   adminDeleteUser(userId, confirmEmail, reassignTo?)  PERMANENT (migration 18 + the delete-user Edge Function). Only a person who is already DISABLED, never yourself, never the last

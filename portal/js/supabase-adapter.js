@@ -206,6 +206,7 @@
       // resend an invite (migration 20 + the resend-invite Edge Function): admins / super admins: anyone; reps: their own active clients. The server decides.
       async resendInvite(id) { return fn("resend-invite", { userId: id, redirectTo: redirectBase() + "?invite=1" }); },
       async adminInvite(o) { return fn("invite-user", { email: o.email, role: o.role, repId: o.repId || null, isRep: (o.role === "super_admin" || o.role === "admin") && !!o.isRep, cellPhone: await invitedCell(o.cellPhone), redirectTo: redirectBase() + "?invite=1" }); },
+      async adminInviteClients(rows) { return fn("invite-clients-bulk", { rows, redirectTo: redirectBase() + "?invite=1" }); },
       async adminSetStatus(id, status) { return fn("set-user-status", { userId: id, status }); },
       // permanent: only a disabled user (migration 18 + the delete-user Edge Function); confirmEmail = the email typed in the dialog; reassignTo = successor rep when they have active clients
       async adminDeleteUser(id, confirmEmail, reassignTo) { const r = await fn("delete-user", { userId: id, confirmEmail, reassignTo: reassignTo || null }); return (r && r.summary) || {}; },
