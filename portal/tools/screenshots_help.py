@@ -2,7 +2,7 @@
   python3 portal/tools/screenshots_help.py [outdir]      (needs: pip install playwright; Google Chrome)
 Serves THIS repo on a local port and ALWAYS answers portal/config.js with MOCK mode, so every picture is drawn from the fake demo data
 (sample.* / example.com people). It never touches the live site or Supabase. Output: raw PNGs; run portal/tools/optimize_help_images.py after."""
-import http.server, socketserver, threading, sys, os, functools
+import http.server, socketserver, threading, sys, os, functools, tempfile
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -155,6 +155,23 @@ with sync_playwright() as p:
     pg.select_option("#iRole", "client"); pg.fill("#iEmail", "new.agent@example.com"); pg.fill("#iCell", "2405550177")
     pg.evaluate("()=>{const s=document.getElementById('iRep');const o=[...s.options].find(x=>x.text.startsWith('Jane Rep'));s.value=o.value;s.dispatchEvent(new Event('change'))}"); pg.wait_for_timeout(200)
     snap(pg, "admin-invite-client", sel="#invCard"); pg.click("#invCancel")
+    # Upload clients (bulk invite): card, mixed preview, results (mock: no email is sent)
+    csv_path = os.path.join(tempfile.mkdtemp(), "clients.csv")
+    open(csv_path, "w").write("\n".join([
+        "first_name,last_name,email,cell_phone,company,rep_email",
+        "Maya,Chen,maya.chen@example.com,(240) 555-0142,Chen Realty,sample.rep.jane@clatitle.com",
+        "Sam,Agent,sam.agent@example.com,,Acme Realty,sample.rep.jane@clatitle.com",
+        "No,Rep,norep@example.com,,,",
+        "Bad,Mail,not-an-email,,Somewhere,sample.rep.jane@clatitle.com",
+    ]) + "\n")
+    pg.click("#showUp"); pg.wait_for_selector("#upCard:not([hidden])"); pg.wait_for_timeout(200)
+    snap(pg, "admin-upload-card", sel="#upCard")
+    pg.set_input_files("#upFile", csv_path)
+    pg.wait_for_selector("#upPreview:not([hidden])"); pg.wait_for_timeout(300)
+    snap(pg, "admin-upload-preview", sel="#upCard")
+    pg.click("#upSend"); pg.wait_for_selector("#upResults:not([hidden])"); pg.wait_for_timeout(300)
+    snap(pg, "admin-upload-results", sel="#upCard")
+    pg.click("#upCancel")
     # role change that needs a successor (Marcus has clients)
     pg.once("dialog", lambda d: d.accept())
     pg.select_option('select[data-role="00000000-0000-4000-8000-0000000000b2"]', "client"); pg.wait_for_selector(".dlg"); pg.wait_for_timeout(400)
