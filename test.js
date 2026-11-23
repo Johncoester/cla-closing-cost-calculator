@@ -20,6 +20,25 @@ const line=(r,re)=>r.lines.filter(l=>re.test(l.item)).reduce((a,l)=>a+l.b+l.s,0)
 for(const[st,n]of[["MD",24],["VA",133],["DC",1],["FL",67]]){const l=X.allCounties(R,st);ok(l.length===n,`${st} has ${n} counties (got ${l.length})`)}
 for(const[z,st,co]of[["20850","MD","Montgomery"],["21201","MD","Baltimore City"],["22030","VA","Fairfax"],["20001","DC","District of Columbia"],["33101","FL","Miami-Dade"],["32801","FL","Orange"],["21704","MD","Frederick"],["21740","MD","Washington"],["20646","MD","Charles"],["22601","VA","Winchester City"],["34102","FL","Collier"]]){const r=X.zipLookup(z);ok(r&&r.state===st&&r.county===co,`ZIP ${z} -> ${co}, ${st}`)}
 ok(X.zipLookup("90210")===null,"out-of-area ZIP -> null");
+// PA and WV (added 2026-11-23; recording and taxes checked against CLA's Lodestar calculator, premiums from the TIRBOP manual)
+for(const[st,n]of[["PA",67],["WV",55]]){const l=X.allCounties(R,st);ok(l.length===n,`${st} has ${n} counties (got ${l.length})`)}
+for(const[z,st,co]of[["19103","PA","Philadelphia"],["15222","PA","Allegheny"],["17401","PA","York"],["25301","WV","Kanawha"],["25401","WV","Berkeley"]]){const r=X.zipLookup(z);ok(r&&r.state===st&&r.county===co,`ZIP ${z} -> ${co}, ${st}`)}
+{const D={"Deed":[1,3],"Deed of Trust":[1,30]},q=o=>X.calc(R,inp(Object.assign({price:400000,loan:320000,docs:D,fees:[]},o))),rec=r=>line(r,/^Recording fees/);
+ for(const[co,exp]of[["York",264.5],["Philadelphia",527.5],["Allegheny",400],["Chester",294],["Dauphin",267.5]])ok(near(rec(q({state:"PA",county:co})),exp),`PA ${co} recording, 3-pg deed + 30-pg mortgage = $${exp} (Lodestar; Dauphin county schedule, Lodestar rounds to $268) (got ${rec(q({state:"PA",county:co}))})`);
+ ok(near(rec(q({state:"WV",county:"Berkeley"})),111),"WV recording, 3-pg deed + 30-pg deed of trust = Lodestar $111");
+ const tax=(r,re)=>{const l=r.lines.filter(x=>re.test(x.item));return[l.reduce((a,x)=>a+x.b,0),l.reduce((a,x)=>a+x.s,0)]};
+ const y=q({state:"PA",county:"York"});ok(tax(y,/State realty/).join()==="2000,2000"&&tax(y,/Local realty/).join()==="2000,2000","PA York $400k: 1% state + 1% local, split 50/50");
+ ok(near(line(q({state:"PA",county:"Philadelphia"}),/Local realty/),14312),"PA Philadelphia local 3.578% ($14,312)");
+ ok(near(line(q({state:"PA",county:"Allegheny",area:"Pittsburgh"}),/Local realty/),16000),"PA Pittsburgh: the municipality row (4%) beats the county default");
+ const al=q({state:"PA",county:"Allegheny"});ok(near(line(al,/Local realty/),4000)&&al.warnings.some(w=>/municipalities with a different local transfer tax/.test(w)),"PA Allegheny with no municipality picked: standard 1% and a warning naming the exceptions");
+ ok(X.areasOf(R,"PA","Chester").includes("Wayne")&&X.areasOf(R,"PA","York").length===0,"areasOf lists a county's municipalities with their own rate");
+ ok(tax(q({state:"WV",county:"Berkeley"}),/excise/).join()==="0,3080"&&tax(q({state:"WV",county:"Kanawha"}),/excise/).join()==="0,2200","WV excise, seller pays: Berkeley $3,080, Kanawha $2,200 on $400k (Lodestar)");
+ ok(line(q({type:"refi",state:"PA",county:"York",payoff:300000,docs:X.DOC_DEFAULTS.refi}),/transfer tax/i)===0,"PA refinance: no transfer tax");
+ const own=r=>line(r,/Owner's Title Policy/),len=r=>line(r,/Lender's Title Policy/);
+ ok(near(own(q({state:"PA",county:"York",pol:"basic",pres:"actual"})),2735)&&near(own(q({state:"PA",county:"York",pres:"actual"})),3408.5),"PA owner's $400k: basic $2,735; enhanced = basic +10% +$400 ($3,408.50)");
+ ok(len(q({state:"PA",county:"York",pres:"actual"}))===0,"PA simultaneous lender's policy is included in the owner's charge (no separate lender's premium)");
+ ok(near(len(q({type:"refi",state:"PA",county:"York",payoff:300000,docs:X.DOC_DEFAULTS.refi})),1964.05),"PA refinance lender's $320k at the non-sale rate ($1,964.05)");
+ ok(q({state:"WV",county:"Berkeley"}).warnings.some(w=>/premium rates for WV/.test(w)),"WV: premiums warn until Fidelity's WV rates are in the sheet")}
 // CSV parsing
 const csv='"Active","State","Fee Name","Amount"\n"Y","MD","Fee, with comma","1,075"\n"N","MD","Off","5"\n"Y","VA","Say ""hi""","10"\r\n';
 const rows=X.parseCSV(csv);ok(rows.length===4&&rows[1][2]==="Fee, with comma"&&rows[3][2]==='Say "hi"',"parseCSV handles quotes, commas, CRLF");
