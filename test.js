@@ -35,10 +35,12 @@ for(const[z,st,co]of[["19103","PA","Philadelphia"],["15222","PA","Allegheny"],["
  ok(tax(q({state:"WV",county:"Berkeley"}),/excise/).join()==="0,3080"&&tax(q({state:"WV",county:"Kanawha"}),/excise/).join()==="0,2200","WV excise, seller pays: Berkeley $3,080, Kanawha $2,200 on $400k (Lodestar)");
  ok(line(q({type:"refi",state:"PA",county:"York",payoff:300000,docs:X.DOC_DEFAULTS.refi}),/transfer tax/i)===0,"PA refinance: no transfer tax");
  const own=r=>line(r,/Owner's Title Policy/),len=r=>line(r,/Lender's Title Policy/);
- ok(near(own(q({state:"PA",county:"York",pol:"basic",pres:"actual"})),2735)&&near(own(q({state:"PA",county:"York",pres:"actual"})),3408.5),"PA owner's $400k: basic $2,735; enhanced = basic +10% +$400 ($3,408.50)");
+ ok(near(own(q({state:"PA",county:"York",pol:"basic",pres:"actual"})),2735)&&near(own(q({state:"PA",county:"York",pres:"actual"})),3008.5),"PA owner's $400k: basic $2,735; Homeowner's = basic +10% ($3,008.50; Lodestar $3,209 incl. the two $100 endorsements)");
  ok(len(q({state:"PA",county:"York",pres:"actual"}))===0,"PA simultaneous lender's policy is included in the owner's charge (no separate lender's premium)");
  ok(near(len(q({type:"refi",state:"PA",county:"York",payoff:300000,docs:X.DOC_DEFAULTS.refi})),1964.05),"PA refinance lender's $320k at the non-sale rate ($1,964.05)");
- ok(q({state:"WV",county:"Berkeley"}).warnings.some(w=>/premium rates for WV/.test(w)),"WV: premiums warn until Fidelity's WV rates are in the sheet")}
+ {const w=q({state:"WV",county:"Berkeley",pres:"actual"}),b=q({state:"WV",county:"Berkeley",pol:"basic",pres:"actual"});ok(near(own(b),1560)&&near(own(w),1872)&&near(len(w),200)&&!w.warnings.some(x=>/premium rates/.test(x)),`WV $400k/$320k: owner's $1,560, Homeowner's $1,872 (120%), simultaneous lender's $200 (got ${own(b)}, ${own(w)}, ${len(w)})`);
+  ok(near(len(q({type:"refi",state:"WV",county:"Kanawha",payoff:300000,docs:X.DOC_DEFAULTS.refi})),1005),"WV refinance $320k at the original loan rate ($1,005)");
+  {const f=X.calc(R,inp({state:"WV",county:"Berkeley",price:400000,loan:320000,ends:["ALTA 8.1"]}));ok(near(line(f,/ALTA 8\.1/),15)&&near(line(f,/CPL/),75),"WV: ALTA 8.1 $15; CPL $50 lender + $25 buyer")}}}
 // CSV parsing
 const csv='"Active","State","Fee Name","Amount"\n"Y","MD","Fee, with comma","1,075"\n"N","MD","Off","5"\n"Y","VA","Say ""hi""","10"\r\n';
 const rows=X.parseCSV(csv);ok(rows.length===4&&rows[1][2]==="Fee, with comma"&&rows[3][2]==='Say "hi"',"parseCSV handles quotes, commas, CRLF");
