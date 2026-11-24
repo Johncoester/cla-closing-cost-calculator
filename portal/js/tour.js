@@ -39,6 +39,7 @@
       T('[data-tour="u-also"]', "Also works as a rep", "Switch this on for an admin who also looks after clients (they need an @clatitle.com email). Then they get a Rep dashboard as well."),
       T('[data-tour="a-invite"]', "Invite someone", (isSuper ? "Pick a role and send the invite: reps (CLA email required), clients, admins or super admins. " : "Pick a role and send the invite: reps (CLA email required) or clients. Only a super admin can invite admins. ") +
         "They get an email to set a password.", { show: '[data-tour="a-invite-btn"]', leave: "#invCancel" }),
+      T('[data-tour="a-upload"]', "Upload a list of clients", "Need to invite many clients at once? Upload a spreadsheet, preview it, and send invites with each person assigned to a sales rep. Up to 50 at a time.", { show: '[data-tour="a-upload-btn"]', leave: "#upCancel" }),
       T('[data-tour="a-assign"]', "Assignments", "Match a client to a rep by email, even before the client has an account. Reassigning keeps the history.", { show: '#tabs button[data-i="2"]', leave: '#tabs button[data-i="0"]' }),
       T('[data-tour="a-feedback"]', "Staff feedback", isSuper ? "Feedback from staff lands here. You can read it all, and approve or dismiss each item with a note that the sender sees."
         : "Feedback from staff lands here and you can read all of it. Only a super admin can approve or dismiss an item.", { show: '#tabs button[data-i="4"]', leave: '#tabs button[data-i="0"]' }),

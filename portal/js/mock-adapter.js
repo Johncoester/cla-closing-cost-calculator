@@ -146,7 +146,8 @@
           const p = a.clientUserId && s.users.find((x) => x.id === a.clientUserId);
           const qs = p ? visibleQuotes(s, u).filter((q) => q.ownerId === p.id) : [];
           const inv = !p && s.invitations.find((i) => i.email === a.clientEmail);   // RLS: a rep reads pending invitations of clients assigned to them
-          return { email: a.clientEmail, profile: p ? dto(p) : null, pending: !p, cellPhone: p ? p.cellPhone || null : (inv && inv.cellPhone) || null, quoteCount: qs.length,
+          return { email: a.clientEmail, profile: p ? dto(p) : null, pending: !p, cellPhone: p ? p.cellPhone || null : (inv && inv.cellPhone) || null,
+            firstName: p ? p.firstName : (inv && inv.firstName) || null, lastName: p ? p.lastName : (inv && inv.lastName) || null, companyName: p ? p.companyName : (inv && inv.companyName) || null, quoteCount: qs.length,
             lastQuoteAt: qs.length ? qs.map((q) => q.createdAt).sort().pop() : null,
             // migration 20 (list_invite_status): has this client ever signed in, and when did an invite last go out (undefined = unknown)
             signedIn: p ? (p.lastSignInAt === undefined ? undefined : p.lastSignInAt !== null) : undefined, inviteSentAt: p ? inviteSentAt(s, p) : null };
@@ -176,6 +177,35 @@
         return { ok: true, via: "invite", sentAt: t.inviteSentAt, mockNote: "Demo mode: no email is sent." };
       },
       async adminInvite(o) { const s = load(), u = needAdmin(s); return invite(s, u, o); },
+      // Upload clients (migration 21 + invite-clients-bulk): admins / super admins only. Demo mode sends no email.
+      async adminInviteClients(rows) {
+        const s = load(), u = needAdmin(s);
+        if (!Array.isArray(rows) || !rows.length) err("Add at least one client row.");
+        const preview = CLA.classifyClientUpload(rows, s.users);
+        if (preview.error) err(preview.error);
+        s.bulkInviteSends = s.bulkInviteSends || [];
+        const hourAgo = Date.now() - 3600000;
+        let remaining = Math.max(0, 50 - s.bulkInviteSends.filter((x) => new Date(x.at).getTime() > hourAgo).length);
+        const out = []; let invited = 0, skipped = 0, rejected = 0, held = 0, failed = 0, stoppedReason = null;
+        const row = (r, extra) => Object.assign({ index: r.index, email: r.email || "", firstName: r.firstName || "", lastName: r.lastName || "", company: r.company || "", cellPhone: r.cellPhone || null, repEmail: r.repEmail || "", status: r.status, reason: r.reason || null }, extra || {});
+        for (const r of preview.rows) {
+          if (r.status === "skip") { skipped++; out.push(row(r)); continue; }
+          if (r.status !== "invite") { rejected++; out.push(row(r)); continue; }
+          if (stoppedReason || remaining <= 0) {
+            held++; if (!stoppedReason) stoppedReason = "hourly_cap";
+            out.push(row(r, { status: "held", reason: "Hourly invite limit reached. Wait before sending more." })); continue;
+          }
+          try {
+            invite(s, u, { email: r.email, role: "client", repId: r.repId, cellPhone: r.cellRaw || r.cellPhone, firstName: r.firstName, lastName: r.lastName, companyName: r.company });
+          } catch (ex) {
+            if (/already has an account/i.test(ex.message)) { skipped++; out.push(row(r, { status: "skip", reason: "This email already has an account." })); continue; }
+            failed++; out.push(row(r, { status: "failed", reason: ex.message })); continue;
+          }
+          s.bulkInviteSends.push({ at: new Date().toISOString(), email: r.email, by: u.id });
+          remaining = Math.max(0, remaining - 1); invited++; out.push(row(r, { status: "invited", reason: null }));
+        }
+        return { ok: true, invited, skipped, rejected, held, failed, remainingHour: remaining, stoppedReason, rows: out, mockNote: "Demo mode: no email is sent." };
+      },
       async adminSetIsRep(id, on, reassignTo) {
         const s = load(), u = needSuper(s);   // super admin only, for admins and super admins (an admin cannot switch anyone, not even themselves)
         const t = s.users.find((x) => x.id === id) || err("No such user.");
@@ -404,7 +434,11 @@
       const existing = s.assignments.find((a) => a.clientEmail === e && a.active);
       if (role === "client" && existing && !adminRules && existing.repId !== actor.id) err("That client already belongs to another rep.");
       s.invitations = s.invitations.filter((i) => i.email !== e);
-      s.invitations.push({ email: e, role, isRep: flagged, invitedBy: actor.id, cellPhone: cell, createdAt: new Date().toISOString() });
+      s.invitations.push({ email: e, role, isRep: flagged, invitedBy: actor.id, cellPhone: cell,
+        firstName: (o.firstName || o.first_name || "").trim() || null,
+        lastName: (o.lastName || o.last_name || "").trim() || null,
+        companyName: (o.companyName || o.company || o.company_name || "").trim() || null,
+        createdAt: new Date().toISOString() });
       if (role === "client" && o.repId) {
         if (!s.users.some((x) => x.id === o.repId && isRep(x))) err("Pick a rep.");
         s.assignments.filter((a) => a.clientEmail === e && a.active && a.repId !== o.repId).forEach((a) => (a.active = false));

@@ -1,4 +1,4 @@
-// Single source of the Help page text. `node portal/tools/build-help.js` turns it into portal/help.html (do not edit help.html by hand).
+// Single source of the STAFF manual text. `node portal/tools/build-help.js` turns it into portal/staff-help.html (do not edit that file by hand). The client guide is tools/client-content.js.
 // Block types: p, h3, ul, ol, table{cols,rows}, note{tone,x}, img{f,cap,alt} (help page only)
 // Inline: `code`. Audience: E = everyone, R = reps, A = admins
 const S = [];
@@ -52,7 +52,7 @@ sec("getting-started", 2, "Getting started", "E", "Sign in, accept an invitation
   { t: "img", f: "profile.png", cap: "Profile page with the photo box and details.", alt: "Profile page" },
   { t: "p", x: "This staff manual is one click away: choose Help in the top bar of any portal page, or next to your name in the calculator header. Clients get their own shorter client guide from the same Help link; staff can read it too (see the link at the top of this page).", helpOnly: true },
   { t: "h3", x: "The guided tour" },
-  { t: "p", x: "A short click-through in John's voice. In the portal it starts by itself the first time you open your dashboard after finishing your profile, with 6 to 7 steps for your role. Replay it any time with Take the tour in the top bar. The calculator has its own tour (about 13 to 15 steps) for anyone, signed in or not: use Take the tour in the calculator header or the \"New here?\" chip. Skip with Skip tour or Esc; Back and Next or the arrow keys move." },
+  { t: "p", x: "A short click-through in John's voice. In the portal it starts by itself the first time you open your dashboard after finishing your profile. A rep has 6 steps (7 if they also have an Admin dashboard). An admin has 7 steps, and a super admin has 8 (the extra step is Also works as a rep). Replay it any time with Take the tour in the top bar. The calculator has its own tour (about 13 to 15 steps) for anyone, signed in or not: use Take the tour in the calculator header or the \"New here?\" chip. Skip with Skip tour or Esc; Back and Next or the arrow keys move." },
   { t: "img", f: "tour-client-step3.png", cap: "A guided tour step in the portal: a spotlight on the element and a short note.", alt: "Guided tour popup over the client dashboard" },
   { t: "img", f: "tour-calculator.png", cap: "The calculator tour works the same way, for guests too.", alt: "Calculator guided tour step" },
   { t: "h3", x: "The feedback bubble (staff only)" },
@@ -93,6 +93,7 @@ sec("roles", 3, "Roles and what each can do", "E", "Four roles. A super admin or
     ["Delete a quote on screen", "No button", "No button", "No button", "Own quotes"],
     ["Edit own profile and photo", "Yes", "Yes", "Yes", "Yes"],
     ["Invite a rep or client", "Yes", "Yes", "Clients only, assigned to them", "No"],
+    ["Upload a list of clients", "Yes", "Yes", "No", "No"],
     ["Invite an admin or super admin", "Yes", "No", "No", "No"],
     ["Disable or re-enable a user", "Anyone except themselves and the last super admin", "Reps, clients, other admins", "No", "No"],
     ["Delete a disabled user for good", "Anyone except themselves and the last super admin", "Reps, clients, other admins", "No", "No"],
@@ -257,7 +258,7 @@ sec("reps", 6, "Rep screens and realtor assignments", "R", "The Rep dashboard, i
   { t: "img", f: "rep-quotes.png", cap: "All quotes in one list.", alt: "Rep quotes tab" },
 ]);
 
-sec("admin", 7, "Admin guide", "A", "People, roles, assignments, the audit log and staff feedback. Open it from Admin dashboard.", [
+sec("admin", 7, "Admin guide", "A", "People, invites (one at a time or by upload), roles, assignments, quotes, the audit log, staff feedback and Rep pricing. Open it from Admin dashboard.", [
   { t: "p", x: "Tabs: Users, Quotes, Assignments, Audit log, Feedback and Rep pricing. Everything you do here is written to the audit log." },
   { t: "img", f: "admin-users.png", cap: "The Users tab (demo data).", alt: "Admin Users tab" },
   { t: "h3", x: "Invite a user" },
@@ -281,10 +282,28 @@ sec("admin", 7, "Admin guide", "A", "People, roles, assignments, the audit log a
     "If the rep you picked has a pricing table, the client sees that table's settlement fee when they sign in (unless the client's own email is in a table, which wins).",
     "Who can invite whom: admins can invite reps and clients only. Only a super admin can invite admins and super admins; an admin does not see those options and the server refuses the request if one is sent.",
   ] },
+  { t: "h3", x: "Upload clients" },
+  { t: "p", x: "Use Upload clients when you have a list of realtors or lenders to invite at once, each assigned to a sales rep. Only admins and super admins can do this. Uploading the file only shows a preview; invite emails go out when you choose Send invites, and only for the rows marked Ready." },
+  { t: "ol", items: [
+    ["Open Admin, then Users, and choose Upload clients", "The upload card opens next to Invite user."],
+    ["Choose Download template (CSV)", "The spreadsheet columns are first name, last name, email, cell phone, company and the sales rep's email (rep_email). You can also start from your own spreadsheet, as long as those column names are in the first row. CSV and Excel (.xlsx) both work."],
+    ["Fill in the sheet and choose Choose file", "Every row needs a valid email and a sales rep email that matches an active salesperson (a rep, or an admin or super admin with Also works as a rep switched on). Name, cell and company are optional and are saved on the invitation, then copied onto the person's profile when they create their account. Cell phones must be US numbers."],
+    ["Read the preview", "Each row is marked Ready, Will be skipped (that email already has an account; they are left as they are and are not reassigned), or Needs fixing (a blank or unknown rep, a bad or missing email, a duplicate in the same file, or a cell number the portal cannot read). Only Ready rows will be invited. Fix the file and choose the file again if you need to."],
+    ["Choose Send invites", "The button shows how many Ready rows will go out, for example Send 1 invite. The Ready people get the same set-password email as a single invite, as clients, assigned to the rep you listed. Then you see a summary of who was invited, skipped, rejected, or held."],
+  ] },
+  { t: "img", f: "admin-upload-card.png", cap: "The Upload clients card, with the template download and file picker (demo data).", alt: "Upload clients card on the Admin Users page" },
+  { t: "img", f: "admin-upload-preview.png", cap: "A preview with a mix of Ready, Will be skipped and Needs fixing rows. Nothing has been sent yet.", alt: "Upload clients preview table with mixed row statuses" },
+  { t: "img", f: "admin-upload-results.png", cap: "The results summary after Send invites (demo data; in demo mode no email is sent).", alt: "Upload clients results summary" },
+  { t: "ul", items: [
+    "Each upload can have at most 50 rows. The portal also caps bulk invites at 50 emails in a rolling hour. If you hit either cap, sending stops cleanly and the remaining Ready rows are marked Held; already-sent invites stay sent. Try the rest later, or use Resend invite for anyone already recorded.",
+    "If the email service hits its own rate limit mid-batch, the same thing happens: later Ready rows are Held, and the summary tells you how many invites went out.",
+    "Blank or invalid rep_email rows are always rejected. A super admin who also works as a rep is a valid assignee; a plain admin who does not work as a rep is not.",
+    "This path only invites clients. To invite a sales rep or an admin, use Invite user one at a time.",
+  ] },
   { t: "h3", x: "Roles, enabling and disabling" },
   { t: "ul", items: [
     "Change a role with the dropdown on the person's row and confirm. An admin sees Rep and Client for reps and clients, and Admin, Rep and Client for another admin. Only a super admin can promote someone to admin or super admin.",
-    "Disable stops a person signing in. Their data stays. Re-enable brings them back. You cannot disable or demote yourself, an admin cannot touch a super admin, and the last active super admin can never be disabled or demoted.",
+    "Disable stops a person signing in. Their data stays. Re-enable brings them back. You cannot disable or demote yourself, an admin cannot touch a super admin, and the last active super admin can never be disabled or demoted. If a disabled person still reaches the portal, they see: Your account is disabled or not set up. Contact CLA.",
     "Delete is for people who are already disabled: disable first, then choose Delete next to Re-enable. It has the same reach as Disable (you cannot delete yourself or the last active super admin, and an admin cannot delete a super admin). You must type the person's email to confirm.",
     "What Delete does: it removes the account, sign-in, profile details, photo and the saved quotes they own, and the realtor links tied to them. It keeps the audit log (with a user deleted record: email, role, who deleted them and when), feedback they sent (shown without a name), and quotes that other people own where they were the rep (the rep name is just removed). If the person is a rep with active clients, you choose which rep takes those clients over first. The same email can be invited again later as a brand-new account. Delete cannot be undone: if you may need the person back, use Disable instead.",
     "Super admin rows show a fixed badge and a greyed-out button, with a tooltip that explains why.",
@@ -378,11 +397,16 @@ sec("fee-data", 9, "Where the fee data comes from", "A", "A Google Sheet that th
     ["Endorsements", "Endorsement codes, names and prices."],
     ["Jurisdictions", "Counties and cities, with who customarily pays the owner's policy."],
   ] },
+  { t: "h3", x: "How fees get changed" },
+  { t: "ol", items: [
+    ["Ask John Coester before changing the live sheet", "The Google Sheet CLA Fee Tables (Live - Calculator) is the source for every standard fee. Do not edit it without John, because a bad row can change quotes for everyone."],
+    ["Edit the matching tab and set Active to Y", "Use the tab that holds that fee (CLA_Fees, Recording_Fees, Transfer_Taxes, and so on). A row with Active other than Y is ignored. Settlement-fee specials for a particular rep or client do not go in this sheet: use Rep pricing (section 8) instead."],
+    ["Reload the calculator", "Anyone can choose Reload team sheet, or just load the calculator again. The new figures show immediately. The built-in snapshot (the fallback if the sheet cannot be loaded) is refreshed separately with CLA's developer tools, so ask John if that copy also needs updating."],
+  ] },
   { t: "ul", items: [
     "If the sheet cannot be loaded, the calculator falls back to a built-in snapshot, shows a yellow warning and marks results BUILT-IN SNAPSHOT. Rates in a snapshot can be out of date.",
     "Recording fee watch is a daily check of the county source pages listed in the sheet. It only reports changes for a person to review; it never edits the sheet or the calculator by itself.",
     "Title insurance premiums follow each underwriter's rate manual (for example the Maryland rate manual) and, in Florida, the state's promulgated rates. The source is noted on the sheet rows.",
-    "The built-in snapshot is refreshed from the sheet by hand with CLA's developer tools.",
   ] },
 ]);
 
@@ -397,6 +421,9 @@ sec("faq", 10, "Troubleshooting and FAQ", "E", "Quick answers. If nothing here h
     ["It says it could not save to my account", "Sign in again and retry. The quote you see on screen is still fine to print or copy."],
     ["My client can't see my special pricing", "Check that the rep's email is in the table, the client is assigned to that rep on the Assignments tab, the client's own email is not in a different table, the state is in a fee set and the box was not left blank, the person is signed in, and a plain admin is not testing (admins only get pricing if they also work as a rep). Then refresh the calculator."],
     ["A client has no rep", "An admin picks one in the Rep column of the Users tab, or assigns by email on the Assignments tab. Until then the client's page says they have not been matched."],
+    ["I uploaded a client list but no emails went out", "Uploading only shows the preview. Invite emails go out when you choose Send invites, and only for rows marked Ready. In the preview, fix any Needs fixing rows and choose the file again."],
+    ["An upload row says Needs fixing or Will be skipped", "Needs fixing usually means a blank or unknown rep, a bad email, a duplicate in the file, or a cell number the portal cannot read. Will be skipped means that email already has an account; the upload does not change their rep. Use the Users tab to reassign an existing client."],
+    ["Send invites stopped part way through", "Each upload is capped at 50 rows, and bulk invites are capped at 50 emails in a rolling hour. If the email service also hits its limit, later Ready rows are marked Held. Already-sent invites stay sent. Try the rest later, or use Resend invite for anyone already recorded."],
     ["My photo won't upload", "JPEG or PNG only, up to 2 MB. iPhone HEIC photos are refused for now."],
     ["The phone number is rejected", "US numbers only, for example (240) 555-0142."],
     ["How do I change my email?", "Ask an admin."],
@@ -445,10 +472,7 @@ sec("glossary", 11, "Glossary, not built yet, and open questions", "E", "Plain-E
 ]);
 
 const NEEDS = [
-  "Is the pricing tables update (migration 16) applied to the live database? If not, the Rep pricing tab shows an error and everyone pays standard fees.",
-  "Are the tour, last sign-in badge and staff feedback updates applied to the live database? The project notes said some were not applied when they were written.",
   "The 24-hour link life and the CLA Quotes sender come from John's brief; they live in email settings that are not in the code.",
-  "What message does a disabled person see when they try to sign in?",
   "Should a plain admin who is listed in a pricing table get special pricing? Today they do not unless they also work as a rep.",
   "What do Approve and Dismiss mean for feedback in practice, and who sets the Notified status?",
   "The standard fee amounts quoted here come from the built-in snapshot; the live sheet is the real source.",
