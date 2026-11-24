@@ -39,6 +39,10 @@ for(const[z,co]of[["48226","Wayne"],["48009","Oakland"],["49503","Kent"],["48104
 {const m=X.calc(R,inp({state:"MI",county:"Wayne",price:400000,loan:320000,docs:{"Deed":[1,3],"Deed of Trust":[1,30]},fees:[]})),sum=(re,k)=>m.lines.filter(l=>re.test(l.item)).reduce((a,l)=>a+l[k],0);
  ok(near(sum(/^Recording fees/,"b"),60),"MI recording: $30 deed + $30 mortgage regardless of pages");
  ok(near(sum(/State real estate transfer/,"s"),3000)&&near(sum(/County real estate transfer/,"s"),440)&&sum(/transfer tax/i,"b")===0,"MI $400k: seller pays $3,000 state + $440 county transfer tax ($8.60 per $1,000)");
+ {const own=r=>r.lines.filter(l=>/Owner's Title Policy/.test(l.item)).reduce((a,l)=>a+l.b+l.s,0),len=r=>r.lines.filter(l=>/Lender's Title Policy/.test(l.item)).reduce((a,l)=>a+l.b+l.s,0),c=o=>X.calc(R,inp(Object.assign({state:"MI",county:"Wayne",price:400000,loan:320000,pres:"actual",fees:[]},o)));
+  const b=c({pol:"basic"}),e=c({});ok(Math.abs(own(b)-2115)<1&&Math.abs(own(e)-2374)<1&&Math.abs(len(e)-1222)<1&&!e.warnings.some(w=>/premium rates/.test(w)),`MI $400k/$320k matches Fidelity's rate chart within $1: owner's $2,115, Homeowner's $2,374, loan $1,222 (got ${own(b)}, ${own(e)}, ${len(e)})`);
+  ok(e.lines.find(l=>/Owner's Title Policy/.test(l.item)).s>0,"MI: the seller pays the owner's policy by default");
+  ok(Math.abs(len(c({type:"refi",payoff:300000,docs:X.DOC_DEFAULTS.refi}))-1222)<1,"MI refinance $320k at the basic loan rate ($1,222)")}
  ok(near(X.calc(R,inp({state:"MI",county:"Kent",price:400001,loan:0,type:"cash",fees:[]})).lines.filter(l=>/State real estate/.test(l.item)).reduce((a,l)=>a+l.s,0),3003.75),"MI rounds up to the next $500 ($400,001 -> $3,003.75 state)")}
 // PA and WV (added 2026-11-23; recording and taxes checked against CLA's Lodestar calculator, premiums from the TIRBOP manual)
 for(const[st,n]of[["PA",67],["WV",55]]){const l=X.allCounties(R,st);ok(l.length===n,`${st} has ${n} counties (got ${l.length})`)}
