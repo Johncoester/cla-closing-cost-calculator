@@ -33,6 +33,13 @@ const line=(r,re)=>r.lines.filter(l=>re.test(l.item)).reduce((a,l)=>a+l.b+l.s,0)
 for(const[st,n]of[["MD",24],["VA",133],["DC",1],["FL",67]]){const l=X.allCounties(R,st);ok(l.length===n,`${st} has ${n} counties (got ${l.length})`)}
 for(const[z,st,co]of[["20850","MD","Montgomery"],["21201","MD","Baltimore City"],["22030","VA","Fairfax"],["20001","DC","District of Columbia"],["33101","FL","Miami-Dade"],["32801","FL","Orange"],["21704","MD","Frederick"],["21740","MD","Washington"],["20646","MD","Charles"],["22601","VA","Winchester City"],["34102","FL","Collier"]]){const r=X.zipLookup(z);ok(r&&r.state===st&&r.county===co,`ZIP ${z} -> ${co}, ${st}`)}
 ok(X.zipLookup("90210")===null,"out-of-area ZIP -> null");
+// Michigan (added 2026-11-24: $30 per document recording; state $3.75 + county $0.55 per $500, seller pays; premiums wait on Fidelity's MI manual)
+{const l=X.allCounties(R,"MI");ok(l.length===83&&l.includes("St. Clair")&&l.includes("Wayne"),`MI has 83 counties (got ${l.length})`)}
+for(const[z,co]of[["48226","Wayne"],["48009","Oakland"],["49503","Kent"],["48104","Washtenaw"]]){const r=X.zipLookup(z);ok(r&&r.state==="MI"&&r.county===co,`ZIP ${z} -> ${co}, MI`)}
+{const m=X.calc(R,inp({state:"MI",county:"Wayne",price:400000,loan:320000,docs:{"Deed":[1,3],"Deed of Trust":[1,30]},fees:[]})),sum=(re,k)=>m.lines.filter(l=>re.test(l.item)).reduce((a,l)=>a+l[k],0);
+ ok(near(sum(/^Recording fees/,"b"),60),"MI recording: $30 deed + $30 mortgage regardless of pages");
+ ok(near(sum(/State real estate transfer/,"s"),3000)&&near(sum(/County real estate transfer/,"s"),440)&&sum(/transfer tax/i,"b")===0,"MI $400k: seller pays $3,000 state + $440 county transfer tax ($8.60 per $1,000)");
+ ok(near(X.calc(R,inp({state:"MI",county:"Kent",price:400001,loan:0,type:"cash",fees:[]})).lines.filter(l=>/State real estate/.test(l.item)).reduce((a,l)=>a+l.s,0),3003.75),"MI rounds up to the next $500 ($400,001 -> $3,003.75 state)")}
 // PA and WV (added 2026-11-23; recording and taxes checked against CLA's Lodestar calculator, premiums from the TIRBOP manual)
 for(const[st,n]of[["PA",67],["WV",55]]){const l=X.allCounties(R,st);ok(l.length===n,`${st} has ${n} counties (got ${l.length})`)}
 for(const[z,st,co]of[["19103","PA","Philadelphia"],["15222","PA","Allegheny"],["17401","PA","York"],["25301","WV","Kanawha"],["25401","WV","Berkeley"]]){const r=X.zipLookup(z);ok(r&&r.state===st&&r.county===co,`ZIP ${z} -> ${co}, ${st}`)}
