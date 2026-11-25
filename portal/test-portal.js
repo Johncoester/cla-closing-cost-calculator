@@ -7,7 +7,7 @@ const dir = path.join(__dirname, "js");
 function boot() {
   const dom = new JSDOM("<!doctype html><body></body>", { url: "http://localhost/portal/", runScripts: "outside-only" });
   const w = dom.window; w.crypto.randomUUID = require("crypto").randomUUID;
-  for (const f of ["mock-data", "mock-adapter", "supabase-adapter", "auth-adapter", "portal-ui", "bulk-invite"]) w.eval(fs.readFileSync(path.join(dir, f + ".js"), "utf8"));
+  for (const f of ["mock-data", "mock-adapter", "supabase-adapter", "auth-adapter", "portal-ui", "bulk-invite", "fee-upload"]) w.eval(fs.readFileSync(path.join(dir, f + ".js"), "utf8"));
   return w;
 }
 let pass = 0; const ok = (n) => { pass++; console.log("ok " + n); };
@@ -808,7 +808,7 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
       // the admin screen
       {
         const RP = await renderPage("admin.html", "sample.robin.admin@clatitle.com", "#users tr"), $ = (i) => RP.d.getElementById(i), click = async (i, ms) => { $(i).click(); await tick(ms || 80); }, submit = async (i) => { fire(RP.win, $(i), "submit"); await tick(100); };
-        const tabs = [...RP.d.querySelectorAll("#tabs button")]; assert.strictEqual(tabs.length, 6); assert.strictEqual(tabs[5].textContent, "Rep pricing"); assert.strictEqual(tabs[4].textContent, "Feedback"); assert.ok($("pPricing").hidden);
+        const tabs = [...RP.d.querySelectorAll("#tabs button")]; assert.strictEqual(tabs.length, 7); assert.strictEqual(tabs[6].textContent, "CLA fees"); assert.strictEqual(tabs[5].textContent, "Rep pricing"); assert.strictEqual(tabs[4].textContent, "Feedback"); assert.ok($("pPricing").hidden);
         tabs[5].click(); await tick(80);
         assert.ok(!$("pPricing").hidden && $("pUsers").hidden && !$("ptListView").hidden && $("ptDetailView").hidden); assert.match($("pPricing").textContent, /Settlement Fee to CLA Title/); assert.match($("pPricing").textContent, /Title insurance premiums, recording fees, taxes and every other fee never change/);
         const rows = () => [...RP.d.querySelectorAll("#ptRows tr")].map((r) => r.textContent); assert.strictEqual(rows().length, 2); assert.ok(/Marvin's Pricing/.test(rows()[1] || rows()[0]) && rows().join().includes("sample.rep.marcus@clatitle.com") && rows().join().includes("sample.rep.jane@clatitle.com")); assert.match($("ptCount").textContent, /2 tables · 4 rep or client emails/);
@@ -1306,8 +1306,8 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
 
     // cache-bust: every ?v= in index.html and TOUR_V agree
     const vs = [...idx.matchAll(/\?v=(\d{8}[a-z])/g)].map((m) => m[1]), pu = fs.readFileSync(path.join(__dirname, "js", "portal-ui.js"), "utf8");
-    assert.deepStrictEqual(vs, ["20261102m", "20261116a", "20261102m"]);
-    assert.ok(new RegExp('CLA.TOUR_V = "20261102m"').test(pu) && idx.includes('var V="20261102m"')); ok("calculator tour: zip-county, portal-hook, the tour loader and CLA.TOUR_V are 20261102m; fee-snapshot is cache-busted separately (20261116a)");
+    assert.deepStrictEqual(vs, ["20261125a", "20261116a", "20261125a"]);
+    assert.ok(new RegExp('CLA.TOUR_V = "20261125a"').test(pu) && idx.includes('var V="20261125a"')); ok("calculator tour: zip-county, portal-hook, the tour loader and CLA.TOUR_V are 20261125a; fee-snapshot is cache-busted separately (20261116a)");
     // the new elements are inert in print and add no external requests
     assert.ok(/@media print\{[\s\S]*?\.claChip\{display:none!important\}/.test(idx) && !/https?:\/\//.test(tj2)); ok("calculator tour: the chip is not printed; tour.js has no external libraries or CDN");
   }
@@ -1479,6 +1479,115 @@ const JPG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0], PNG = [0x89, 0x50, 0x4e, 0x47,
     const grid = await CLA.parseXlsx(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
     const xrows = CLA.rowsFromGrid(grid);
     assert.strictEqual(xrows[0].email, "xlsx.maya@example.com"); assert.strictEqual(xrows[0].company, "Chen Realty"); ok("upload: an .xlsx first sheet is read (name, email, company, rep)");
+  }
+
+  // ---- Upload CLA fees (migration 22; admins upload, preview + diff, a super admin approves; any state) ----
+  {
+    const w = boot(), CLA = w.CLA, sameJ = (a, b, m) => assert.strictEqual(JSON.stringify(a), JSON.stringify(b), m);
+    const A = w.CLA.createMockAdapter({}), as = async (email) => { w.localStorage.removeItem("cla_portal_mock_session"); await A.signIn(email, "x"); };
+    const reject = async (p, re, name) => { try { await p; assert.fail("should have thrown: " + name); } catch (e) { assert.ok(re.test(e.message), name + " -> " + e.message); ok(name); } };
+    const SNAPSRC = fs.readFileSync(path.join(__dirname, "..", "fee-snapshot.js"), "utf8"), SNAP = new Function(SNAPSRC + ";return CLA_FEES_SNAPSHOT")();
+    sameJ(CLA.FEE_HEADERS, SNAP.CLA_Fees[0]); ok("fee upload: the template columns are exactly the CLA_Fees tab's columns, in order");
+    const idx = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8"), opts = [...idx.match(/<select id="state">([\s\S]*?)<\/select>/)[1].matchAll(/<option>(\w\w)<\/option>/g)].map((m) => m[1]);
+    sameJ([...CLA.CALC_STATES].sort(), opts.sort()); ok("fee upload: CLA.CALC_STATES matches the calculator's State list (" + opts.join(", ") + ")");
+    assert.strictEqual(Object.keys(CLA.US_STATES).length, 51); ok("fee upload: any of the 50 states + DC can be uploaded");
+    const current = CLA.feeRowsFromSheetGrid(SNAP.CLA_Fees), mdNow = current.filter((r) => r.state === "MD");
+    const tpl = CLA.feeTemplateCsv("MD", current), back = CLA.feeRowsFromGrid(CLA.parseCsv(tpl)), vb = CLA.validateFeeRows(back.rows);
+    assert.strictEqual(vb.errorCount, 0); assert.strictEqual(vb.rows.length, mdNow.length);
+    const d0 = CLA.diffFees(vb.rows, current).MD; assert.strictEqual(d0.added.length + d0.changed.length + d0.removed.length, 0); assert.strictEqual(d0.same, mdNow.length);
+    ok("fee upload: the MD template is prefilled with today's " + mdNow.length + " MD rows and uploads back with no errors and no changes");
+    assert.match(CLA.feeTemplateCsv("NJ", current), /\r\nY,NJ,Settlement Fee to CLA Title & Escrow,Purchase,0,Buyer,C,Y,/); ok("fee upload: a state with no fees yet gets a one-row starter template");
+    assert.match(CLA.feeRowsFromGrid([["State", "Fee Name"], ["MD", "x"]]).error, /Missing columns: Transaction, Amount, Paid By/); ok("fee upload: missing columns are named");
+    assert.match(CLA.feeRowsFromGrid([CLA.FEE_HEADERS].concat(Array.from({ length: 501 }, () => ["Y", "MD", "x", "Purchase", "1", "Buyer", "C", "Y", ""]))).error, /at most 500/); ok("fee upload: more than 500 rows is refused");
+    const H = CLA.FEE_HEADERS, row = (a) => Object.fromEntries(H.map((h, i) => [h, a[i] == null ? "" : String(a[i])]));
+    const v = CLA.validateFeeRows([
+      row(["Y", "MD", "Settlement Fee to CLA Title & Escrow", "Purchase", "$1,125", "Buyer", "C", "Y"]),
+      row(["Y", "XX", "Doc Preparation Fee", "Purchase", "205", "Seller"]),
+      row(["Y", "MD", "Doc Preparation Fee", "Sale", "205", "Seller"]),
+      row(["Y", "MD", "Notary Fee", "Purchase", "abc", "Buyer"]),
+      row(["Y", "MD", "Notary Fee", "Purchase", "1", "Lender"]),
+      row(["Y", "MD", "Notary Fee", "Purchase", "1", "Buyer", "Z"]),
+      row(["maybe", "MD", "Courier", "Purchase", "1", "Buyer"]),
+      row(["Y", "md", "settlement fee to cla title & escrow", "purchase", "1", "buyer"]),
+      row(["Y", "MD", "Seller Refi Fee", "Refi", "50", "Seller"]),
+      row(["Y", "NJ", "Doc Preparation Fee", "Refinance", "150", "Borrower"]),
+    ]);
+    sameJ(v.rows.map((r) => r.errors.length ? r.errors[0].split(" ")[0] : "ok"), ["ok", "State", "Transaction", "Amount", "Paid", "LE", "Active", "Duplicate", "ok", "ok"]);
+    assert.strictEqual(v.rows[0].amount, 1125); assert.strictEqual(v.rows[9].transaction, "Refi"); assert.strictEqual(v.errorCount, 7);
+    assert.match(v.rows[8].warnings[0], /refinance has no seller/); assert.match(v.stateWarnings.NJ.join(" "), /can’t quote New Jersey yet/); assert.match(v.stateWarnings.NJ.join(" "), /No active “Settlement Fee/);
+    assert.strictEqual(v.stateWarnings.MD.length, 0); ok("fee upload: preview flags bad state / transaction / amount / payer / section / flag / duplicate rows, warns about a state the calculator can't quote yet and a missing settlement fee");
+    const nd = CLA.diffFees([Object.assign({}, mdNow[0], { amount: 2000 }), Object.assign({}, mdNow[1]), { state: "MD", feeName: "New Fee", transaction: "Purchase", paidBy: "Buyer", amount: 25, leSection: "C", active: true, defaultOn: true }], current).MD;
+    assert.strictEqual(nd.changed.length, 1); assert.ok(nd.changed[0].big && nd.changed[0].fields.includes("amount")); assert.strictEqual(nd.added.length, 1); assert.strictEqual(nd.removed.length, mdNow.length - 2); assert.strictEqual(nd.same, 1);
+    ok("fee upload: the diff counts new, changed (over-50% flagged), removed and unchanged rows per state");
+    assert.ok(!/^=/.test(CLA.feeTemplateCsv("MD", [Object.assign({}, mdNow[0], { notes: "=HYPERLINK(1)" })]).split("\r\n")[1].split(",").pop())); ok("fee upload: a note that looks like a spreadsheet formula is neutralised in the template");
+
+    const good = CLA.feeRowsForRpc(CLA.validateFeeRows([row(["Y", "MD", "Settlement Fee to CLA Title & Escrow", "Purchase", "1125", "Buyer", "C", "Y"]), row(["Y", "MD", "Doc Preparation Fee", "Purchase", "215", "Seller", "C", "Y"]), row(["Y", "NJ", "Settlement Fee to CLA Title & Escrow", "Refi", "500", "Borrower", "C", "Y"])]).rows);
+    await as("sample.rep.jane@clatitle.com"); await reject(A.adminSubmitClaFeeBatch({ rows: good }), /Admins only/, "fee upload (mock): a rep cannot upload");
+    await as("sam.agent@example.com"); await reject(A.adminSubmitClaFeeBatch({ rows: good }), /Admins only/, "fee upload (mock): a client cannot upload");
+    await as("sample.robin.admin@clatitle.com");
+    await reject(A.adminSubmitClaFeeBatch({ rows: good.concat([Object.assign({}, good[0], { state: "ZZ" })]) }), /Nothing was saved.*Row 4/, "fee upload (mock): a bad row saves nothing (server-side check too)");
+    const sub = await A.adminSubmitClaFeeBatch({ fileName: "md-nj.csv", note: "2027", rows: good }); assert.ok(sub.id);
+    let bs = await A.adminListClaFeeBatches(); assert.strictEqual(bs[0].status, "pending"); sameJ(bs[0].states, ["MD", "NJ"]);
+    assert.strictEqual((await A.getClaFees()).states.length, 0); ok("fee upload (mock): an admin's upload waits as pending; nothing is live yet");
+    await reject(A.adminSubmitClaFeeBatch({ rows: [good[0]] }), /already an upload waiting for approval for MD/, "fee upload (mock): one pending upload per state");
+    await reject(A.superApproveClaFeeBatch(sub.id), /Only a super admin/, "fee upload (mock): a plain admin cannot approve");
+    await as("sample.admin@clatitle.com"); await A.superApproveClaFeeBatch(sub.id, "OK");
+    w.localStorage.removeItem("cla_portal_mock_session");
+    const live = await A.getClaFees(); sameJ(live.states.map((x) => x.state), ["MD", "NJ"]); assert.strictEqual(live.rows.length, 3); assert.ok(!("notes" in live.rows[0]));
+    ok("fee upload (mock): the super admin approves; anyone (signed out too) now reads MD and NJ, without notes");
+    await as("sample.admin@clatitle.com"); await reject(A.superApproveClaFeeBatch(sub.id), /already approved/, "fee upload (mock): an upload is approved once");
+    const s2 = await A.adminSubmitClaFeeBatch({ fileName: "md.csv", rows: [Object.assign({}, good[0], { amount: "1200" })] }); await A.superRejectClaFeeBatch(s2.id, "no");
+    const s3 = await A.adminSubmitClaFeeBatch({ fileName: "md.csv", rows: [Object.assign({}, good[0], { amount: "1200" })] }); await A.adminWithdrawClaFeeBatch(s3.id);
+    assert.strictEqual((await A.getClaFees()).rows.find((r) => r.state === "MD" && r.paidBy === "Buyer").amount, 1125); ok("fee upload (mock): rejected and withdrawn uploads change nothing");
+    const ops = (await A.adminAuditLog(100)).filter((r) => r.action === "cla_fees_changed").map((r) => r.details.op).reverse().join(","); assert.strictEqual(ops, "submit,approve,submit,reject,submit,withdraw"); ok("fee upload (mock): every submit / approve / reject / withdraw is in the audit log");
+
+    // calculator: the approved MD rows replace the sheet's MD rows only (real index.html; portal-hook not loaded, the API is called directly)
+    {
+      const root = path.join(__dirname, ".."), page = idx.replace(/<script src="https[^>]+><\/script>/, "").replace(/<link[^>]*fonts\.googleapis[^>]*>/, "").replace(/<script src="zip-county.js[^"]*"><\/script>/, "<script>" + fs.readFileSync(path.join(root, "zip-county.js"), "utf8") + "</script>")
+        .replace(/<script src="fee-snapshot.js[^"]*"><\/script>/, "<script>" + SNAPSRC + "</script>").replace(/<script src="portal\/js\/portal-hook.js[^"]*" defer><\/script>/, "");
+      const dom = new JSDOM(page, { url: "http://localhost/index.html", runScripts: "dangerously", pretendToBeVisual: true, virtualConsole: new VirtualConsole(), beforeParse(win) { win.fetch = async () => ({ ok: false, status: 401, text: async () => "" }); } });
+      await new Promise((r) => setTimeout(r, 80)); const dd = dom.window.document;
+      const fees = () => [...dd.querySelectorAll("#fees .fee")].map((r) => r.children[0].dataset.name + "=" + r.children[2].value);
+      const z = dd.getElementById("zip"); z.value = "21704"; z.dispatchEvent(new dom.window.Event("input", { bubbles: true })); await new Promise((r) => setTimeout(r, 40));
+      const before = fees(); assert.ok(before.includes("Settlement Fee to CLA Title & Escrow=1075") && before.length > 3);
+      dom.window.CLA_QUOTE_API.setClaFees(live);
+      const after = fees(); sameJ(after, ["Settlement Fee to CLA Title & Escrow=1125", "Doc Preparation Fee=215"]);
+      assert.match(dd.getElementById("status").textContent, /CLA fees for MD, NJ come from the portal/);
+      const st = dd.getElementById("state"); st.value = "VA"; st.dispatchEvent(new dom.window.Event("change", { bubbles: true })); await new Promise((r) => setTimeout(r, 40));
+      assert.ok(fees().length > 3 && fees().some((f) => /^Settlement Fee to CLA Title & Escrow=/.test(f))); ok("calculator: approved MD fees replace the MD fee list (1125 / 215); VA still comes from the sheet; the status line says which states come from the portal");
+      dom.window.close();
+      const hook = fs.readFileSync(path.join(__dirname, "js", "portal-hook.js"), "utf8"); assert.ok(/A\.getClaFees\(\)\.then/.test(hook) && /setClaFees/.test(hook) && /catch\(\(\) => \{ \/\* sheet fees \*\/ \}\)/.test(hook)); ok("portal-hook: hands the approved CLA fees to the calculator for everyone (guests too); any failure = the sheet");
+    }
+    { const sa = fs.readFileSync(path.join(__dirname, "js", "supabase-adapter.js"), "utf8");
+      for (const k of ['sb.rpc("get_cla_fees")', 'sb.rpc("admin_submit_cla_fee_batch", { p_file_name', 'sb.rpc("super_admin_approve_cla_fee_batch", { p_batch', 'sb.rpc("super_admin_reject_cla_fee_batch"', 'sb.rpc("admin_withdraw_cla_fee_batch"', 'sb.from("cla_fee_batches")', 'sb.from("cla_fee_batch_rows")', 'sb.from("cla_fees_live")']) assert.ok(sa.includes(k), k);
+      ok("supabase adapter: Upload CLA fees reads through RLS / get_cla_fees and writes only through the migration 22 RPCs (no Google credentials in the browser)"); }
+
+    // admin.html: a plain admin uploads (with an error, then fixed); the super admin reviews and approves
+    const tick = (ms) => new Promise((r) => setTimeout(r, ms || 30));
+    const pick = async (R, name, text) => { const input = R.d.getElementById("feFile"); Object.defineProperty(input, "files", { configurable: true, value: [new R.dom.window.File([text], name, { type: "text/csv" })] }); input.dispatchEvent(new R.dom.window.Event("change", { bubbles: true })); for (let i = 0; i < 50 && R.d.getElementById("fePreview").hidden && !R.d.getElementById("feErr").textContent; i++) await tick(20); };
+    const R = await renderAdmin("sample.robin.admin@clatitle.com"); assert.strictEqual(R.errs.length, 0, R.errs.join());
+    const tabs = [...R.d.querySelectorAll("#tabs button")]; tabs[6].click(); for (let i = 0; i < 50 && !R.d.querySelectorAll("#feSrcRows tr").length; i++) await tick(20);
+    assert.ok(!R.d.getElementById("pFees").hidden && R.d.getElementById("pUsers").hidden); assert.match(R.d.getElementById("feSrcRows").textContent, /Maryland \(MD\)Fee sheet/); assert.strictEqual(R.d.getElementById("feTplState").options.length, 51);
+    ok("admin.html: CLA fees tab shows where each state's fees come from (sheet) and a template picker with every state");
+    const bad = "Active,State,Fee Name,Transaction,Amount,Paid By,LE Section,Default On,Notes\nY,MD,Settlement Fee to CLA Title & Escrow,Purchase,1125,Buyer,C,Y,\nY,MD,Doc Preparation Fee,Purchase,abc,Seller,C,Y,\nY,NJ,Settlement Fee to CLA Title & Escrow,Purchase,950,Buyer,C,Y,\n";
+    await pick(R, "bad.csv", bad);
+    assert.ok(!R.d.getElementById("fePreview").hidden); assert.ok(R.d.getElementById("feSubmit").disabled); assert.match(R.d.getElementById("feErrs").textContent, /Amount must be a number/); assert.match(R.d.getElementById("feErrs").textContent, /^Fix these rows[\s\S]*3/);
+    assert.match(R.d.getElementById("feDiff").textContent, /can’t quote New Jersey yet/); assert.match(R.d.getElementById("feDiff").textContent, /Changed/);
+    ok("admin.html: a file with a bad amount shows the row (spreadsheet row 3), blocks Send for approval, and still shows the diff and the NJ warning");
+    await pick(R, "md.csv", bad.replace(",abc,", ",215,"));
+    assert.ok(!R.d.getElementById("feSubmit").disabled); R.d.getElementById("feSubmit").click(); for (let i = 0; i < 50 && !R.d.getElementById("feOk").textContent; i++) await tick(20);
+    assert.match(R.d.getElementById("feOk").textContent, /Sent for approval \(MD, NJ\)\. A super admin will review it/); assert.match(R.d.getElementById("fePend").textContent, /md\.csv/);
+    R.d.querySelector("[data-ferev]").click(); for (let i = 0; i < 50 && !R.d.getElementById("feWithdraw"); i++) await tick(20);
+    assert.ok(!R.d.getElementById("feApprove") && /Waiting for a super admin/.test(R.d.getElementById("feReview").textContent)); ok("admin.html: an admin sends a clean file for approval; the review shows no Approve button for a plain admin");
+    const store = R.dom.window.localStorage.getItem("cla_portal_mock_v1"); R.dom.window.close();
+    const S = await renderAdmin("sample.admin@clatitle.com", false, null, () => store); S.d.querySelectorAll("#tabs button")[6].click();
+    for (let i = 0; i < 50 && !S.d.querySelector("[data-ferev]"); i++) await tick(20);
+    S.d.querySelector("[data-ferev]").click(); for (let i = 0; i < 50 && !S.d.getElementById("feApprove"); i++) await tick(20);
+    assert.match(S.d.getElementById("feReview").textContent, /Settlement Fee to CLA Title & Escrow[\s\S]*\$1,075\$1,125/); S.d.getElementById("feApprove").click();
+    for (let i = 0; i < 50 && !S.d.getElementById("feOk").textContent; i++) await tick(20);
+    assert.match(S.d.getElementById("feOk").textContent, /Approved\. The calculator now uses these CLA fees for MD, NJ/); assert.match(S.d.getElementById("feSrcRows").textContent, /Maryland \(MD\)Portal/); assert.match(S.d.getElementById("feHist").textContent, /Approved, live/);
+    assert.match(S.d.getElementById("feSrcRows").textContent, /New Jersey \(NJ\)Portal[\s\S]*Not in the calculator yet/);
+    ok("admin.html: the super admin reviews the diff ($1,075 -> $1,125) and approves; MD and NJ now come from the portal and the history shows Approved, live"); S.dom.window.close();
   }
 
 console.log("\nALL PASS (" + pass + " checks)");

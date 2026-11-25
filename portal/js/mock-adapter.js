@@ -206,6 +206,34 @@
         }
         return { ok: true, invited, skipped, rejected, held, failed, remainingHour: remaining, stoppedReason, rows: out, mockNote: "Demo mode: no email is sent." };
       },
+      // Upload CLA fees (migration 22): admins submit a file as a PENDING batch; only a super admin approves (then it is live) or rejects.
+      async getClaFees() {   // public: what the calculator overlays on the sheet (no notes)
+        const s = load(), live = s.claFeesLive || [], states = [...new Set(live.map((r) => r.state))].sort();
+        return { states: states.map((st) => ({ state: st, approvedAt: live.filter((r) => r.state === st).map((r) => r.approvedAt).sort().pop() })),
+          rows: live.map((r) => ({ state: r.state, active: r.active, feeName: r.feeName, transaction: r.transaction, amount: r.amount, paidBy: r.paidBy, leSection: r.leSection, defaultOn: r.defaultOn })) };
+      },
+      async adminListLiveClaFees() { const s = load(); needAdmin(s); return clone(s.claFeesLive || []); },
+      async adminListClaFeeBatches() { const s = load(); needAdmin(s); return clone((s.claFeeBatches || []).map((b) => Object.assign({}, b, { rows: undefined }))).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)); },
+      async adminGetClaFeeBatchRows(id) { const s = load(); needAdmin(s); const b = (s.claFeeBatches || []).find((x) => x.id === id) || err("No such upload."); return clone(b.rows); },
+      async adminSubmitClaFeeBatch(o) {
+        const s = load(), u = needAdmin(s), raw = (o && o.rows) || [];
+        if (!raw.length) err("The file has no fee rows.");
+        if (raw.length > CLA.FEE_UPLOAD_MAX) err("Upload at most " + CLA.FEE_UPLOAD_MAX + " fee rows at a time.");
+        const v = CLA.validateFeeRows(raw.map((r) => ({ Active: r.active, State: r.state, "Fee Name": r.fee_name, Transaction: r.transaction, Amount: r.amount, "Paid By": r.paid_by, "LE Section": r.le_section, "Default On": r.default_on, Notes: r.notes })));
+        if (v.errorCount) err("Nothing was saved. Fix these rows: " + v.rows.filter((r) => r.errors.length).slice(0, 10).map((r) => "Row " + r.line + ": " + r.errors[0]).join(" "));
+        s.claFeeBatches = s.claFeeBatches || [];
+        if (s.claFeeBatches.filter((b) => b.createdBy === u.id && Date.now() - new Date(b.createdAt).getTime() < 3600000).length >= 20) err("Upload limit reached (20 per hour). Wait before uploading again.");
+        const busy = [...new Set(s.claFeeBatches.filter((b) => b.status === "pending").flatMap((b) => b.states))].filter((st) => v.states.includes(st)).sort();
+        if (busy.length) err("There is already an upload waiting for approval for " + busy.join(", ") + ". Approve, reject or withdraw it first.");
+        const b = { id: uid(), status: "pending", fileName: (o.fileName || "").slice(0, 200) || null, note: (o.note || "").trim().slice(0, 500) || null, states: v.states, rowCount: v.rows.length,
+          createdBy: u.id, createdAt: new Date().toISOString(), decidedBy: null, decidedAt: null, decisionNote: null,
+          rows: v.rows.map((r) => ({ line: r.line, active: r.active, state: r.state, feeName: r.feeName, transaction: r.transaction, amount: r.amount, paidBy: r.paidBy, leSection: r.leSection, defaultOn: r.defaultOn, notes: r.notes || null })) };
+        s.claFeeBatches.push(b); log(s, u.id, "cla_fees_changed", "cla_fee_batch", b.id, { op: "submit", states: b.states, rows: b.rowCount, file_name: b.fileName }); save(s);
+        return { id: b.id };
+      },
+      async adminWithdrawClaFeeBatch(id, note) { const s = load(), u = needAdmin(s); decideFees(s, u, id, "withdrawn", note); },
+      async superApproveClaFeeBatch(id, note) { const s = load(), u = needAdmin(s); if (!isSuper(u)) err("Only a super admin can approve fee uploads."); decideFees(s, u, id, "approved", note); },
+      async superRejectClaFeeBatch(id, note) { const s = load(), u = needAdmin(s); if (!isSuper(u)) err("Only a super admin can reject fee uploads."); decideFees(s, u, id, "rejected", note); },
       async adminSetIsRep(id, on, reassignTo) {
         const s = load(), u = needSuper(s);   // super admin only, for admins and super admins (an admin cannot switch anyone, not even themselves)
         const t = s.users.find((x) => x.id === id) || err("No such user.");
@@ -422,6 +450,17 @@
       async _reset() { localStorage.removeItem(KEY); localStorage.removeItem(SKEY); },
     };
 
+    function decideFees(s, u, id, status, note) {
+      const b = (s.claFeeBatches || []).find((x) => x.id === id) || err("No such upload.");
+      if (b.status !== "pending") err("This upload was already " + b.status + ".");
+      const now = new Date().toISOString();
+      if (status === "approved") {
+        s.claFeesLive = (s.claFeesLive || []).filter((r) => !b.states.includes(r.state))
+          .concat(b.rows.map((r) => Object.assign({}, r, { batchId: b.id, approvedBy: u.id, approvedAt: now })));
+      }
+      Object.assign(b, { status, decidedBy: u.id, decidedAt: now, decisionNote: (note || "").trim().slice(0, 500) || null });
+      log(s, u.id, "cla_fees_changed", "cla_fee_batch", b.id, { op: { approved: "approve", rejected: "reject", withdrawn: "withdraw" }[status], states: b.states, rows: b.rowCount, note: b.decisionNote }); save(s);
+    }
     function invite(s, actor, o, asRep) {
       const e = lc(o.email), role = o.role, adminRules = isAdminRole(actor) && !asRep, adminRole = role === "super_admin" || role === "admin";
       if (adminRules && adminRole && !isSuper(actor)) err("Only a super admin can invite an admin or super admin.");

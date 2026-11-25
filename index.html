@@ -4,7 +4,7 @@
 <meta name="theme-color" content="#000000">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="zip-county.js?v=20261102m"></script>
+<script src="zip-county.js?v=20261125a"></script>
 <script src="fee-snapshot.js?v=20261116a"></script>
 <style>
 :root{--g:#99c93f;--gd:#7ca233;--gdd:#5b7725;--ink:#111;--mut:#5b6272;--line:#e3e8da;--bg:#f4f7ef;--field:#d5dbca}
@@ -678,8 +678,16 @@ function zipLookup(z){z=String(z||"").trim();if(!/^\d{5}$/.test(z))return null;l
 const SNAP=typeof CLA_FEES_SNAPSHOT!=="undefined"?CLA_FEES_SNAPSHOT:{};
 async function fetchSheet(fetchFn){const raw={};await Promise.all(TABS.map(async t=>{const r=await fetchFn(sheetCsvUrl(t),{cache:"no-store"});
  if(!r.ok)throw Error(`${t}: HTTP ${r.status}`);const rows=parseCSV(await r.text());if(!validTab(rows)){if(REQUIRED.includes(t))throw Error(`${t}: unexpected content (is the sheet shared "anyone with the link"?)`);return}raw[t]=rows}));return raw}
+// Upload CLA fees (portal, migration 22): the APPROVED CLA_Fees rows of the states John approved in the portal replace the sheet's (or snapshot's)
+// CLA_Fees rows for those states only. Every other state and every other tab is untouched. No overlay (no portal, or nothing approved) = as before.
+const CLA_FEE_COLS=["Active","State","Fee Name","Transaction","Amount","Paid By","LE Section","Default On","Notes"];
+function applyClaFeeOverlay(raw,ov){if(!raw||!ov||!Array.isArray(ov.states)||!ov.states.length||!Array.isArray(ov.rows))return raw;
+ const sts=new Set(ov.states.map(x=>String(x&&x.state||x).trim().toUpperCase())),g=raw.CLA_Fees&&raw.CLA_Fees.length?raw.CLA_Fees:[CLA_FEE_COLS],H=g[0].map(x=>String(x).trim()),si=H.indexOf("State");
+ const val={Active:r=>r.active===false?"N":"Y",State:r=>String(r.state).toUpperCase(),"Fee Name":r=>r.feeName,Transaction:r=>r.transaction,Amount:r=>r.amount,"Paid By":r=>r.paidBy,"LE Section":r=>r.leSection||"C","Default On":r=>r.defaultOn===false?"N":"Y",Notes:()=>"Approved in the portal"};
+ const keep=g.slice(1).filter(a=>!sts.has(String(a[si]??"").trim().toUpperCase())),add=ov.rows.filter(r=>r&&sts.has(String(r.state).toUpperCase())).map(r=>H.map(h=>val[h]?val[h](r):""));
+ return Object.assign({},raw,{CLA_Fees:[g[0]].concat(keep,add)})}
 async function loadFees(fetchFn){try{const raw=await fetchSheet(fetchFn);return{raw,source:"sheet",at:new Date()}}catch(e){return{raw:SNAP,source:"snapshot",error:String(e.message||e)}}}
-if(typeof module!=="undefined")module.exports={areasOf,lenderOnly,perDoc,parseCSV,normalize,calc,premiums,taxAmount,DOC_DEFAULTS,allCounties,usesDefaults,zipLookup,loadFees,fetchSheet,claFees,SNAP,SHEET_ID,sheetCsvUrl,TABS,sellerNet,mdWithholding,MD_NRW_RATE,perDocCount,prorateTaxes,defaultPaidThrough,sellerFeeRows,sellerFeeInputs,commission,downAmt,loanFromDown,ownerPayDefault,isSettlementFee,repFeeOverride,applyRepFees,halves};
+if(typeof module!=="undefined")module.exports={areasOf,lenderOnly,perDoc,parseCSV,normalize,calc,premiums,taxAmount,DOC_DEFAULTS,allCounties,usesDefaults,zipLookup,loadFees,fetchSheet,claFees,applyClaFeeOverlay,SNAP,SHEET_ID,sheetCsvUrl,TABS,sellerNet,mdWithholding,MD_NRW_RATE,perDocCount,prorateTaxes,defaultPaidThrough,sellerFeeRows,sellerFeeInputs,commission,downAmt,loanFromDown,ownerPayDefault,isSettlementFee,repFeeOverride,applyRepFees,halves};
 
 // ---------- UI ----------
 if(typeof document!=="undefined"){
@@ -775,8 +783,10 @@ $("downv").addEventListener("input",syncLoan);$("price").addEventListener("input
 $("downm").dataset.prev=$("downm").value;$("downm").addEventListener("change",()=>{const m=$("downm"),v=$("downv"),p=+$("price").value||0;   // switching $ <-> % keeps the same down payment
  if(v.value.trim()!==""){const a=downAmt(p,{mode:m.dataset.prev,val:+v.value||0});v.value=String(m.value==="flat"?r2(a):p>0?+(a/p*100).toFixed(3):0)}m.dataset.prev=m.value;syncLoan()});
 $("mainQ").addEventListener("input",e=>{if(!["zip","city","state","addr"].includes(e.target.id))run()});$("mainQ").addEventListener("change",e=>{if(!["zip","state","uw"].includes(e.target.id))run()});
-function load(raw,label,kind,err){R=normalize(raw);src=kind;$("srcPill").textContent=label;
- $("status").innerHTML=kind==="sheet"?`Fees loaded from team sheet at ${new Date().toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}.`:kind==="xlsx"?`Using uploaded workbook “${label}” (overrides the team sheet until reload).`:`<b class="statuswarn">⚠ Could not load the team sheet${err?" ("+err+")":""}. Using the built-in snapshot of the fee tables — rates may be out of date.</b>`;
+let claOv=null,lastLoad=null;
+const ovNote=kind=>claOv&&kind!=="xlsx"?` CLA fees for ${claOv.states.map(x=>x.state||x).join(", ")} come from the portal (approved uploads).`:"";
+function load(raw,label,kind,err){lastLoad={raw,kind};R=normalize(kind==="xlsx"?raw:applyClaFeeOverlay(raw,claOv));src=kind;$("srcPill").textContent=label;
+ $("status").innerHTML=kind==="sheet"?`Fees loaded from team sheet at ${new Date().toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}.`:kind==="xlsx"?`Using uploaded workbook “${label}” (overrides the team sheet until reload).`:`<b class="statuswarn">⚠ Could not load the team sheet${err?" ("+err+")":""}. Using the built-in snapshot of the fee tables — rates may be out of date.</b>`;$("status").insertAdjacentText("beforeend",ovNote(kind));
  buildUw();counties();setType(type);counties("s_");buildSFees();if(mode==="seller")runS()}
 async function loadLive(){$("srcPill").textContent="Loading fees…";const r=await loadFees((u,o)=>fetch(u,o));load(r.raw,r.source==="sheet"?"Team sheet (live)":"Built-in snapshot",r.source,r.error)}
 $("btnReload").onclick=()=>{$("file").value="";loadLive()};
@@ -858,6 +868,9 @@ $("newQuote").onclick=()=>{if(isDirty()&&!confirm("Start a new quote?\n\nThis cl
 window.CLA_QUOTE_API={mode:()=>mode,
  // portal-hook.js hands over this person's special settlement fee rows (null / [] = standard fees); the fee lists are rebuilt and the quote re-run
  setFeeOverrides(list){repOv=Array.isArray(list)?list:[];buildFees();buildSFees();run();if(mode==="seller")runS()},
+ // portal-hook.js hands over the CLA fees approved in the portal (Upload CLA fees): {states:[{state}], rows:[...]}; only CLA_Fees for those states changes
+ setClaFees(ov){claOv=ov&&Array.isArray(ov.states)&&ov.states.length?ov:null;if(!lastLoad||lastLoad.kind==="xlsx")return;R=normalize(applyClaFeeOverlay(lastLoad.raw,claOv));
+  const st=$("status");if(st&&claOv&&!/come from the portal/.test(st.textContent))st.insertAdjacentText("beforeend",ovNote(lastLoad.kind));buildFees();buildSFees();run();if(mode==="seller")runS()},
  snapshot(){const cp=o=>JSON.parse(JSON.stringify(o));
   if(mode==="seller"){if(!sLast)runS();const{i,r}=sLast,T=r.totals,addr=fullAddr(i);
    const sec=(n,rows)=>(rows||[]).map(x=>({sec:n,item:x.item,amt:x.amt}));
@@ -875,7 +888,7 @@ load(SNAP,"Built-in snapshot","snapshot");$("status").textContent="Loading fees 
 // Guided tour: "Take the tour" (header) and a small first-visit chip. Works for everyone, signed in or not. The engine is portal/js/tour.js + portal/tour.css,
 // downloaded only when someone starts the tour. The chip shows once; dismissing it (x), starting the tour, or finishing it hides it for good (localStorage).
 (function(){
- var V="20261102m",KEY="cla_calc_tour_chip",link=document.getElementById("claCalcTourLink"),chip=document.getElementById("claTourChip"),loading=null;
+ var V="20261125a",KEY="cla_calc_tour_chip",link=document.getElementById("claCalcTourLink"),chip=document.getElementById("claTourChip"),loading=null;
  function seen(){try{return window.localStorage.getItem(KEY)==="1"}catch(e){return true}} // no storage: never show the chip (it could not remember "no thanks")
  function dismiss(){try{window.localStorage.setItem(KEY,"1")}catch(e){}if(chip)chip.hidden=true}
  function add(tag,attrs){return new Promise(function(res){var e=document.createElement(tag);for(var k in attrs)e[k]=attrs[k];e.onload=e.onerror=function(){res()};document.head.appendChild(e)})}
@@ -889,4 +902,4 @@ load(SNAP,"Built-in snapshot","snapshot");$("status").textContent="Loading fees 
   document.getElementById("claTourChipX").onclick=function(){dismiss();if(link)link.focus()}}
 })();
 </script>
-<script src="portal/js/portal-hook.js?v=20261102m" defer></script></body></html>
+<script src="portal/js/portal-hook.js?v=20261125a" defer></script></body></html>

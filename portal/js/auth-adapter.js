@@ -115,6 +115,19 @@
  *                                            unless {move: true}; any valid email (rep or client), no account needed yet
  *   adminRemovePricingMember(tableId, email)   quiet no-op if the email is not in that table
  *   Every change is audited as pricing_table_changed (details.op: create | rename | delete | fee_set_add | fee_set_edit | fee_set_remove | member_add | member_move | member_remove).
+ *
+ *  UPLOAD CLA FEES (migration 22). CLA's own fees per state (the CLA_Fees tab: settlement, title search, doc prep, notary, Simplifile, CPL ...), any US state.
+ *   getClaFees()                          -> { states: [{state, approvedAt}], rows: [{state, active, feeName, transaction, amount, paidBy, leSection, defaultOn}] }
+ *                                            ANYONE (the public calculator). The approved rows; for these states the calculator ignores the sheet's CLA_Fees rows.
+ *   adminListLiveClaFees()                -> the same rows with notes, batchId, approvedBy, approvedAt (admins)
+ *   adminListClaFeeBatches()              -> [{id, status: pending|approved|rejected|withdrawn, fileName, note, states[], rowCount, createdBy, createdAt, decidedBy, decidedAt, decisionNote}] (admins)
+ *   adminGetClaFeeBatchRows(id)           -> the batch's rows (admins)
+ *   adminSubmitClaFeeBatch({fileName, rows, note}) -> {id}   admins / super admins. rows = CLA.feeRowsForRpc(...). At most 500 rows, 20 uploads per hour,
+ *                                            one PENDING upload per state. Re-validated by the server; any bad row = nothing saved.
+ *   adminWithdrawClaFeeBatch(id, note?)   admins: a pending upload only
+ *   superApproveClaFeeBatch(id, note?)    SUPER ADMIN only: each state in the file replaces that state's live CLA fees
+ *   superRejectClaFeeBatch(id, note?)     SUPER ADMIN only
+ *   Audited as cla_fees_changed (details.op: submit | approve | reject | withdraw).
  *   adminLogQuoteView(quoteId)
  *
  * Profile : {id, role, isRep, status, email, firstName, lastName, phone, cellPhone, companyName, companyPhone,

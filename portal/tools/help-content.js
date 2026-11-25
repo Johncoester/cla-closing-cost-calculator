@@ -300,6 +300,20 @@ sec("admin", 7, "Admin guide", "A", "People, invites (one at a time or by upload
     "Blank or invalid rep_email rows are always rejected. A super admin who also works as a rep is a valid assignee; a plain admin who does not work as a rep is not.",
     "This path only invites clients. To invite a sales rep or an admin, use Invite user one at a time.",
   ] },
+  { t: "h3", x: "Upload CLA fees" },
+  { t: "p", x: "Use Admin, then CLA fees, to change CLA's own fees for a state (settlement, title search, doc prep, notary, Simplifile, CPL and the like). Admins and super admins can upload; only a super admin can approve. Nothing changes in the calculator until the upload is approved." },
+  { t: "ol", items: [
+    ["Pick the state under Template for and choose Download current fees (CSV)", "You get that state's current CLA fees in the same columns as the fee sheet: Active, State, Fee Name, Transaction, Amount, Paid By, LE Section, Default On, Notes."],
+    ["Edit the file and choose Choose file", "A file can cover one state or several, any US state. Each state in the file replaces that state's whole CLA fee list, so keep every row you still want. Set Active to N rather than deleting a row you may need again. Up to 500 rows."],
+    ["Read the preview", "Rows with a problem are listed with their spreadsheet row number and must be fixed first. For each state you see what is New, Changed (with the old amount struck through) and Removed, compared with what the calculator uses today. A yellow note warns when the calculator cannot quote that state yet, or when a state has no settlement fee row (rep pricing needs it)."],
+    ["Choose Send for approval", "The upload waits under Waiting for approval. Only one upload per state can wait at a time; withdraw it to send a new one."],
+    ["Super admin: Review, then Approve and go live or Reject", "Approving puts the fees in the calculator for new quotes right away. Saved quotes keep their numbers."],
+  ] },
+  { t: "ul", items: [
+    "Where the calculator gets CLA fees shows each state's source: Portal (approved here, with who and when) or Fee sheet. Once a state is approved here, edits to that state's CLA_Fees rows in the Google Sheet no longer change the calculator; upload a new file instead.",
+    "Recording fees, transfer taxes and title premiums still come from the fee sheet. Rep pricing still lowers the settlement fee on top of these fees.",
+    "Every upload, approval, rejection and withdrawal is in the Audit log.",
+  ] },
   { t: "h3", x: "Roles, enabling and disabling" },
   { t: "ul", items: [
     "Change a role with the dropdown on the person's row and confirm. An admin sees Rep and Client for reps and clients, and Admin, Rep and Client for another admin. Only a super admin can promote someone to admin or super admin.",

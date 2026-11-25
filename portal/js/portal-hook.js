@@ -27,6 +27,12 @@
     try { A = await CLA.getAdapter(); session = await A.getSession(); if (session) me = await A.getMyProfile(); } catch (e) { me = null; session = null; }
     if (!A) return;
 
+    // ---- CLA fees approved in the portal (Upload CLA fees, migration 22): for those states they replace the sheet's CLA_Fees rows, for
+    // everyone (guests too). Nothing approved, migration not applied, or a network error = the sheet as before, silently.
+    if (A.getClaFees && window.CLA_QUOTE_API.setClaFees) {
+      A.getClaFees().then((ov) => { if (ov && ov.states && ov.states.length) window.CLA_QUOTE_API.setClaFees(ov); }).catch(() => { /* sheet fees */ });
+    }
+
     const css = document.createElement("style");
     css.textContent =
       ".claBrand{background:#fff;border-bottom:1px solid var(--line)}.claBrand .wrap{display:flex;gap:22px;align-items:center;flex-wrap:wrap;padding-top:12px;padding-bottom:12px}" +
@@ -60,7 +66,7 @@
     // ---- staff feedback button (admin, super admin, rep only; clients and guests never load it) ----
     // (loads its own file, so it works even if a cached portal-ui.js predates CLA.startFeedback; the widget re-checks the role itself)
     if (me && ["super_admin", "admin", "rep"].includes(me.role) && me.status !== "disabled") {
-      const fv = (CLA.FEEDBACK_V || "20261102m");
+      const fv = (CLA.FEEDBACK_V || "20261125a");
       (CLA.mountFeedback ? Promise.resolve() : load(base + "js/feedback-widget.js?v=" + fv)).then(() => CLA.mountFeedback({ A, me, base, ver: fv })).catch(() => {});   // optional: never break the calculator over it
     }
 

@@ -29,6 +29,16 @@ const line=(r,re)=>r.lines.filter(l=>re.test(l.item)).reduce((a,l)=>a+l.b+l.s,0)
  ok(ln(X.calc(R,inp({state:"VA",county:"Fairfax",price:400000,loan:412000})),/on loan above price/i)===0,"Virginia already taxes the whole deed of trust: no extra line");
  const mo=X.calc(R,inp({county:"Montgomery",price:480000,loan:530000}));
  ok(Math.abs(ln(mo,/recordation tax on loan above price/i)-(40*4.45+60*6.75))<0.01,"Montgomery: the loan above the price is taxed in the bands it reaches ($480k-$500k at $4.45, $500k-$530k at $6.75 per $500)")}
+// Upload CLA fees (portal migration 22, Nov 25 2026): approved CLA_Fees rows for a state replace the sheet's rows for that state only
+{const ov={states:[{state:"MD"},{state:"NJ"}],rows:[{state:"MD",active:true,feeName:"Settlement Fee to CLA Title & Escrow",transaction:"Purchase",amount:1125,paidBy:"Buyer",leSection:"C",defaultOn:true},{state:"MD",active:false,feeName:"Old Fee",transaction:"Purchase",amount:9,paidBy:"Buyer",leSection:"C",defaultOn:true},{state:"NJ",active:true,feeName:"Settlement Fee to CLA Title & Escrow",transaction:"Purchase",amount:950,paidBy:"Buyer",leSection:"C",defaultOn:true}]};
+ const R2=X.normalize(X.applyClaFeeOverlay(X.SNAP,ov)),names=(r,st,t)=>X.claFees(r,st,t).map(f=>f["Fee Name"]+"="+f.Amount).join("|");
+ ok(names(R2,"MD","purchase")==="Settlement Fee to CLA Title & Escrow=1125","overlay: MD purchase CLA fees are exactly the approved active rows");
+ ok(names(R2,"VA","purchase")===names(R,"VA","purchase")&&names(R2,"DC","refi")===names(R,"DC","refi"),"overlay: VA and DC keep the sheet rows");
+ ok(X.claFees(R2,"NJ","purchase").length===1,"overlay: a state the sheet does not have (NJ) gets its approved rows");
+ ok(X.applyClaFeeOverlay(X.SNAP,null)===X.SNAP&&X.applyClaFeeOverlay(X.SNAP,{states:[],rows:[]})===X.SNAP,"overlay: nothing approved = the sheet unchanged");
+ ok(JSON.stringify(R2.Recording_Fees)===JSON.stringify(R.Recording_Fees)&&JSON.stringify(R2.Premium_Tiers)===JSON.stringify(R.Premium_Tiers),"overlay: other tabs are untouched");
+ const q=o=>X.calc(R2,inp(Object.assign({fees:X.claFees(R2,"MD","purchase").map(f=>({name:f["Fee Name"],payer:f["Paid By"],sec:f["LE Section"],amt:+f.Amount}))},o)));
+ ok(q({}).lines.some(l=>/Settlement Fee to CLA/.test(l.item)&&l.b===1125),"overlay: an MD quote charges the approved $1,125 settlement fee")}
 // counties / ZIP
 for(const[st,n]of[["MD",24],["VA",133],["DC",1],["FL",67]]){const l=X.allCounties(R,st);ok(l.length===n,`${st} has ${n} counties (got ${l.length})`)}
 for(const[z,st,co]of[["20850","MD","Montgomery"],["21201","MD","Baltimore City"],["22030","VA","Fairfax"],["20001","DC","District of Columbia"],["33101","FL","Miami-Dade"],["32801","FL","Orange"],["21704","MD","Frederick"],["21740","MD","Washington"],["20646","MD","Charles"],["22601","VA","Winchester City"],["34102","FL","Collier"]]){const r=X.zipLookup(z);ok(r&&r.state===st&&r.county===co,`ZIP ${z} -> ${co}, ${st}`)}

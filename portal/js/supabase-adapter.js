@@ -42,6 +42,9 @@
     const toFeeOverride = (r) => ({ id: r.id, tableId: r.table_id, setId: r.set_id, state: r.state, transaction: r.transaction, paidBy: r.paid_by, amount: r.amount === null || r.amount === undefined ? null : Number(r.amount), updatedAt: r.updated_at, updatedBy: r.updated_by });
     const nz = (v) => (v === "" || v === undefined || v === null ? null : typeof v === "string" ? Number(v.replace(/[$,\s]/g, "")) : v);
     const toPricingTable = (r) => ({ id: r.id, name: r.name, createdBy: r.created_by, createdAt: r.created_at, updatedAt: r.updated_at });
+    const toClaFee = (r) => ({ state: r.state, active: !!r.active, feeName: r.fee_name, transaction: r.transaction, amount: Number(r.amount), paidBy: r.paid_by, leSection: r.le_section, defaultOn: !!r.default_on });
+    const toClaFeeBatch = (r) => ({ id: r.id, status: r.status, fileName: r.file_name, note: r.note, states: r.states || [], rowCount: r.row_count, createdBy: r.created_by, createdAt: r.created_at,
+      decidedBy: r.decided_by, decidedAt: r.decided_at, decisionNote: r.decision_note });
     const toPricingMember = (r) => ({ id: r.id, tableId: r.table_id, email: r.email, addedBy: r.added_by, addedAt: r.added_at });
     const toAssignment = (r) => ({ id: r.id, clientEmail: r.client_email, clientUserId: r.client_user_id, repId: r.rep_id, active: r.active, createdAt: r.created_at });
     const snapToRow = (s) => ({
@@ -238,6 +241,18 @@
       async adminRemovePricingFeeSet(tableId, setId) { must(await sb.rpc("admin_remove_pricing_fee_set", { p_table: tableId, p_set: setId })); },
       async adminAddPricingMember(tableId, email, opts) { return must(await sb.rpc("admin_add_pricing_member", { p_table: tableId, p_email: email, p_move: !!(opts && opts.move) })); },   // "added" | "moved" | "already"
       async adminRemovePricingMember(tableId, email) { must(await sb.rpc("admin_remove_pricing_member", { p_table: tableId, p_email: email })); },
+      // ---- Upload CLA fees (migration 22): admins submit a PENDING batch through the RPC; only a super admin approves / rejects. Reads: RLS (admins) + get_cla_fees() (anyone) ----
+      async getClaFees() {
+        const r = must(await sb.rpc("get_cla_fees")) || {};
+        return { states: (r.states || []).map((x) => ({ state: x.state, approvedAt: x.approved_at })), rows: (r.rows || []).map(toClaFee) };
+      },
+      async adminListLiveClaFees() { return must(await sb.from("cla_fees_live").select("*").order("state").order("line")).map((r) => Object.assign(toClaFee(r), { notes: r.notes || "", batchId: r.batch_id, approvedBy: r.approved_by, approvedAt: r.approved_at })); },
+      async adminListClaFeeBatches() { return must(await sb.from("cla_fee_batches").select("*").order("created_at", { ascending: false }).limit(50)).map(toClaFeeBatch); },
+      async adminGetClaFeeBatchRows(id) { return must(await sb.from("cla_fee_batch_rows").select("*").eq("batch_id", id).order("line")).map((r) => Object.assign(toClaFee(r), { line: r.line, notes: r.notes || "" })); },
+      async adminSubmitClaFeeBatch(o) { return { id: must(await sb.rpc("admin_submit_cla_fee_batch", { p_file_name: o.fileName || null, p_rows: o.rows, p_note: o.note || null })) }; },
+      async adminWithdrawClaFeeBatch(id, note) { must(await sb.rpc("admin_withdraw_cla_fee_batch", { p_batch: id, p_note: note || null })); },
+      async superApproveClaFeeBatch(id, note) { must(await sb.rpc("super_admin_approve_cla_fee_batch", { p_batch: id, p_note: note || null })); },
+      async superRejectClaFeeBatch(id, note) { must(await sb.rpc("super_admin_reject_cla_fee_batch", { p_batch: id, p_note: note || null })); },
       async adminAuditLog(limit) {
         return must(await sb.from("audit_log").select("*").order("at", { ascending: false }).limit(limit || 100))
           .map((r) => ({ id: r.id, at: r.at, actorId: r.actor_id, action: r.action, targetType: r.target_type, targetId: r.target_id, details: r.details }));

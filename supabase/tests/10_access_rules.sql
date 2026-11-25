@@ -805,7 +805,7 @@ select tests.is('...and Alex is an admin only again: private.is_rep() false', te
 select tests.is('...her old quote keeps its rep_id (immutable history)', (select rep_id::text from public.quotes where id = '00000000-0000-4000-8000-00000000f00b'), tests.id('a1')::text);
 select tests.is('function privileges: new RPCs are not callable by anon, are by authenticated',
   (select (not has_function_privilege('anon', 'public.admin_set_is_rep(uuid, boolean, uuid)', 'execute')
-       and not has_function_privilege('anon', 'public.create_invitation(text, public.user_role, uuid, text, boolean, boolean)', 'execute')
+       and not has_function_privilege('anon', 'public.create_invitation(text, public.user_role, uuid, text, boolean, boolean, text, text, text)', 'execute')
        and has_function_privilege('authenticated', 'public.admin_set_is_rep(uuid, boolean, uuid)', 'execute'))::text), 'true');
 
 
@@ -2025,9 +2025,9 @@ select tests.is('resend bookkeeping is not reachable through the API (private sc
 -- ---------------- migration 21: invitation names + bulk preview / hourly cap ----------------
 select tests.is('there is still exactly one create_invitation (no stale overloads after the name arguments were added)',
   (select count(*)::text from pg_proc where proname = 'create_invitation' and pronamespace = 'public'::regnamespace), '1');
-select tests.is('a client cannot preview a bulk upload', tests.q(tests.id('c1'), $$select public.admin_preview_bulk_clients('[]'::jsonb)$$), 'ERR:42501');
-select tests.is('a rep cannot preview a bulk upload', tests.q(tests.id('b1'), $$select public.admin_preview_bulk_clients('[]'::jsonb)$$), 'ERR:42501');
-select tests.is('a client cannot read the bulk-invite remaining cap', tests.q(tests.id('c1'), 'select public.admin_bulk_invite_remaining()'), 'ERR:42501');
+select tests.is('a client cannot preview a bulk upload', tests.v(tests.id('c1'), $$select public.admin_preview_bulk_clients('[]'::jsonb)::text$$), 'ERR:42501');
+select tests.is('a rep cannot preview a bulk upload', tests.v(tests.id('b1'), $$select public.admin_preview_bulk_clients('[]'::jsonb)::text$$), 'ERR:42501');
+select tests.is('a client cannot read the bulk-invite remaining cap', tests.v(tests.id('c1'), 'select public.admin_bulk_invite_remaining()::text'), 'ERR:42501');
 select tests.is('bulk-invite sends are not reachable through the API (private schema)', tests.q(tests.id('a1'), 'select * from private.bulk_invite_sends'), 'ERR:42501');
 
 select tests.is('create_invitation stores first, last and company (and still accepts a 6-argument call)',
@@ -2060,6 +2060,94 @@ select tests.is('an admin starts with a remaining bulk-invite quota of 50',
   tests.rpc(tests.id('a1'), 'public.admin_bulk_invite_remaining()'), '50');
 select tests.is('recording a send lowers the remaining cap',
   tests.rpc(tests.id('a1'), $$public.admin_bulk_invite_record('bulk.new@example.com')$$), '49');
+
+
+-- ---------------- migration 22: Upload CLA fees (admins submit, a super admin approves) ----------------
+create function tests.va(sql text) returns text language plpgsql as $$   -- like tests.v, as the anon role (the public calculator)
+declare res text;
+begin
+  perform set_config('request.jwt.claims', '', true); perform set_config('role', 'anon', true);
+  begin execute sql into res; exception when others then res := 'ERR:' || sqlstate; end;
+  perform set_config('role', 'postgres', true);
+  return coalesce(res, 'null');
+end $$;
+select tests.is('fee upload: empty live table = the calculator keeps the sheet (no states)', tests.va($q$select public.get_cla_fees()::text$q$), '{"rows": [], "states": []}');
+select tests.is('fee upload: a client cannot submit', tests.v(tests.id('c1'), $q$select public.admin_submit_cla_fee_batch('x.csv', '[{"state":"MD","fee_name":"Doc Preparation Fee","transaction":"Purchase","amount":"205","paid_by":"Seller"}]'::jsonb)::text$q$), 'ERR:42501');
+select tests.is('fee upload: a rep cannot submit', tests.v(tests.id('b1'), $q$select public.admin_submit_cla_fee_batch('x.csv', '[{"state":"MD","fee_name":"Doc Preparation Fee","transaction":"Purchase","amount":"205","paid_by":"Seller"}]'::jsonb)::text$q$), 'ERR:42501');
+select tests.is('fee upload: anon cannot submit', tests.va($q$select public.admin_submit_cla_fee_batch('x.csv', '[]'::jsonb)::text$q$), 'ERR:42501');
+select tests.is('fee upload: a bad row rejects the whole file (nothing saved)',
+  tests.v(tests.id('a2'), $q$select public.admin_submit_cla_fee_batch('bad.csv', '[
+    {"state":"MD","fee_name":"Settlement Fee to CLA Title & Escrow","transaction":"Purchase","amount":"1075","paid_by":"Buyer"},
+    {"state":"XX","fee_name":"Doc Preparation Fee","transaction":"Purchase","amount":"205","paid_by":"Seller"}]'::jsonb)::text$q$), 'ERR:22023');
+select tests.is('...and no batch exists', (select count(*)::text from public.cla_fee_batches), '0');
+do $$ declare m text; begin
+  perform set_config('request.jwt.claims', json_build_object('sub', tests.id('a2'), 'role', 'authenticated', 'aal', 'aal1')::text, true);
+  perform set_config('role', 'authenticated', true);
+  begin perform public.admin_submit_cla_fee_batch('bad.csv', '[
+      {"state":"MD","fee_name":"A","transaction":"Sale","amount":"1","paid_by":"Buyer"},
+      {"state":"MD","fee_name":"B","transaction":"Purchase","amount":"abc","paid_by":"Buyer"},
+      {"state":"MD","fee_name":"C","transaction":"Purchase","amount":"1","paid_by":"Lender"},
+      {"state":"MD","fee_name":"D","transaction":"Purchase","amount":"1","paid_by":"Buyer","le_section":"Z"},
+      {"state":"MD","fee_name":"E","transaction":"Purchase","amount":"1","paid_by":"Buyer","active":"maybe"},
+      {"state":"MD","fee_name":"F","transaction":"Purchase","amount":"1","paid_by":"Buyer"},
+      {"state":"md","fee_name":"f","transaction":"purchase","amount":"2","paid_by":"buyer"},
+      {"state":"MD","fee_name":"","transaction":"Purchase","amount":"1","paid_by":"Buyer"},
+      {"state":"MD","fee_name":"G","transaction":"Purchase","amount":"100001","paid_by":"Buyer"}]'::jsonb);
+    m := 'no error';
+  exception when others then m := sqlerrm; end;
+  perform set_config('role', 'postgres', true); perform set_config('request.jwt.claims', '', true);
+  perform tests.is('fee upload: the server names every bad row (transaction, amount, payer, section, flag, duplicate, blank name, over $100k)',
+    (m like '%Row 1: transaction%' and m like '%Row 2: amount%' and m like '%Row 3: paid by%' and m like '%Row 4: LE section%' and m like '%Row 5: Active%'
+     and m like '%Row 7: duplicate%' and m like '%Row 8: fee name is required%' and m like '%Row 9: amount is over%' and m not like '%Row 6%')::text, 'true');
+end $$;
+select tests.is('fee upload: more than 500 rows is refused',
+  tests.v(tests.id('a2'), $q$select public.admin_submit_cla_fee_batch('big.csv', (select jsonb_agg(jsonb_build_object('state','MD','fee_name','Fee ' || g,'transaction','Purchase','amount','1','paid_by','Buyer')) from generate_series(1,501) g))::text$q$), 'ERR:22023');
+
+-- admin Robin (a2) submits MD + NJ (NJ: any state is allowed)
+select tests.is('fee upload: an admin submits a valid file (any state; lower-case and $ amounts are cleaned up)',
+  tests.v(tests.id('a2'), $q$select (public.admin_submit_cla_fee_batch('md-nj.csv', '[
+    {"active":"Y","state":"MD","fee_name":"Settlement Fee to CLA Title & Escrow","transaction":"Purchase","amount":"$1,095.00","paid_by":"Buyer","le_section":"C","default_on":"Y","notes":"new 2027"},
+    {"active":"Y","state":"md","fee_name":"Doc Preparation Fee","transaction":"purchase","amount":"205","paid_by":"seller"},
+    {"active":"N","state":"MD","fee_name":"Old Courier Fee","transaction":"Both","amount":"0","paid_by":"Buyer"},
+    {"state":"NJ","fee_name":"Settlement Fee to CLA Title & Escrow","transaction":"Refinance","amount":"500","paid_by":"Borrower","le_section":"c"}]'::jsonb, 'January rates') is not null)::text$q$), 'true');
+select tests.is('...stored as pending with the states, row count, uploader and clean values',
+  (select status || '/' || array_to_string(states, ',') || '/' || row_count || '/' || (created_by = tests.id('a2'))::text from public.cla_fee_batches) || '/' ||
+  (select string_agg(state || ':' || transaction || ':' || paid_by || ':' || amount || ':' || le_section || ':' || active::text, ',' order by line) from public.cla_fee_batch_rows),
+  'pending/MD,NJ/4/true/MD:Purchase:Buyer:1095.00:C:true,MD:Purchase:Seller:205.00:C:true,MD:Both:Buyer:0.00:C:false,NJ:Refi:Borrower:500.00:C:true');
+select tests.is('...nothing is live yet', tests.va($q$select jsonb_array_length(public.get_cla_fees()->'rows')::text$q$), '0');
+select tests.is('fee upload: a second pending upload for MD is refused', tests.v(tests.id('a1'), $q$select public.admin_submit_cla_fee_batch('again.csv', '[{"state":"MD","fee_name":"Doc Preparation Fee","transaction":"Purchase","amount":"210","paid_by":"Seller"}]'::jsonb)::text$q$), 'ERR:23505');
+select tests.is('fee upload: admins read batches and rows; a rep and a client read nothing; anon has no access',
+  tests.q(tests.id('a2'), 'select * from public.cla_fee_batch_rows') || '/' || tests.q(tests.id('b1'), 'select * from public.cla_fee_batches') || '/' ||
+  tests.q(tests.id('c1'), 'select * from public.cla_fee_batch_rows') || '/' || tests.q(null, 'select * from public.cla_fee_batches'), '4/0/0/ERR:42501');
+select tests.is('fee upload: nobody writes the tables directly (even a super admin)',
+  tests.x(tests.id('a1'), $q$insert into public.cla_fees_live (state, line, active, fee_name, transaction, amount, paid_by, le_section, default_on, batch_id) select 'MD', 1, true, 'X', 'Purchase', 1, 'Buyer', 'C', true, id from public.cla_fee_batches$q$) || '/' ||
+  tests.x(tests.id('a1'), $q$update public.cla_fee_batches set status = 'approved'$q$), 'ERR:42501/ERR:42501');
+select tests.is('fee upload: a plain admin cannot approve', tests.v(tests.id('a2'), $q$select public.super_admin_approve_cla_fee_batch((select id from public.cla_fee_batches limit 1))::text$q$), 'ERR:42501');
+select tests.is('fee upload: a rep cannot reject', tests.v(tests.id('b1'), $q$select public.super_admin_reject_cla_fee_batch('00000000-0000-4000-8000-000000000000')::text$q$), 'ERR:42501');
+select tests.is('fee upload: the super admin approves',
+  tests.v(tests.id('a1'), $q$select public.super_admin_approve_cla_fee_batch((select id from public.cla_fee_batches limit 1), 'OK for Jan 1')::text$q$), '');
+select tests.is('...the batch is approved by the super admin',
+  (select status || '/' || (decided_by = tests.id('a1'))::text || '/' || decision_note from public.cla_fee_batches), 'approved/true/OK for Jan 1');
+select tests.is('...the calculator now gets MD and NJ rows (anon, no notes)',
+  tests.va($q$select (select string_agg(x->>'state', ',') from jsonb_array_elements(public.get_cla_fees()->'states') x) || '/' || jsonb_array_length(public.get_cla_fees()->'rows') || '/' || ((public.get_cla_fees()->'rows'->0) ? 'notes')::text$q$), 'MD,NJ/4/false');
+select tests.is('...approving twice is refused', tests.v(tests.id('a1'), $q$select public.super_admin_approve_cla_fee_batch((select id from public.cla_fee_batches limit 1))::text$q$), 'ERR:22023');
+select tests.is('...submit and approve are in the audit log',
+  (select string_agg(details->>'op', ',' order by at) from public.audit_log where action = 'cla_fees_changed'), 'submit,approve');
+select tests.is('fee upload: a new MD-only upload (one row) is accepted now that nothing is pending',
+  tests.v(tests.id('a2'), $q$select (public.admin_submit_cla_fee_batch('md2.csv', '[{"state":"MD","fee_name":"Settlement Fee to CLA Title & Escrow","transaction":"Purchase","amount":"1100","paid_by":"Buyer"}]'::jsonb) is not null)::text$q$), 'true');
+select tests.is('...the super admin rejects it: live MD rows unchanged',
+  tests.v(tests.id('a1'), $q$select public.super_admin_reject_cla_fee_batch((select id from public.cla_fee_batches where status = 'pending'), 'not yet')::text$q$) || '/' ||
+  (select count(*)::text from public.cla_fees_live where state = 'MD'), '/3');
+select tests.is('fee upload: an admin can withdraw a pending upload',
+  tests.v(tests.id('a2'), $q$select (public.admin_submit_cla_fee_batch('md3.csv', '[{"state":"MD","fee_name":"Settlement Fee to CLA Title & Escrow","transaction":"Purchase","amount":"1100","paid_by":"Buyer"}]'::jsonb) is not null)::text$q$) || '/' ||
+  tests.v(tests.id('a2'), $q$select public.admin_withdraw_cla_fee_batch((select id from public.cla_fee_batches where status = 'pending'))::text$q$), 'true/');
+select tests.is('...statuses so far', (select string_agg(status, ',' order by created_at) from public.cla_fee_batches), 'approved,rejected,withdrawn');
+select tests.is('fee upload: a new MD-only batch is approved',
+  tests.v(tests.id('a2'), $q$select (public.admin_submit_cla_fee_batch('md4.csv', '[{"state":"MD","fee_name":"Settlement Fee to CLA Title & Escrow","transaction":"Purchase","amount":"1100","paid_by":"Buyer"}]'::jsonb) is not null)::text$q$) || '/' ||
+  tests.v(tests.id('a1'), $q$select public.super_admin_approve_cla_fee_batch((select id from public.cla_fee_batches where status = 'pending'))::text$q$), 'true/');
+select tests.is('...it replaced every MD row and left NJ alone', (select string_agg(state || ':' || amount, ',' order by state) from public.cla_fees_live), 'MD:1100.00,NJ:500.00');
+select tests.is('fee upload: the private helpers are not callable through the API',
+  tests.v(tests.id('a1'), $q$select private.cla_fee_flag('y', true)::text$q$), 'ERR:42501');
 
 -- ---------------- summary ----------------
 

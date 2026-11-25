@@ -6,7 +6,7 @@
 <link rel="stylesheet" href="portal.css?v=20261117a">
 <script src="config.js"></script>
 <script src="../fee-snapshot.js?v=20261117a"></script>
-<script src="js/mock-data.js?v=20261117a"></script><script src="js/mock-adapter.js?v=20261117a"></script><script src="js/supabase-adapter.js?v=20261117a"></script><script src="js/auth-adapter.js?v=20261117a"></script><script src="js/portal-ui.js?v=20261117a"></script><script src="js/bulk-invite.js?v=20261117a"></script>
+<script src="js/mock-data.js?v=20261125a"></script><script src="js/mock-adapter.js?v=20261125a"></script><script src="js/supabase-adapter.js?v=20261125a"></script><script src="js/auth-adapter.js?v=20261125a"></script><script src="js/portal-ui.js?v=20261125a"></script><script src="js/bulk-invite.js?v=20261125a"></script><script src="js/fee-upload.js?v=20261125a"></script>
 <style>
 .repbox{position:relative;display:inline-block;vertical-align:middle;width:230px}
 .repbox input[type=text]{min-height:34px;padding:4px 10px;font-size:13px;width:100%}
@@ -19,6 +19,13 @@
 .replist li.ract,.replist li:hover{background:#eef5e3}
 .replist li[aria-selected=true]{font-weight:700}
 .replist li.none{cursor:default;color:var(--mut)}
+.fdiff td.num,.fdiff th.num{text-align:right;white-space:nowrap}
+.fdiff tr.add td:first-child{box-shadow:inset 3px 0 0 #99c93f}.fdiff tr.chg td:first-child{box-shadow:inset 3px 0 0 #e0a100}.fdiff tr.rem td:first-child{box-shadow:inset 3px 0 0 #b3261e}
+.fdiff tr.rem td{color:#6b6b6b}.fdiff .was{text-decoration:line-through;color:#8a8a8a;margin-right:6px}
+.fstate{border:1px solid var(--line);border-radius:12px;margin:0 0 14px;overflow:hidden}.fstate h3{margin:0;padding:10px 14px;font-size:15px;background:#f6f8f1;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.fstate .msg{margin:10px 14px}.fstate .tablewrap{margin:0}
+.ftools{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px}.ftools label{margin:0}
+.ftools select{min-height:40px;width:auto}
 </style>
 </head><body>
 <main class="pg">
@@ -137,14 +144,44 @@
   <input type="text" id="fFilter" placeholder="Search message, person, page" style="min-height:36px;width:220px" aria-label="Search feedback"></div></div>
  <p class="sum" id="fNote" style="margin:0 20px 10px"></p>
  <div class="tablewrap"><table><thead><tr><th>When</th><th>From</th><th>Category</th><th>Message</th><th>Status</th><th>Decision</th></tr></thead><tbody id="fbRows"></tbody></table></div></section>
+<div id="pFees" class="stack" data-tour="a-fees" hidden>
+ <div id="feLoadErr" class="msg err" role="alert"></div>
+ <section class="card" id="feUpCard"><h2>Upload CLA fees</h2>
+  <p class="sub" style="margin-top:0">CLA's own fees per state: settlement, title search, doc prep, notary, Simplifile, CPL and the like (the CLA_Fees tab of the fee sheet). Each state in your file replaces that state's whole CLA fee list; states not in the file stay as they are. Recording fees, transfer taxes and title premiums are not part of this. <b>Nothing changes in the calculator until a super admin approves the upload.</b></p>
+  <div id="feErr" class="msg err" role="alert"></div><div id="feOk" class="msg ok" role="status"></div>
+  <div class="ftools">
+   <div><label for="feTplState">Template for</label><select id="feTplState"></select></div>
+   <button class="btn o" id="feTpl" type="button">Download current fees (CSV)</button>
+   <label class="btn" for="feFile" style="cursor:pointer">Choose file</label>
+   <input type="file" id="feFile" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
+   <span class="sum" id="feFileName"></span>
+  </div>
+  <p class="sum" style="margin:0">Columns: Active, State, Fee Name, Transaction (Purchase, Refi, Financed or Both), Amount, Paid By (Buyer, Seller, Borrower or Split), LE Section (B, C, E or H), Default On, Notes. Up to 500 rows.</p>
+  <div id="fePreview" hidden style="margin-top:18px">
+   <p id="feSummary" style="margin:0 0 12px;font-weight:600"></p>
+   <div id="feErrs"></div>
+   <div id="feDiff"></div>
+   <div class="row" style="grid-template-columns:minmax(0,1fr) auto auto;align-items:end;margin:6px 0 0"><div><label for="feNote">Note for the approver (optional)</label><input type="text" id="feNote" maxlength="500" placeholder="e.g. New 2027 settlement fees, effective Jan 1"></div>
+    <button class="btn" id="feSubmit" type="button">Send for approval</button><button class="btn o" id="feCancel" type="button">Cancel</button></div>
+  </div>
+ </section>
+ <section class="card" id="fePendCard"><h2>Waiting for approval</h2><p class="sub" id="fePendSub" style="margin-top:0"></p>
+  <div id="fePend"></div>
+  <div id="feReview" hidden></div>
+ </section>
+ <section class="card flush"><div class="sh"><h2>Where the calculator gets CLA fees</h2><div class="grow"><span class="sum" id="feSrcNote"></span></div></div>
+  <div class="tablewrap"><table><thead><tr><th>State</th><th>Source</th><th class="num">Active fees</th><th>Calculator</th></tr></thead><tbody id="feSrcRows"></tbody></table></div></section>
+ <section class="card flush"><div class="sh"><h2>Upload history</h2></div>
+  <div class="tablewrap"><table><thead><tr><th>Uploaded</th><th>By</th><th>File</th><th>States</th><th>Status</th><th>Decision</th></tr></thead><tbody id="feHist"></tbody></table></div></section>
+</div>
 </main>
 <script>
 (async () => {
   const { $, esc } = CLA; const { A, me } = await CLA.boot(["super_admin", "admin"]);
-  const panels = ["pUsers", "pQuotes", "pAssign", "pAudit", "pFeedback", "pPricing"];
+  const panels = ["pUsers", "pQuotes", "pAssign", "pAudit", "pFeedback", "pPricing", "pFees"];
   let users = [], asg = [], quotes = [];
   const uById = (id) => users.find((u) => u.id === id), nm = (id) => (id && uById(id) ? CLA.fullName(uById(id)) : id ? "(removed user)" : "System");
-  CLA.tabs($("tabs"), ["Users", "Quotes", "Assignments", "Audit log", "Feedback", "Rep pricing"], (i) => { panels.forEach((p, j) => ($(p).hidden = i !== j)); ({ 1: loadQuotes, 2: loadAsg, 3: loadAudit, 4: loadFeedback, 5: loadPricing })[i] && ({ 1: loadQuotes, 2: loadAsg, 3: loadAudit, 4: loadFeedback, 5: loadPricing })[i](); });
+  CLA.tabs($("tabs"), ["Users", "Quotes", "Assignments", "Audit log", "Feedback", "Rep pricing", "CLA fees"], (i) => { panels.forEach((p, j) => ($(p).hidden = i !== j)); ({ 1: loadQuotes, 2: loadAsg, 3: loadAudit, 4: loadFeedback, 5: loadPricing, 6: loadFees })[i] && ({ 1: loadQuotes, 2: loadAsg, 3: loadAudit, 4: loadFeedback, 5: loadPricing, 6: loadFees })[i](); });
 
   // What this signed-in person may do (the database enforces the same rules; this only hides / greys out the rest):
   //   super admin: everything. admin: manage reps, clients and other admins (never a super admin, never promote; see CLA.canManage / README "Roles").
@@ -546,6 +583,111 @@
     $("auditRows").innerHTML = rows.map((r) => "<tr><td style='white-space:nowrap'>" + new Date(r.at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) + "</td><td>" + esc(nm(r.actorId)) + "</td><td><span class='badge off'>" + esc(r.action.replace(/_/g, " ")) + "</span></td><td class='sum'>" + esc(Object.entries(r.details || {}).filter(([, v]) => v != null && typeof v !== "object").map(([k, v]) => k + ": " + v).join(" · ")) + "</td></tr>").join("");
   }
 
+
+  // ---- CLA fees (migration 22): admins upload, a super admin approves; see js/fee-upload.js ----
+  let FE = { rows: [], sourceOf: {}, live: [], sheetSource: "sheet" }, feBatches = [], fePreview = null, feOpen = null;
+  const fmtWhen = (t) => t ? new Date(t).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+  const stName = (st) => (CLA.US_STATES[st] || st) + " (" + st + ")";
+  $("feTplState").innerHTML = Object.keys(CLA.US_STATES).sort().map((st) => '<option value="' + st + '"' + (st === "MD" ? " selected" : "") + ">" + esc(stName(st)) + "</option>").join("");
+  const feClear = () => { $("feErr").textContent = ""; $("feOk").textContent = ""; };
+  const feStatusBadge = (b) => b.status === "pending" ? '<span class="badge warn">Waiting for approval</span>' : b.status === "approved" ? '<span class="badge">Approved, live</span>'
+    : b.status === "rejected" ? '<span class="badge off" style="background:#f8d7d4;color:#8a1f16">Rejected</span>' : '<span class="badge off">Withdrawn</span>';
+  const secName = (s) => ({ B: "B", C: "C", E: "E", H: "H" })[s] || s;
+  function diffHtml(rows, current, stateWarnings) {
+    const d = CLA.diffFees(rows, current); let html = "";
+    for (const st of Object.keys(d)) {
+      const x = d[st], src = FE.sourceOf[st], w = (stateWarnings && stateWarnings[st]) || [];
+      const tr = (cls, label, r, before) => "<tr class='" + cls + "'><td>" + label + "</td><td>" + esc(r.feeName) + (r.active ? "" : " <span class='badge off'>inactive</span>") + "</td><td>" + esc(r.transaction) + "</td><td>" + esc(r.paidBy) + "</td><td>" + secName(r.leSection) + "</td><td class='num'>"
+        + (before ? "<span class='was'>" + CLA.feeMoney(before.amount) + "</span>" : "") + CLA.feeMoney(r.amount) + "</td></tr>";
+      const body = x.added.map((r) => tr("add", "<span class='badge'>New</span>", r))
+        .concat(x.changed.map((c) => tr("chg", "<span class='badge warn'>Changed</span>" + (c.big ? " <span class='sum'>over 50%</span>" : "") + "<div class='sum'>" + esc(c.fields.join(", ")) + "</div>", c.after, c.fields.includes("amount") ? c.before : null)))
+        .concat(x.removed.map((r) => tr("rem", "<span class='badge off' style='background:#f8d7d4;color:#8a1f16'>Removed</span>", r))).join("");
+      html += "<div class='fstate'><h3>" + esc(stName(st)) + " <span class='sum' style='font-weight:400'>" + x.added.length + " new · " + x.changed.length + " changed · " + x.removed.length + " removed · " + x.same + " unchanged · compared with "
+        + (src === "portal" ? "the fees approved in the portal" : src ? (src === "sheet" ? "the team fee sheet" : "the built-in snapshot") : "nothing (no CLA fees for this state yet)") + "</span></h3>"
+        + w.map((m) => "<div class='msg info'>" + esc(m) + "</div>").join("")
+        + (body ? "<div class='tablewrap'><table class='fdiff'><thead><tr><th>Change</th><th>Fee</th><th>Transaction</th><th>Paid by</th><th>LE</th><th class='num'>Amount</th></tr></thead><tbody>" + body + "</tbody></table></div>"
+          : "<p class='sum' style='margin:10px 14px'>No changes for this state.</p>") + "</div>";
+    }
+    return html;
+  }
+  async function loadFees() {
+    $("feLoadErr").textContent = "";
+    if (!users.length) { try { users = await A.adminListUsers(); } catch (e) { /* names only */ } }
+    try { FE = await CLA.loadCurrentClaFees(A); } catch (ex) { FE = { rows: [], sourceOf: {}, live: [], sheetSource: "snapshot" }; }
+    try { feBatches = await A.adminListClaFeeBatches(); } catch (ex) { feBatches = []; $("feLoadErr").textContent = "Fee uploads could not be loaded (" + ex.message + "). If migration 22 has not been applied to the database yet, that is why."; }
+    drawFeeSources(); drawFeePending(); drawFeeHistory();
+  }
+  function drawFeeSources() {
+    const sts = [...new Set(FE.rows.map((r) => r.state).concat(CLA.CALC_STATES))].sort();
+    $("feSrcNote").textContent = FE.sheetSource === "sheet" ? "Other states: the team fee sheet" : "The team sheet could not be read: showing the built-in snapshot";
+    $("feSrcRows").innerHTML = sts.map((st) => {
+      const lv = FE.live.find((x) => x.state === st), n = FE.rows.filter((r) => r.state === st && r.active).length;
+      return "<tr><td>" + esc(stName(st)) + "</td><td>" + (lv ? "<span class='badge'>Portal</span> <span class='sum'>approved " + esc(fmtWhen(lv.approvedAt)) + (lv.approvedBy ? " by " + esc(nm(lv.approvedBy)) : "") + "</span>" : n ? "<span class='badge off'>Fee sheet</span>" : "<span class='sum'>None</span>")
+        + "</td><td class='num'>" + n + "</td><td>" + (CLA.CALC_STATES.includes(st) ? "Quotes this state" : "<span class='badge warn'>Not in the calculator yet</span>") + "</td></tr>";
+    }).join("");
+  }
+  function drawFeePending() {
+    const pend = feBatches.filter((b) => b.status === "pending");
+    $("fePendSub").textContent = pend.length ? (isSuper ? "Review each upload, then approve or reject it. Approving puts the fees in the calculator right away." : "A super admin approves or rejects these. You can withdraw an upload that is still waiting.") : "Nothing is waiting for approval.";
+    $("fePend").innerHTML = pend.length ? "<div class='tablewrap'><table><thead><tr><th>Uploaded</th><th>By</th><th>File</th><th>States</th><th class='num'>Rows</th><th></th></tr></thead><tbody>" + pend.map((b) =>
+      "<tr><td style='white-space:nowrap'>" + esc(fmtWhen(b.createdAt)) + "</td><td>" + esc(nm(b.createdBy)) + "</td><td>" + esc(b.fileName || "—") + (b.note ? "<div class='sum'>" + esc(b.note) + "</div>" : "") + "</td><td>" + esc(b.states.join(", ")) + "</td><td class='num'>" + b.rowCount
+      + "</td><td style='white-space:nowrap'><button class='btn sm' type='button' data-ferev='" + esc(b.id) + "'>Review</button></td></tr>").join("") + "</tbody></table></div>" : "";
+    if (feOpen && !pend.some((b) => b.id === feOpen)) { feOpen = null; $("feReview").hidden = true; $("feReview").innerHTML = ""; }
+  }
+  function drawFeeHistory() {
+    const done = feBatches.filter((b) => b.status !== "pending").slice(0, 20);
+    $("feHist").innerHTML = done.length ? done.map((b) => "<tr><td style='white-space:nowrap'>" + esc(fmtWhen(b.createdAt)) + "</td><td>" + esc(nm(b.createdBy)) + "</td><td>" + esc(b.fileName || "—") + "</td><td>" + esc(b.states.join(", ")) + "</td><td>" + feStatusBadge(b)
+      + "</td><td>" + (b.decidedBy ? esc(nm(b.decidedBy)) + ", " + esc(fmtWhen(b.decidedAt)) : "") + (b.decisionNote ? "<div class='sum'>" + esc(b.decisionNote) + "</div>" : "") + "</td></tr>").join("")
+      : "<tr><td colspan='6' class='sum'>No finished uploads yet.</td></tr>";
+  }
+  async function openReview(id) {
+    const b = feBatches.find((x) => x.id === id); if (!b) return; feOpen = id;
+    let rows = []; try { rows = await A.adminGetClaFeeBatchRows(id); } catch (ex) { $("feErr").textContent = ex.message; return; }
+    const v = CLA.validateFeeRows(rows.map((r) => ({ Active: r.active ? "Y" : "N", State: r.state, "Fee Name": r.feeName, Transaction: r.transaction, Amount: r.amount, "Paid By": r.paidBy, "LE Section": r.leSection, "Default On": r.defaultOn ? "Y" : "N", Notes: r.notes })));
+    const R = $("feReview"); R.hidden = false;
+    R.innerHTML = "<h3 style='margin:18px 0 6px'>Review: " + esc(b.fileName || "upload") + "</h3><p class='sum' style='margin:0 0 12px'>Uploaded by " + esc(nm(b.createdBy)) + ", " + esc(fmtWhen(b.createdAt)) + ". " + b.rowCount + " rows for " + esc(b.states.join(", "))
+      + ". Compared with what the calculator uses right now." + (b.note ? " Note: “" + esc(b.note) + "”" : "") + "</p>" + diffHtml(v.rows, FE.rows, v.stateWarnings)
+      + "<div class='row' style='grid-template-columns:minmax(0,1fr) auto auto auto;align-items:end;margin:6px 0 0'><div><label for='feDecNote'>" + (isSuper ? "Decision note (optional)" : "Note (optional)") + "</label><input type='text' id='feDecNote' maxlength='500'></div>"
+      + (isSuper ? "<button class='btn' type='button' id='feApprove'>Approve and go live</button><button class='btn o' type='button' id='feReject' style='color:#b3261e'>Reject</button>" : "<span class='badge warn' style='align-self:center'>Waiting for a super admin</span>")
+      + "<button class='btn o' type='button' id='feWithdraw'>Withdraw</button></div>";
+    const act = async (fnName, verb, confirmText) => {
+      if (confirmText && !confirm(confirmText)) return; feClear();
+      try { await A[fnName](id, $("feDecNote").value); feOpen = null; R.hidden = true; R.innerHTML = ""; await loadFees(); $("feOk").textContent = verb; }
+      catch (ex) { $("feErr").textContent = ex.message; }
+    };
+    if (isSuper) {
+      $("feApprove").onclick = () => act("superApproveClaFeeBatch", "Approved. The calculator now uses these CLA fees for " + b.states.join(", ") + ".", "Approve this upload?\n\nThe calculator will use these CLA fees for " + b.states.join(", ") + " right away (new quotes; saved quotes keep their numbers).");
+      $("feReject").onclick = () => act("superRejectClaFeeBatch", "Rejected. Nothing changed in the calculator.");
+    }
+    $("feWithdraw").onclick = () => act("adminWithdrawClaFeeBatch", "Withdrawn. Nothing changed in the calculator.", "Withdraw this upload?");
+    R.scrollIntoView && R.scrollIntoView({ block: "start" });
+  }
+  $("fePend").addEventListener("click", (e) => { const b = e.target.closest("[data-ferev]"); if (b) openReview(b.dataset.ferev); });
+  $("feTpl").onclick = () => CLA.downloadFeeTemplate($("feTplState").value, FE.rows);
+  const feReset = () => { fePreview = null; $("fePreview").hidden = true; $("feDiff").innerHTML = ""; $("feErrs").innerHTML = ""; $("feFile").value = ""; $("feFileName").textContent = ""; $("feNote").value = ""; };
+  $("feCancel").onclick = () => { feReset(); feClear(); };
+  $("feFile").onchange = async (e) => {
+    feClear(); $("fePreview").hidden = true; const f = e.target.files && e.target.files[0]; $("feFileName").textContent = f ? f.name : ""; if (!f) return;
+    try {
+      const g = CLA.feeRowsFromGrid(await CLA.readFeeFile(f)); if (g.error) { $("feErr").textContent = g.error; return; }
+      const v = CLA.validateFeeRows(g.rows); fePreview = { v, fileName: f.name };
+      const bad = v.rows.filter((r) => r.errors.length), rowWarn = v.rows.filter((r) => !r.errors.length && r.warnings.length);
+      $("feSummary").textContent = v.rows.length + " row" + (v.rows.length === 1 ? "" : "s") + " for " + (v.states.join(", ") || "no valid state") + (bad.length ? ": " + bad.length + " need" + (bad.length === 1 ? "s" : "") + " fixing before you can send this for approval." : ": ready to send for approval.");
+      $("feErrs").innerHTML = (bad.length ? "<div class='msg err' role='alert'><b>Fix these rows in your file, then choose it again.</b><div class='tablewrap' style='margin-top:8px'><table><thead><tr><th>Row</th><th>Fee</th><th>Problem</th></tr></thead><tbody>"
+        + bad.map((r) => "<tr><td>" + (r.line + 1) + "</td><td>" + esc([r.state, r.feeName].filter(Boolean).join(" · ") || "—") + "</td><td>" + esc(r.errors.join(" ")) + "</td></tr>").join("") + "</tbody></table></div><p class='sum' style='margin:6px 0 0'>Row numbers match your spreadsheet (row 1 is the header).</p></div>" : "")
+        + rowWarn.map((r) => "<div class='msg info'>Row " + (r.line + 1) + " (" + esc(r.state + " · " + r.feeName) + "): " + esc(r.warnings.join(" ")) + "</div>").join("");
+      $("feDiff").innerHTML = diffHtml(v.rows.filter((r) => !r.errors.length), FE.rows, v.stateWarnings);
+      $("feSubmit").disabled = !!bad.length || !v.rows.length; $("fePreview").hidden = false;
+    } catch (ex) { $("feErr").textContent = ex.message; }
+  };
+  $("feSubmit").onclick = async () => {
+    if (!fePreview || fePreview.v.errorCount) return; feClear(); $("feSubmit").disabled = true;
+    try {
+      await A.adminSubmitClaFeeBatch({ fileName: fePreview.fileName, note: $("feNote").value, rows: CLA.feeRowsForRpc(fePreview.v.rows) });
+      const sts = fePreview.v.states.join(", "); feReset(); await loadFees();
+      $("feOk").textContent = "Sent for approval (" + sts + "). " + (isSuper ? "Review it under Waiting for approval to put it live." : "A super admin will review it; the calculator does not change until then.");
+    } catch (ex) { $("feErr").textContent = ex.message; $("feSubmit").disabled = false; }
+  };
   $("showInv").onclick = () => { $("invCard").hidden = false; $("iEmail").focus(); };
   $("invCancel").onclick = () => { $("invCard").hidden = true; };
   const upClear = () => { $("upErr").textContent = ""; $("upOk").textContent = ""; };
